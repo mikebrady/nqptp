@@ -209,12 +209,12 @@ int main(void) {
   struct __attribute__((__packed__)) ptp_delay_req_message {
     struct ptp_common_message_header header;
     struct ptp_delay_req delay_req;
-  } ;
+  };
 
   struct __attribute__((__packed__)) ptp_follow_up_message {
     struct ptp_common_message_header header;
     struct ptp_follow_up follow_up;
-  } ;
+  };
 
   struct __attribute__((__packed__)) ptp_delay_resp_message {
     struct ptp_common_message_header header;
@@ -335,7 +335,7 @@ int main(void) {
           die("recvfrom() 320");
 
         } else if (recv_len >= (ssize_t)sizeof(struct ptp_common_message_header)) {
-          //print_buffer(buf, recv_len);
+          // print_buffer(buf, recv_len);
           switch (buf[0] & 0xF) {
           case Follow_Up: {
             struct ptp_follow_up_message *msg = (struct ptp_follow_up_message *)buf;
@@ -350,7 +350,7 @@ int main(void) {
             t1 = preciseOriginTimestamp;
           } break;
           case Delay_Resp: {
-          	struct ptp_delay_resp_message *msg = (struct ptp_delay_resp_message *)buf;
+            struct ptp_delay_resp_message *msg = (struct ptp_delay_resp_message *)buf;
             uint16_t seconds_hi = nctohs(&msg->delay_resp.receiveTimestamp[0]);
             uint32_t seconds_low = nctohl(&msg->delay_resp.receiveTimestamp[2]);
             uint32_t nanoseconds = nctohl(&msg->delay_resp.receiveTimestamp[6]);
@@ -360,20 +360,27 @@ int main(void) {
             receiveTimestamp = receiveTimestamp * 1000000000L;
             receiveTimestamp = receiveTimestamp + nanoseconds;
             t4 = receiveTimestamp;
-            t5 = reception_time; // t5 - t3 gives us the out-and-back time locally -- an instantaneous quality index
+            t5 = reception_time; // t5 - t3 gives us the out-and-back time locally -- an
+                                 // instantaneous quality index
 
             // calculate delay and calculate offset
-            //fprintf(stderr, "t1: %016" PRIx64 ", t2: %" PRIx64 ", t3: %" PRIx64 ", t4: %" PRIx64 ".\n",t1,t2,t3,t4);
-            //fprintf(stderr, "nominal remote transaction time: %" PRIx64 " = %" PRIu64 "ns; local transaction time: %" PRIx64 " = %" PRId64 "ns.\n", t4-t1, t4-t1, t3-t2, t3-t2);
+            // fprintf(stderr, "t1: %016" PRIx64 ", t2: %" PRIx64 ", t3: %" PRIx64 ", t4: %" PRIx64
+            // ".\n",t1,t2,t3,t4); fprintf(stderr, "nominal remote transaction time: %" PRIx64 " = %"
+            // PRIu64 "ns; local transaction time: %" PRIx64 " = %" PRId64 "ns.\n", t4-t1, t4-t1,
+            // t3-t2, t3-t2);
             uint64_t offset = t1 - t2;
             if (previous_offset == 0)
-            	fprintf(stderr, "offset: %" PRIx64 ".\n", offset);
+              fprintf(stderr, "offset: %" PRIx64 ".\n", offset);
             else {
-            	int64_t variation = offset - previous_offset;
-            	fprintf(stderr, "remote transaction time: %f, offset: %" PRIx64 ", variation: %f, turnaround: %f \n", (t4-t1) * 0.000000001, offset, variation * 0.000000001, (t5 - t2) * 0.000000001);
+              int64_t variation = offset - previous_offset;
+              fprintf(stderr,
+                      "remote transaction time: %f, offset: %" PRIx64
+                      ", variation: %f, turnaround: %f \n",
+                      (t4 - t1) * 0.000000001, offset, variation * 0.000000001,
+                      (t5 - t2) * 0.000000001);
             }
-						previous_offset = offset;
-            //fprintf(stderr, "Offset: %" PRIx64 ", delay %f.\n", offset, delay*0.000000001);
+            previous_offset = offset;
+            // fprintf(stderr, "Offset: %" PRIx64 ", delay %f.\n", offset, delay*0.000000001);
 
           } break;
 
