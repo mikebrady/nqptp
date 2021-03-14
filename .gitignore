@@ -14,17 +14,13 @@ autom4te.cache
 /autoscan-*.log
 /aclocal.m4
 /compile
-/config.guess
-/config.h.in
-/config.log
-/config.status
-/config.sub
+/config.*
 /configure
-/configure.scan
 /depcomp
 /install-sh
 /missing
 /stamp-h1
+/.deps/
 
 # https://www.gnu.org/software/libtool/
 
@@ -47,3 +43,9 @@ m4/lt~obsolete.m4
 # can automatically generate from config.status script
 # (which is called by configure script))
 Makefile
+
+# Object files
+/*.o
+
+# Executable
+nqptp
