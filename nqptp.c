@@ -4,7 +4,7 @@
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, version 3.
+ * the Free Software Foundation, version 2.
  *
  * This program is distributed in the hope that it will be useful, but
  * WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -60,8 +60,13 @@ enum messageType {
   Reserved_F
 };
 
+typedef struct {
+	char *ip;  //ipv4 or ipv6
+	uint64_t t1,t2,t3,t4;
+	struct ptpSource *next;
+} ptpSource;
+
 #define BUFLEN 4096 // Max length of buffer
-#define PORT 320    // The port on which to listen for incoming data
 
 struct sockaddr_in si_me_319, si_me_320, si_other;
 
@@ -97,6 +102,39 @@ uint64_t get_time_now() {
   struct timespec tn;
   clock_gettime(CLOCK_MONOTONIC, &tn); // this should be optionally CLOCK_MONOTONIC etc.
   return timespec_to_ns(&tn);
+}
+
+ptpSource* findOrCreateSource(ptpSource** list, char *ip) {
+	ptpSource* response;
+	ptpSource** insertion_point = list; // in case the list is empty
+	ptpSource* crawler = *list;
+	if (crawler == NULL) {
+		insertion_point = list;
+	} else  {
+		while ((crawler->next != NULL) && (strcasecmp(ip,crawler->ip)!= 0)) {
+			crawler = crawler->next;
+		}
+		if (strcasecmp(ip,crawler->ip)== 0) {
+			// found, so no insertion
+			insertion_point = NULL;
+		else
+			// not found, so we are on the last item. Add a new one on to the end.
+			insertion_point = &crawler->next;
+		}
+	}
+	// here, if the insertion point is null, then
+	// the record is pointer to by crawler
+	// otherwise, add a new record at the insertion point
+	if (insertion_point == NULL) {
+		response = crawler;
+	} else {
+		response = (ptpSource*)malloc(sizeof(ptpSource));
+		if (response != NULL) {
+			memset((void *)response,0,sizeof(ptpSource));
+			response->ip = strdup(ip);
+		}
+	}
+	return response;
 }
 
 void print_buffer(char *buf, size_t buf_len) {
@@ -156,6 +194,8 @@ int main(void) {
   int s319, s320;
   unsigned int slen = sizeof(si_other);
   ssize_t recv_len;
+
+  ptpSource *clocks = NULL; // a one-way linked list
 
   char buf[BUFLEN];
 
@@ -284,6 +324,8 @@ int main(void) {
             -1) {
           die("recvfrom() 319");
         } else if (recv_len >= (ssize_t)sizeof(struct ptp_common_message_header)) {
+        	// find or create a ptpSource record for this one.
+        	ptpSource *the_clock = findOrCreateSource(clocks);
           // print_buffer(buf, recv_len);
           switch (buf[0] & 0xF) {
           case Sync: { // if it's a sync
