@@ -216,8 +216,6 @@ void print_buffer(char *buf, size_t buf_len) {
 }
 
 int main(void) {
-  int s319, s320;
-  unsigned int slen = sizeof(si_other);
   ssize_t recv_len;
 
   struct ptpSource *clocks = NULL; // a one-way linked list
@@ -289,7 +287,7 @@ int main(void) {
   // open up sockets for UDP ports 319 and 320
 
   struct addrinfo hints, *info, *p;
-  int i, ret;
+  int ret;
 
   // replicating nearly the same code for 319 and 320. Ugh!
 
@@ -301,7 +299,7 @@ int main(void) {
 
   ret = getaddrinfo(NULL, "319", &hints, &info);
   if (ret) {
-    fprintf(stderr, "getifaddrs: %s\n", gai_strerror(status));
+    fprintf(stderr, "getifaddrs: %s\n", gai_strerror(ret));
     die("getaddrinfo");
   }
 
@@ -349,7 +347,7 @@ int main(void) {
 
   ret = getaddrinfo(NULL, "320", &hints, &info);
   if (ret) {
-    fprintf(stderr, "getifaddrs: %s\n", gai_strerror(status));
+    fprintf(stderr, "getifaddrs: %s\n", gai_strerror(ret));
     die("getaddrinfo");
   }
 
@@ -426,7 +424,7 @@ int main(void) {
 
               // initialise the connection info
               void *sender_addr = NULL;
-              uint16_t sender_port;
+              uint16_t sender_port = 0;
 
               sa_family_t connection_ip_family = from_sock_addr.SAFAMILY;
 
@@ -442,12 +440,13 @@ int main(void) {
                 sender_addr = &(sa4->sin_addr);
                 sender_port = ntohs(sa4->sin_port);
               }
+
               if (sender_port == sockets[t].port) {
                 char sender_string[256];
                 memset(sender_string, 0, sizeof(sender_string));
                 inet_ntop(connection_ip_family, sender_addr, sender_string, sizeof(sender_string));
 
-                //fprintf(stderr, "connection from %s:%u on port %u\n", sender_string, sender_port,
+                // fprintf(stderr, "connection from %s:%u on port %u\n", sender_string, sender_port,
                 //        sockets[t].port);
 
                 // print_buffer(buf, recv_len);
@@ -484,10 +483,11 @@ int main(void) {
                     }
                     freeifaddrs(ifaddr);
                   }
-                	fprintf(stderr, "DREQ to %s\n", the_clock->ip);
+                  fprintf(stderr, "DREQ to %s\n", the_clock->ip);
                   the_clock->t3 = get_time_now();
-                  if (sendto(sockets[t].number, &m, sizeof(m), 0, (const struct sockaddr *)&from_sock_addr, from_sock_addr_length) ==
-                      -1) {
+                  if (sendto(sockets[t].number, &m, sizeof(m), 0,
+                             (const struct sockaddr *)&from_sock_addr,
+                             from_sock_addr_length) == -1) {
                     fprintf(stderr, "sendto: %s\n", strerror(errno));
                     return 4;
                   }
@@ -516,8 +516,8 @@ int main(void) {
                   receiveTimestamp = receiveTimestamp * 1000000000L;
                   receiveTimestamp = receiveTimestamp + nanoseconds;
                   the_clock->t4 = receiveTimestamp;
-                  the_clock->t5 = reception_time; // t5 - t3 gives us the out-and-back time locally -- an
-                                       // instantaneous quality index
+                  the_clock->t5 = reception_time; // t5 - t3 gives us the out-and-back time locally
+                                                  // -- an instantaneous quality index
 
                   // calculate delay and calculate offset
                   // fprintf(stderr, "t1: %016" PRIx64 ", t2: %" PRIx64 ", t3: %" PRIx64 ", t4: %"
@@ -533,9 +533,9 @@ int main(void) {
                     int64_t variation = offset - the_clock->previous_offset;
                     fprintf(stderr,
                             "%s: remote transaction time: %f, offset: %" PRIx64
-                            ", variation: %f, turnaround: %f \n", the_clock->ip,
-                            (the_clock->t4 - the_clock->t1) * 0.000000001, offset, variation * 0.000000001,
-                            (the_clock->t5 - the_clock->t2) * 0.000000001);
+                            ", variation: %f, turnaround: %f \n",
+                            the_clock->ip, (the_clock->t4 - the_clock->t1) * 0.000000001, offset,
+                            variation * 0.000000001, (the_clock->t5 - the_clock->t2) * 0.000000001);
                   }
                   the_clock->previous_offset = offset;
                   // fprintf(stderr, "Offset: %" PRIx64 ", delay %f.\n", offset, delay*0.000000001);
@@ -552,124 +552,6 @@ int main(void) {
           }
         }
 
-/*
-        if (FD_ISSET(s319, &readSockSet)) {
-          // printf("S319 Client query incoming...\n");
-          // try to receive some data, this is a blocking call
-          if ((recv_len = recvfrom(s319, buf, BUFLEN, 0, (struct sockaddr *)&si_other, &slen)) ==
-              -1) {
-            die("recvfrom() 319");
-          } else if (recv_len >= (ssize_t)sizeof(struct ptp_common_message_header)) {
-            // find or create a ptpSource record for this one.
-            // struct ptpSource *the_clock = findOrCreateSource(&clocks);
-            // print_buffer(buf, recv_len);
-            switch (buf[0] & 0xF) {
-            case Sync: { // if it's a sync
-              struct ptp_sync_message *msg = (struct ptp_sync_message *)buf;
-              t2 = reception_time;
-              memset(&m, 0, sizeof(m));
-              m.header.transportSpecificAndMessageID = 0x11;
-              m.header.reservedAndVersionPTP = 0x02;
-              m.header.messageLength = htons(44);
-              m.header.flags = htons(0x608);
-              m.header.sourcePortID = htons(1);
-              m.header.controlOtherMessage = 5;
-              m.header.sequenceId = msg->header.sequenceId;
-              struct ifaddrs *ifaddr = NULL;
-              struct ifaddrs *ifa = NULL;
-
-              if ((status = getifaddrs(&ifaddr) == -1)) {
-                fprintf(stderr, "getifaddrs: %s\n", gai_strerror(status));
-              } else {
-                int found = 0;
-                for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
-                  if ((ifa->ifa_addr) && (ifa->ifa_addr->sa_family == AF_PACKET)) {
-                    struct sockaddr_ll *s = (struct sockaddr_ll *)ifa->ifa_addr;
-                    if ((strcmp(ifa->ifa_name, "lo") != 0) && (found == 0)) {
-                      memcpy(&m.header.clockIdentity, &s->sll_addr, s->sll_halen);
-                      found = 1;
-                    }
-                  }
-                }
-                freeifaddrs(ifaddr);
-              }
-              t3 = get_time_now();
-              if (sendto(s319, &m, sizeof(m), 0, (const struct sockaddr *)&si_other, slen) == -1) {
-                fprintf(stderr, "sendto: %s\n", strerror(errno));
-                return 4;
-              }
-            } break;
-            default:
-              break;
-            }
-          }
-        }
-
-        if (FD_ISSET(s320, &readSockSet)) {
-          // printf("S320 Client query incoming...\n");
-          // try to receive some data, this is a blocking call
-          if ((recv_len = recvfrom(s320, buf, BUFLEN, 0, (struct sockaddr *)&si_other, &slen)) ==
-              -1) {
-            die("recvfrom() 320");
-
-          } else if (recv_len >= (ssize_t)sizeof(struct ptp_common_message_header)) {
-            // print_buffer(buf, recv_len);
-            switch (buf[0] & 0xF) {
-            case Follow_Up: {
-              struct ptp_follow_up_message *msg = (struct ptp_follow_up_message *)buf;
-              uint16_t seconds_hi = nctohs(&msg->follow_up.preciseOriginTimestamp[0]);
-              uint32_t seconds_low = nctohl(&msg->follow_up.preciseOriginTimestamp[2]);
-              uint32_t nanoseconds = nctohl(&msg->follow_up.preciseOriginTimestamp[6]);
-              uint64_t preciseOriginTimestamp = seconds_hi;
-              preciseOriginTimestamp = preciseOriginTimestamp << 32;
-              preciseOriginTimestamp = preciseOriginTimestamp + seconds_low;
-              preciseOriginTimestamp = preciseOriginTimestamp * 1000000000L;
-              preciseOriginTimestamp = preciseOriginTimestamp + nanoseconds;
-              t1 = preciseOriginTimestamp;
-            } break;
-            case Delay_Resp: {
-              struct ptp_delay_resp_message *msg = (struct ptp_delay_resp_message *)buf;
-              uint16_t seconds_hi = nctohs(&msg->delay_resp.receiveTimestamp[0]);
-              uint32_t seconds_low = nctohl(&msg->delay_resp.receiveTimestamp[2]);
-              uint32_t nanoseconds = nctohl(&msg->delay_resp.receiveTimestamp[6]);
-              uint64_t receiveTimestamp = seconds_hi;
-              receiveTimestamp = receiveTimestamp << 32;
-              receiveTimestamp = receiveTimestamp + seconds_low;
-              receiveTimestamp = receiveTimestamp * 1000000000L;
-              receiveTimestamp = receiveTimestamp + nanoseconds;
-              t4 = receiveTimestamp;
-              t5 = reception_time; // t5 - t3 gives us the out-and-back time locally -- an
-                                   // instantaneous quality index
-
-              // calculate delay and calculate offset
-              // fprintf(stderr, "t1: %016" PRIx64 ", t2: %" PRIx64 ", t3: %" PRIx64 ", t4: %"
-              // PRIx64
-              // ".\n",t1,t2,t3,t4); fprintf(stderr, "nominal remote transaction time: %" PRIx64 " =
-              // %" PRIu64 "ns; local transaction time: %" PRIx64 " = %" PRId64 "ns.\n", t4-t1,
-              // t4-t1, t3-t2, t3-t2);
-              uint64_t offset = t1 - t2;
-              if (previous_offset == 0)
-                fprintf(stderr, "offset: %" PRIx64 ".\n", offset);
-              else {
-                int64_t variation = offset - previous_offset;
-                fprintf(stderr,
-                        "remote transaction time: %f, offset: %" PRIx64
-                        ", variation: %f, turnaround: %f \n",
-                        (t4 - t1) * 0.000000001, offset, variation * 0.000000001,
-                        (t5 - t2) * 0.000000001);
-              }
-              previous_offset = offset;
-              // fprintf(stderr, "Offset: %" PRIx64 ", delay %f.\n", offset, delay*0.000000001);
-
-            } break;
-
-            default:
-              // fprintf(stderr, "320 other\n");
-              break;
-            }
-          }
-        }
-*/
       } else if (retval < 0) {
         // check errno/WSAGetLastError(), call perror(), etc ...
       }
