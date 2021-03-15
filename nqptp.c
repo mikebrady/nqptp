@@ -33,6 +33,7 @@
 
 #include <linux/if_packet.h>
 #include <net/ethernet.h> /* the L2 protocols */
+#include <sys/ioctl.h>
 
 #include <inttypes.h>
 
@@ -121,7 +122,7 @@ uint64_t timespec_to_ns(struct timespec *tn) {
 
 uint64_t get_time_now() {
   struct timespec tn;
-  clock_gettime(CLOCK_MONOTONIC, &tn); // this should be optionally CLOCK_MONOTONIC etc.
+  clock_gettime(CLOCK_REALTIME, &tn); // this should be optionally CLOCK_MONOTONIC etc.
   return timespec_to_ns(&tn);
 }
 
@@ -367,6 +368,14 @@ int main(void) {
       }
 #endif
 
+			//if (ret == 0)
+			//	ret = setsockopt(fd, SOL_SOCKET, SO_TIMESTAMP, &yes, sizeof(yes));
+
+			if (ret != 0)
+				fprintf(stderr, "unable to enable timestamping.\n");
+
+
+
       if (!ret)
         ret = bind(fd, p->ai_addr, p->ai_addrlen);
 
@@ -403,7 +412,6 @@ int main(void) {
       timeout.tv_sec = 10;
       timeout.tv_usec = 0;
       int retval = select(smax + 1, &readSockSet, NULL, NULL, &timeout);
-      uint64_t reception_time = get_time_now();
 
       if (retval > 0) {
         unsigned t;
@@ -419,6 +427,17 @@ int main(void) {
             if (recv_len == -1) {
               die("recvfrom()");
             } else if (recv_len >= (ssize_t)sizeof(struct ptp_common_message_header)) {
+            	// get the time
+
+							struct timeval tv_ioctl;
+							tv_ioctl.tv_sec = 0;
+							tv_ioctl.tv_usec = 0;
+							int error = ioctl(sockets[t].number, SIOCGSTAMP, &tv_ioctl);
+							uint64_t reception_time = tv_ioctl.tv_sec;
+							reception_time = reception_time * 1000000;
+							reception_time = reception_time + tv_ioctl.tv_usec;
+							reception_time = reception_time * 1000;
+
               // check its credentials
               // the sending and receiving ports must be the same (i.e. 319 -> 319 or 320 -> 320)
 
@@ -483,7 +502,7 @@ int main(void) {
                     }
                     freeifaddrs(ifaddr);
                   }
-                  fprintf(stderr, "DREQ to %s\n", the_clock->ip);
+                  // fprintf(stderr, "DREQ to %s\n", the_clock->ip);
                   the_clock->t3 = get_time_now();
                   if (sendto(sockets[t].number, &m, sizeof(m), 0,
                              (const struct sockaddr *)&from_sock_addr,
@@ -532,10 +551,10 @@ int main(void) {
                   else {
                     int64_t variation = offset - the_clock->previous_offset;
                     fprintf(stderr,
-                            "%s: remote transaction time: %f, offset: %" PRIx64
-                            ", variation: %f, turnaround: %f \n",
-                            the_clock->ip, (the_clock->t4 - the_clock->t1) * 0.000000001, offset,
-                            variation * 0.000000001, (the_clock->t5 - the_clock->t2) * 0.000000001);
+                            "remote transaction time: %f, offset: %" PRIx64
+                            ", variation: %+f, turnaround: %f ip: %s.\n",
+                            (the_clock->t4 - the_clock->t1) * 0.000000001, offset,
+                            variation * 0.000000001, (the_clock->t5 - the_clock->t2) * 0.000000001, the_clock->ip);
                   }
                   the_clock->previous_offset = offset;
                   // fprintf(stderr, "Offset: %" PRIx64 ", delay %f.\n", offset, delay*0.000000001);
@@ -546,7 +565,7 @@ int main(void) {
                 }
 
               } else {
-                fprintf(stderr, "Packet dropped because ports don't match.\n");
+                // fprintf(stderr, "Packet dropped because ports don't match.\n");
               }
             }
           }
