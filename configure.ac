@@ -4,7 +4,7 @@
 AC_PREREQ([2.68])
 AC_INIT([nqptp], [1.0d0], [4265913+mikebrady@users.noreply.github.com])
 AM_INIT_AUTOMAKE
-AC_CONFIG_SRCDIR([main.c])
+AC_CONFIG_SRCDIR([nqptp.c])
 AC_CONFIG_HEADERS([config.h])
 
 # Checks for programs.
