@@ -344,6 +344,18 @@ int main(void) {
       if (!ret)
         ret = bind(fd, p->ai_addr, p->ai_addrlen);
 
+      if (ret == 0)
+        setsockopt(fd, SOL_SOCKET, SO_TIMESTAMPNS, &yes, sizeof(yes));
+      if (ret != 0)
+        fprintf(stderr, "unable to enable timestamping.\n");
+
+      int val;
+      socklen_t len = sizeof(val);
+      if (getsockopt(fd, SOL_SOCKET, SO_TIMESTAMPNS, &val, &len) < 0)
+        printf("%s: %s\n", "getsockopt SO_TIMESTAMPNS", strerror(errno));
+      else
+        printf("SO_TIMESTAMPNS %d\n", val);
+
       // one of the address families will fail on some systems that
       // report its availability. do not complain.
 
@@ -388,11 +400,21 @@ int main(void) {
         ret |= setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &yes, sizeof(yes));
       }
 #endif
-      if (ret != 0)
-        fprintf(stderr, "unable to enable timestamping.\n");
 
       if (!ret)
         ret = bind(fd, p->ai_addr, p->ai_addrlen);
+
+      if (ret == 0)
+        setsockopt(fd, SOL_SOCKET, SO_TIMESTAMPNS, &yes, sizeof(yes));
+      if (ret != 0)
+        fprintf(stderr, "unable to enable timestamping.\n");
+
+      int val;
+      socklen_t len = sizeof(val);
+      if (getsockopt(fd, SOL_SOCKET, SO_TIMESTAMPNS, &val, &len) < 0)
+        printf("%s: %s\n", "getsockopt SO_TIMESTAMPNS", strerror(errno));
+      else
+        printf("SO_TIMESTAMPNS %d\n", val);
 
       // one of the address families will fail on some systems that
       // report its availability. do not complain.
@@ -433,26 +455,69 @@ int main(void) {
         unsigned t;
         for (t = 0; t < sockets_open; t++) {
           if (FD_ISSET(sockets[t].number, &readSockSet)) {
+
+            SOCKADDR from_sock_addr;
+            socklen_t from_sock_addr_length = sizeof(SOCKADDR);
+            memset(&from_sock_addr, 0, sizeof(SOCKADDR));
+
+            struct {
+              struct cmsghdr cm;
+              char control[512];
+            } control;
+
+            struct msghdr msg;
+            struct iovec iov[1];
+            memset(iov, 0, sizeof(iov));
+            memset(&msg, 0, sizeof(msg));
+            memset(&control, 0, sizeof(control));
+
+            iov[0].iov_base = buf;
+            iov[0].iov_len = BUFLEN;
+
+            msg.msg_iov = iov;
+            msg.msg_iovlen = 1;
+
+            msg.msg_name = &from_sock_addr;
+            msg.msg_namelen = sizeof(from_sock_addr);
+            msg.msg_control = &control;
+            msg.msg_controllen = sizeof(control);
+
+            // int msgsize = recv(udpsocket_fd, &msg_buffer, 4, 0);
+
+            recv_len = recvmsg(sockets[t].number, &msg, 0);
+
+            // clang-format off
+/*
             SOCKADDR from_sock_addr;
             socklen_t from_sock_addr_length = sizeof(SOCKADDR);
             memset(&from_sock_addr, 0, sizeof(SOCKADDR));
 
             recv_len = recvfrom(sockets[t].number, buf, BUFLEN, 0,
                                 (struct sockaddr *)&from_sock_addr, &from_sock_addr_length);
+*/
+            // clang-format on
 
             if (recv_len == -1) {
               die("recvfrom()");
             } else if (recv_len >= (ssize_t)sizeof(struct ptp_common_message_header)) {
-              // get the time
+              uint64_t reception_time = 0;
 
-              struct timeval tv_ioctl;
-              tv_ioctl.tv_sec = 0;
-              tv_ioctl.tv_usec = 0;
-              int error = ioctl(sockets[t].number, SIOCGSTAMP, &tv_ioctl);
-              uint64_t reception_time = tv_ioctl.tv_sec;
-              reception_time = reception_time * 1000000;
-              reception_time = reception_time + tv_ioctl.tv_usec;
-              reception_time = reception_time * 1000;
+              // fprintf(stderr, "Received %d bytes control message.\n", msg.msg_controllen);
+
+              // get the time
+              int level, type;
+              struct cmsghdr *cm;
+              struct timespec *ts = NULL;
+              for (cm = CMSG_FIRSTHDR(&msg); cm != NULL; cm = CMSG_NXTHDR(&msg, cm)) {
+                level = cm->cmsg_level;
+                type = cm->cmsg_type;
+                if (SOL_SOCKET == level && SO_TIMESTAMPNS == type) {
+                  ts = (struct timespec *)CMSG_DATA(cm);
+                  reception_time = ts->tv_sec;
+                  reception_time = reception_time * 1000000000;
+                  reception_time = reception_time + ts->tv_nsec;
+                }
+              }
 
               // check its credentials
               // the sending and receiving ports must be the same (i.e. 319 -> 319 or 320 -> 320)
@@ -541,6 +606,7 @@ int main(void) {
                       }
                       freeifaddrs(ifaddr);
                     }
+
                     // fprintf(stderr, "DREQ to %s\n", the_clock->ip);
                     if (sendto(sockets[t].number, &m, sizeof(m), 0,
                                (const struct sockaddr *)&from_sock_addr,
@@ -639,7 +705,7 @@ int main(void) {
 
                           // clang-format off
 
- 											/*
+ 											  /*
 
                         // here, let's try to use the t1 - remote time and t2 - local time
                         // records to estimate the relationship between the local clock (x) and
@@ -699,54 +765,57 @@ int main(void) {
 
                         // uint64_t offset = the_clock->t1 - the_clock->t2;
                         uint64_t offset = remote_estimate - the_clock->t2;
-                        // clang-format on
-                      */
+                       */
 
-                      // here, calculate the average offset
+                          // clang-format on
 
-                      int e;
-                      long double offsets = 0;
-                      for (e = 0; e < MAX_TIMING_SAMPLES - the_clock->vacant_samples; e++) {
-                        offsets = offsets + 1.0 * (the_clock->samples[e].remote -
-                                                   the_clock->samples[e].local);
-                      }
+                          // here, calculate the average offset
 
-                      offsets = offsets / (MAX_TIMING_SAMPLES - the_clock->vacant_samples);
+                          int e;
+                          long double offsets = 0;
+                          for (e = 0; e < MAX_TIMING_SAMPLES - the_clock->vacant_samples; e++) {
+                            offsets = offsets + 1.0 * (the_clock->samples[e].remote -
+                                                       the_clock->samples[e].local);
+                          }
 
-                      uint64_t offset = (uint64_t)offsets;
-                      long double gradient = 1.0;
-                      // uint64_t offset = the_clock->t1 - the_clock->t2;
+                          offsets = offsets / (MAX_TIMING_SAMPLES - the_clock->vacant_samples);
 
-                        if (the_clock->previous_offset == 0)
-                          fprintf(stderr, "offset: %" PRIx64 ".\n", offset);
-                        else {
-                          int64_t variation = offset - the_clock->previous_offset;
+                          uint64_t offset = (uint64_t)offsets;
+                          long double gradient = 1.0;
+                          // uint64_t offset = the_clock->t1 - the_clock->t2;
+
+                          if (the_clock->previous_offset == 0)
+                            fprintf(stderr, "offset: %" PRIx64 ".\n", offset);
+                          else {
+                            int64_t variation = offset - the_clock->previous_offset;
+                            fprintf(stderr,
+                                    "remote transaction time: %f, offset: %" PRIx64
+                                    ", variation: %+f, turnaround: %f delta (ppm): %+Lf ip: %s.\n",
+                                    (the_clock->t4 - the_clock->t1) * 0.000000001, offset,
+                                    variation * 0.000000001,
+                                    (the_clock->t5 - the_clock->t2) * 0.000000001,
+                                    (gradient - 1.0) * 1000000, the_clock->ip);
+                          }
+                          the_clock->previous_offset = offset;
+                        } else {
                           fprintf(stderr,
-                                  "remote transaction time: %f, offset: %" PRIx64
-                                  ", variation: %+f, turnaround: %f delta (ppm): %+Lf ip: %s.\n",
-                                  (the_clock->t4 - the_clock->t1) * 0.000000001, offset,
-                                  variation * 0.000000001,
-                                  (the_clock->t5 - the_clock->t2) * 0.000000001, (gradient - 1.0) * 1000000, the_clock->ip);
+                                  "t4 - t1 (sync and delay response) time is too long. Discarding. "
+                                  "%s\n",
+                                  the_clock->ip);
                         }
-                        the_clock->previous_offset = offset;
                       } else {
-                      	fprintf(stderr,
-                              "t4 - t1 (sync and delay response) time is too long. Discarding. %s\n",
-                              the_clock->ip);
-                      }
-                      } else {
-                      	fprintf(stderr,
-                              "t5 - t2 time (cycle time) is too long. Discarding. %s\n",
-                              the_clock->ip);
+                        fprintf(stderr, "t5 - t2 time (cycle time) is too long. Discarding. %s\n",
+                                the_clock->ip);
                       }
                       the_clock->current_stage = nothing_seen;
                     } else {
                       if (the_clock->current_stage != waiting_for_sync) {
 
-                      fprintf(stderr,
-                              "Delay_Resp expecting to be in state sync_seen (%u). Stage error -- "
-                              "current state is %u. Discarding. %s\n",
-                              sync_seen, the_clock->current_stage, the_clock->ip);
+                        fprintf(
+                            stderr,
+                            "Delay_Resp expecting to be in state sync_seen (%u). Stage error -- "
+                            "current state is %u. Discarding. %s\n",
+                            sync_seen, the_clock->current_stage, the_clock->ip);
 
                         the_clock->current_stage = waiting_for_sync;
                         // the_clock->discarding_packets = 1;
