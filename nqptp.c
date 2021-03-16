@@ -37,6 +37,10 @@
 
 #include <inttypes.h>
 
+#include <asm/types.h>
+#include <linux/errqueue.h>
+#include <linux/net_tstamp.h>
+
 // References from the IEEE Document ISBN 978-0-7381-5400-8 STD95773.
 // "IEEE Standard for a Precision Clock Synchronization Protocol for Networked Measurement and
 // Control Systems" The IEEE Std 1588-2008 (Revision of IEEE Std 1588-2002)
@@ -253,8 +257,7 @@ int main(void) {
     uint8_t domainNumber;        // 0
     uint8_t reserved_b;          // 0
     uint16_t flags;              // 0x0608
-    uint8_t correctionNs[6];     // 0
-    uint8_t correctionSubNs[2];  // 0
+    uint64_t correctionField;     // 0
     uint32_t reserved_l;         // 0
     uint8_t clockIdentity[8];    // MAC
     uint16_t sourcePortID;       // 1
@@ -306,6 +309,11 @@ int main(void) {
 
   struct ptp_delay_req_message m;
 
+  int so_timestamping_flags = SOF_TIMESTAMPING_TX_HARDWARE | SOF_TIMESTAMPING_TX_SOFTWARE |
+                              SOF_TIMESTAMPING_RX_HARDWARE | SOF_TIMESTAMPING_RX_SOFTWARE |
+                              SOF_TIMESTAMPING_SOFTWARE | SOF_TIMESTAMPING_RAW_HARDWARE;
+  // int so_timestamping_flags =  SOF_TIMESTAMPING_RX_SOFTWARE ;
+
   // open up sockets for UDP ports 319 and 320
 
   struct addrinfo hints, *info, *p;
@@ -345,16 +353,30 @@ int main(void) {
         ret = bind(fd, p->ai_addr, p->ai_addrlen);
 
       if (ret == 0)
-        setsockopt(fd, SOL_SOCKET, SO_TIMESTAMPNS, &yes, sizeof(yes));
-      if (ret != 0)
-        fprintf(stderr, "unable to enable timestamping.\n");
+        setsockopt(fd, SOL_SOCKET, SO_TIMESTAMPING, &so_timestamping_flags,
+                   sizeof(so_timestamping_flags));
 
       int val;
       socklen_t len = sizeof(val);
-      if (getsockopt(fd, SOL_SOCKET, SO_TIMESTAMPNS, &val, &len) < 0)
-        printf("%s: %s\n", "getsockopt SO_TIMESTAMPNS", strerror(errno));
+      if (getsockopt(fd, SOL_SOCKET, SO_TIMESTAMPING, &val, &len) < 0)
+        fprintf(stderr, "%s: %s\n", "getsockopt SO_TIMESTAMPING", strerror(errno));
       else
-        printf("SO_TIMESTAMPNS %d\n", val);
+        fprintf(stderr, "SO_TIMESTAMPING requested: %d, obtained: %d\n", so_timestamping_flags,
+                val);
+
+      /*
+            if (ret == 0)
+              setsockopt(fd, SOL_SOCKET, SO_TIMESTAMPNS, &yes, sizeof(yes));
+            if (ret != 0)
+              fprintf(stderr, "unable to enable timestamping.\n");
+
+            int val;
+            socklen_t len = sizeof(val);
+            if (getsockopt(fd, SOL_SOCKET, SO_TIMESTAMPNS, &val, &len) < 0)
+              printf("%s: %s\n", "getsockopt SO_TIMESTAMPNS", strerror(errno));
+            else
+              printf("SO_TIMESTAMPNS %d\n", val);
+      */
 
       // one of the address families will fail on some systems that
       // report its availability. do not complain.
@@ -405,17 +427,30 @@ int main(void) {
         ret = bind(fd, p->ai_addr, p->ai_addrlen);
 
       if (ret == 0)
-        setsockopt(fd, SOL_SOCKET, SO_TIMESTAMPNS, &yes, sizeof(yes));
-      if (ret != 0)
-        fprintf(stderr, "unable to enable timestamping.\n");
+        setsockopt(fd, SOL_SOCKET, SO_TIMESTAMPING, &so_timestamping_flags,
+                   sizeof(so_timestamping_flags));
 
       int val;
       socklen_t len = sizeof(val);
-      if (getsockopt(fd, SOL_SOCKET, SO_TIMESTAMPNS, &val, &len) < 0)
-        printf("%s: %s\n", "getsockopt SO_TIMESTAMPNS", strerror(errno));
+      if (getsockopt(fd, SOL_SOCKET, SO_TIMESTAMPING, &val, &len) < 0)
+        fprintf(stderr, "%s: %s\n", "getsockopt SO_TIMESTAMPING", strerror(errno));
       else
-        printf("SO_TIMESTAMPNS %d\n", val);
+        fprintf(stderr, "SO_TIMESTAMPING requested: %d, obtained: %d\n", so_timestamping_flags,
+                val);
 
+      /*
+            if (ret == 0)
+              setsockopt(fd, SOL_SOCKET, SO_TIMESTAMPNS, &yes, sizeof(yes));
+            if (ret != 0)
+              fprintf(stderr, "unable to enable timestamping.\n");
+
+            int val;
+            socklen_t len = sizeof(val);
+            if (getsockopt(fd, SOL_SOCKET, SO_TIMESTAMPNS, &val, &len) < 0)
+              printf("%s: %s\n", "getsockopt SO_TIMESTAMPNS", strerror(errno));
+            else
+              printf("SO_TIMESTAMPNS %d\n", val);
+      */
       // one of the address families will fail on some systems that
       // report its availability. do not complain.
 
@@ -502,7 +537,8 @@ int main(void) {
             } else if (recv_len >= (ssize_t)sizeof(struct ptp_common_message_header)) {
               uint64_t reception_time = 0;
 
-              // fprintf(stderr, "Received %d bytes control message.\n", msg.msg_controllen);
+              // fprintf(stderr, "Received %d bytes control message on reception.\n",
+              // msg.msg_controllen);
 
               // get the time
               int level, type;
@@ -511,7 +547,17 @@ int main(void) {
               for (cm = CMSG_FIRSTHDR(&msg); cm != NULL; cm = CMSG_NXTHDR(&msg, cm)) {
                 level = cm->cmsg_level;
                 type = cm->cmsg_type;
-                if (SOL_SOCKET == level && SO_TIMESTAMPNS == type) {
+                if (SOL_SOCKET == level && SO_TIMESTAMPING == type) {
+/*
+                  struct timespec *stamp = (struct timespec *)CMSG_DATA(cm);
+                  fprintf(stderr, "SO_TIMESTAMPING Rx: ");
+                  fprintf(stderr, "SW %ld.%09ld\n", (long)stamp->tv_sec, (long)stamp->tv_nsec);
+                  stamp++;
+                  // skip deprecated HW transformed
+                  stamp++;
+                  fprintf(stderr, "SO_TIMESTAMPING Rx: ");
+                  fprintf(stderr, "HW raw %ld.%09ld\n", (long)stamp->tv_sec, (long)stamp->tv_nsec);
+*/
                   ts = (struct timespec *)CMSG_DATA(cm);
                   reception_time = ts->tv_sec;
                   reception_time = reception_time * 1000000000;
@@ -541,7 +587,7 @@ int main(void) {
                 sender_port = ntohs(sa4->sin_port);
               }
 
-              if (sender_port == sockets[t].port) {
+              if ((sender_port == sockets[t].port) && (connection_ip_family == AF_INET)) {
                 char sender_string[256];
                 memset(sender_string, 0, sizeof(sender_string));
                 inet_ntop(connection_ip_family, sender_addr, sender_string, sizeof(sender_string));
@@ -564,20 +610,39 @@ int main(void) {
                   switch (buf[0] & 0xF) {
                   case Sync: { // if it's a sync
                     struct ptp_sync_message *msg = (struct ptp_sync_message *)buf;
+                    if (msg->header.correctionField != 0)
+                    	fprintf(stderr, "correctionField: %" PRIx64 ".\n", msg->header.correctionField);
+                    fprintf(stderr, "SYNC %u.\n", ntohs(msg->header.sequenceId));
+                    int discard_sync = 0;
+
                     if ((the_clock->current_stage != nothing_seen) &&
                         (the_clock->current_stage != waiting_for_sync)) {
 
+										// here, we have an unexpected SYNC. It could be because the
+										// previous transaction sequence failed for some reason
+										// But, if that is so, the SYNC will have a newer sequence number
+										// so, ignore it if it's older.
+
+										uint16_t new_sync_sequence_number = ntohs(msg->header.sequenceId);
+										int16_t sequence_number_difference = (the_clock->sequence_number - new_sync_sequence_number);
+										if ((sequence_number_difference > 0) && (sequence_number_difference < 8))
+											discard_sync = 1;
+
                       fprintf(stderr,
-                              "Sync expecting to be in state nothing_seen (%u) or waiting_for_sync "
+                              "Sync %u expecting to be in state nothing_seen (%u) or waiting_for_sync "
                               "(%u). Stage error -- "
-                              "current state is %u. Discarding. %s\n",
-                              nothing_seen, waiting_for_sync, the_clock->current_stage,
+                              "current state is %u, sequence %u.%s %s\n",
+                              ntohs(msg->header.sequenceId), nothing_seen, waiting_for_sync, the_clock->current_stage, the_clock->sequence_number,
+                              discard_sync ? " Discarded because it is older." : "",
                               the_clock->ip);
 
-                      the_clock->current_stage = waiting_for_sync;
+
+
+                      // the_clock->current_stage = waiting_for_sync;
                       // the_clock->discarding_packets = 1;
-                      the_clock->discard_until_time = reception_time + discard_interval;
+                      // the_clock->discard_until_time = reception_time + discard_interval;
                     }
+                    if (discard_sync == 0) {
                     the_clock->sequence_number = ntohs(msg->header.sequenceId);
                     the_clock->t2 = reception_time;
                     memset(&m, 0, sizeof(m));
@@ -607,6 +672,84 @@ int main(void) {
                       freeifaddrs(ifaddr);
                     }
 
+                    struct msghdr header;
+                    struct iovec io;
+                    memset(&header, 0, sizeof(header));
+                    memset(&io, 0, sizeof(io));
+                    header.msg_name = &from_sock_addr;
+                    header.msg_namelen = sizeof(from_sock_addr);
+                    header.msg_iov = &io;
+                    header.msg_iov->iov_base = &m;
+                    header.msg_iov->iov_len = sizeof(m);
+                    header.msg_iovlen = 1;
+                    if ((sendmsg(sockets[t].number, &header, 0)) == -1) {
+                      fprintf(stderr, "Error in sendmsg,\t [errno = %d]\n", errno);
+                    }
+                    uint64_t transmission_time;
+
+                    {
+
+                      // Obtain the sent packet timestamp.
+                      char data[256];
+                      struct msghdr msg;
+                      struct iovec entry;
+                      struct sockaddr_in from_addr;
+                      struct {
+                        struct cmsghdr cm;
+                        char control[512];
+                      } control;
+                      int res;
+
+                      memset(&msg, 0, sizeof(msg));
+                      msg.msg_iov = &entry;
+                      msg.msg_iovlen = 1;
+                      entry.iov_base = data;
+                      entry.iov_len = sizeof(data);
+                      msg.msg_name = (caddr_t)&from_addr;
+                      msg.msg_namelen = sizeof(from_addr);
+                      msg.msg_control = &control;
+                      msg.msg_controllen = sizeof(control);
+                      if (recvmsg(sockets[t].number, &msg, MSG_ERRQUEUE) == -1) {
+                        // can't get the transmission time directly
+                        // possibly because it's not implemented
+                        struct timespec tv_ioctl;
+                        tv_ioctl.tv_sec = 0;
+                        tv_ioctl.tv_nsec = 0;
+                        int error = ioctl(sockets[t].number, SIOCGSTAMPNS, &tv_ioctl);
+                        transmission_time = tv_ioctl.tv_sec;
+                        transmission_time = transmission_time * 1000000000;
+                        transmission_time = transmission_time + tv_ioctl.tv_nsec;
+                      } else {
+                        // get the time
+                        int level, type;
+                        struct cmsghdr *cm;
+                        struct timespec *ts = NULL;
+                        for (cm = CMSG_FIRSTHDR(&msg); cm != NULL; cm = CMSG_NXTHDR(&msg, cm)) {
+                          level = cm->cmsg_level;
+                          type = cm->cmsg_type;
+                          if (SOL_SOCKET == level && SO_TIMESTAMPING == type) {
+/*
+                            struct timespec *stamp = (struct timespec *)CMSG_DATA(cm);
+                            fprintf(stderr, "SO_TIMESTAMPING Tx: ");
+                            fprintf(stderr, "SW %ld.%09ld\n", (long)stamp->tv_sec,
+                                    (long)stamp->tv_nsec);
+                            stamp++;
+                            // skip deprecated HW transformed
+                            stamp++;
+                            fprintf(stderr, "SO_TIMESTAMPING Tx: ");
+                            fprintf(stderr, "HW raw %ld.%09ld\n", (long)stamp->tv_sec,
+                                    (long)stamp->tv_nsec);
+*/
+                            ts = (struct timespec *)CMSG_DATA(cm);
+                            transmission_time = ts->tv_sec;
+                            transmission_time = transmission_time * 1000000000;
+                            transmission_time = transmission_time + ts->tv_nsec;
+                          }
+                        }
+                      }
+
+                      // clang-format off
+                    /*
                     // fprintf(stderr, "DREQ to %s\n", the_clock->ip);
                     if (sendto(sockets[t].number, &m, sizeof(m), 0,
                                (const struct sockaddr *)&from_sock_addr,
@@ -614,20 +757,16 @@ int main(void) {
                       fprintf(stderr, "sendto: %s\n", strerror(errno));
                       return 4;
                     }
+                    */
+                      // clang-format on
 
-                    struct timeval tv_ioctl;
-                    tv_ioctl.tv_sec = 0;
-                    tv_ioctl.tv_usec = 0;
-                    int error = ioctl(sockets[t].number, SIOCGSTAMP, &tv_ioctl);
-                    uint64_t transmission_time = tv_ioctl.tv_sec;
-                    transmission_time = transmission_time * 1000000;
-                    transmission_time = transmission_time + tv_ioctl.tv_usec;
-                    transmission_time = transmission_time * 1000;
-                    the_clock->t3 = transmission_time;
-                    // int64_t ttd = transmission_time - the_clock->t3;
-                    // fprintf(stderr, "transmission time delta: %f.\n", ttd*0.000000001);
+                      the_clock->t3 = transmission_time;
+                      // int64_t ttd = transmission_time - the_clock->t3;
+                      // fprintf(stderr, "transmission time delta: %f.\n", ttd*0.000000001);
 
-                    the_clock->current_stage = sync_seen;
+                      the_clock->current_stage = sync_seen;
+                    }
+                    }
                   } break;
 
                   case Follow_Up: {
@@ -648,13 +787,13 @@ int main(void) {
                       if (the_clock->current_stage != waiting_for_sync) {
 
                         fprintf(stderr,
-                                "Follow_Up expecting to be in state sync_seen (%u). Stage error -- "
-                                "current state is %u. Discarding. %s\n",
-                                sync_seen, the_clock->current_stage, the_clock->ip);
+                                "Follow_Up %u expecting to be in state sync_seen (%u). Stage error -- "
+                                "current state is %u, sequence %u. Ignoring it. %s\n",
+                                ntohs(msg->header.sequenceId), sync_seen, the_clock->current_stage, the_clock->sequence_number, the_clock->ip);
 
-                        the_clock->current_stage = waiting_for_sync;
+                        // the_clock->current_stage = waiting_for_sync;
                         // the_clock->discarding_packets = 1;
-                        the_clock->discard_until_time = reception_time + discard_interval;
+                        // the_clock->discard_until_time = reception_time + discard_interval;
                       }
                     }
                   } break;
@@ -780,7 +919,10 @@ int main(void) {
 
                           offsets = offsets / (MAX_TIMING_SAMPLES - the_clock->vacant_samples);
 
-                          uint64_t offset = (uint64_t)offsets;
+                          //uint64_t offset = (uint64_t)offsets;
+
+                          uint64_t offset = the_clock->t1 - the_clock->t2;
+
                           long double gradient = 1.0;
                           // uint64_t offset = the_clock->t1 - the_clock->t2;
 
@@ -790,11 +932,11 @@ int main(void) {
                             int64_t variation = offset - the_clock->previous_offset;
                             fprintf(stderr,
                                     "remote transaction time: %f, offset: %" PRIx64
-                                    ", variation: %+f, turnaround: %f delta (ppm): %+Lf ip: %s.\n",
+                                    ", variation: %+f, turnaround: %f delta (ppm): %+Lf ip: %s, sequence: %u \n",
                                     (the_clock->t4 - the_clock->t1) * 0.000000001, offset,
                                     variation * 0.000000001,
                                     (the_clock->t5 - the_clock->t2) * 0.000000001,
-                                    (gradient - 1.0) * 1000000, the_clock->ip);
+                                    (gradient - 1.0) * 1000000, the_clock->ip, the_clock->sequence_number);
                           }
                           the_clock->previous_offset = offset;
                         } else {
@@ -813,13 +955,13 @@ int main(void) {
 
                         fprintf(
                             stderr,
-                            "Delay_Resp expecting to be in state sync_seen (%u). Stage error -- "
-                            "current state is %u. Discarding. %s\n",
-                            sync_seen, the_clock->current_stage, the_clock->ip);
+                            "Delay_Resp %u expecting to be in state follow_up_seen (%u). Stage error -- "
+                            "current state is %u, sequence %u. Ignoring it. %s\n",
+                            ntohs(msg->header.sequenceId), follow_up_seen, the_clock->current_stage, the_clock->sequence_number, the_clock->ip);
 
-                        the_clock->current_stage = waiting_for_sync;
+                        // the_clock->current_stage = waiting_for_sync;
                         // the_clock->discarding_packets = 1;
-                        the_clock->discard_until_time = reception_time + discard_interval;
+                        // the_clock->discard_until_time = reception_time + discard_interval;
                       }
                     }
                   } break;
