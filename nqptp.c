@@ -73,7 +73,9 @@ enum messageType {
   Reserved_F
 };
 
-#define MAX_TIMING_SAMPLES 1
+// 8 samples per second
+
+#define MAX_TIMING_SAMPLES 71
 struct timing_samples {
   uint64_t local, remote;
 } timing_samples;
@@ -84,7 +86,7 @@ struct ptpSource {
   uint64_t discard_until_time;
   uint16_t sequence_number;
   enum stage current_stage;
-  uint64_t t1, t2, t3, t4, t5, previous_offset;
+  uint64_t t1, t2, t3, t4, t5, previous_offset, previous_estimated_offset;
   struct timing_samples samples[MAX_TIMING_SAMPLES];
   int vacant_samples; // the number of elements in the timing_samples array that are not yet used
   int next_sample_goes_here;
@@ -356,7 +358,7 @@ int main(void) {
         setsockopt(fd, SOL_SOCKET, SO_TIMESTAMPING, &so_timestamping_flags,
                    sizeof(so_timestamping_flags));
 
-      int val;
+      int val = 0;
       socklen_t len = sizeof(val);
       if (getsockopt(fd, SOL_SOCKET, SO_TIMESTAMPING, &val, &len) < 0)
         fprintf(stderr, "%s: %s\n", "getsockopt SO_TIMESTAMPING", strerror(errno));
@@ -587,7 +589,7 @@ int main(void) {
                 sender_port = ntohs(sa4->sin_port);
               }
 
-              if ((sender_port == sockets[t].port) && (connection_ip_family == AF_INET)) {
+              if (sender_port == sockets[t].port) {
                 char sender_string[256];
                 memset(sender_string, 0, sizeof(sender_string));
                 inet_ntop(connection_ip_family, sender_addr, sender_string, sizeof(sender_string));
@@ -612,7 +614,7 @@ int main(void) {
                     struct ptp_sync_message *msg = (struct ptp_sync_message *)buf;
                     if (msg->header.correctionField != 0)
                     	fprintf(stderr, "correctionField: %" PRIx64 ".\n", msg->header.correctionField);
-                    fprintf(stderr, "SYNC %u.\n", ntohs(msg->header.sequenceId));
+                    // fprintf(stderr, "SYNC %u.\n", ntohs(msg->header.sequenceId));
                     int discard_sync = 0;
 
                     if ((the_clock->current_stage != nothing_seen) &&
@@ -628,6 +630,8 @@ int main(void) {
 										if ((sequence_number_difference > 0) && (sequence_number_difference < 8))
 											discard_sync = 1;
 
+// clang-format off
+/*
                       fprintf(stderr,
                               "Sync %u expecting to be in state nothing_seen (%u) or waiting_for_sync "
                               "(%u). Stage error -- "
@@ -635,8 +639,8 @@ int main(void) {
                               ntohs(msg->header.sequenceId), nothing_seen, waiting_for_sync, the_clock->current_stage, the_clock->sequence_number,
                               discard_sync ? " Discarded because it is older." : "",
                               the_clock->ip);
-
-
+*/
+// clang-format on
 
                       // the_clock->current_stage = waiting_for_sync;
                       // the_clock->discarding_packets = 1;
@@ -816,7 +820,7 @@ int main(void) {
                                           // t5 - t2 gives us an overall interchange time
                                           // from the Sync to the Delay Resp
 
-                      if ((the_clock->t5 - the_clock->t2) < 15 * 1000000) {
+                      if ((the_clock->t5 - the_clock->t2) < 25 * 1000000) {
                         if ((the_clock->t4 - the_clock->t1) < 60 * 1000000) {
 
                           // calculate delay and calculate offset
@@ -827,6 +831,15 @@ int main(void) {
                           // %" PRIx64 " =
                           // %" PRIu64 "ns; local transaction time: %" PRIx64 " = %" PRId64 "ns.\n",
                           // t4-t1, t4-t1, t3-t2, t3-t2);
+
+                          uint64_t instantaneous_offset = the_clock->t1 - the_clock->t2;
+                          int64_t change_in_offset = instantaneous_offset - the_clock->previous_offset;
+
+                          int64_t discontinuity_threshold = 250000000; // nanoseconds
+                          if ((change_in_offset > discontinuity_threshold) || (change_in_offset < (-discontinuity_threshold))) {
+                          	fprintf(stderr, "large discontinuity of %+f seconds detected, sequence %u\n", change_in_offset * 0.000000001, the_clock->sequence_number);
+                          	the_clock->vacant_samples = MAX_TIMING_SAMPLES; // invalidate all the previous samples used for averaging, etc.
+                          }
 
                           // now, store the remote and local times in the array
                           the_clock->samples[the_clock->next_sample_goes_here].local =
@@ -842,9 +855,10 @@ int main(void) {
                           // fprintf(stderr, "Offset: %" PRIx64 ", delay %f.\n", offset,
                           // delay*0.000000001);
 
-                          // clang-format off
 
- 											  /*
+
+// clang-format off
+/*
 
                         // here, let's try to use the t1 - remote time and t2 - local time
                         // records to estimate the relationship between the local clock (x) and
@@ -903,15 +917,17 @@ int main(void) {
                         // ".\n", the_clock->t1, remote_estimate);
 
                         // uint64_t offset = the_clock->t1 - the_clock->t2;
-                        uint64_t offset = remote_estimate - the_clock->t2;
-                       */
+                        uint64_t estimated_offset = remote_estimate - the_clock->t2;
+*/
+// clang-format on
 
-                          // clang-format on
+
 
                           // here, calculate the average offset
 
                           int e;
                           long double offsets = 0;
+                          int sample_count = MAX_TIMING_SAMPLES - the_clock->vacant_samples;
                           for (e = 0; e < MAX_TIMING_SAMPLES - the_clock->vacant_samples; e++) {
                             offsets = offsets + 1.0 * (the_clock->samples[e].remote -
                                                        the_clock->samples[e].local);
@@ -921,33 +937,39 @@ int main(void) {
 
                           //uint64_t offset = (uint64_t)offsets;
 
-                          uint64_t offset = the_clock->t1 - the_clock->t2;
+                          uint64_t estimated_offset = (uint64_t)offsets;
 
                           long double gradient = 1.0;
                           // uint64_t offset = the_clock->t1 - the_clock->t2;
+													int64_t variation = 0;
 
-                          if (the_clock->previous_offset == 0)
-                            fprintf(stderr, "offset: %" PRIx64 ".\n", offset);
-                          else {
-                            int64_t variation = offset - the_clock->previous_offset;
+                          if (the_clock->previous_estimated_offset != 0) {
+                            variation = estimated_offset - the_clock->previous_estimated_offset;
+                          } else {
+                          	estimated_offset = instantaneous_offset;
+                          }
+// clang-format off
+/*
                             fprintf(stderr,
-                                    "remote transaction time: %f, offset: %" PRIx64
-                                    ", variation: %+f, turnaround: %f delta (ppm): %+Lf ip: %s, sequence: %u \n",
-                                    (the_clock->t4 - the_clock->t1) * 0.000000001, offset,
+                                    "estimated offset: %" PRIx64
+                                    ", variation: %+f, turnaround: %f delta (ppm): %+Lf ip: %s, sequence: %u samples: %d.\n",
+                                    estimated_offset,
                                     variation * 0.000000001,
                                     (the_clock->t5 - the_clock->t2) * 0.000000001,
-                                    (gradient - 1.0) * 1000000, the_clock->ip, the_clock->sequence_number);
-                          }
-                          the_clock->previous_offset = offset;
+                                    (gradient - 1.0) * 1000000, the_clock->ip, the_clock->sequence_number, sample_count);
+*/
+// clang-format on
+
+                          the_clock->previous_estimated_offset = estimated_offset;
+                          the_clock->previous_offset = instantaneous_offset;
                         } else {
-                          fprintf(stderr,
-                                  "t4 - t1 (sync and delay response) time is too long. Discarding. "
-                                  "%s\n",
-                                  the_clock->ip);
+                          //fprintf(stderr,
+                          //        "t4 - t1 (sync and delay response) time %f is too long. Discarding. %s\n", (the_clock->t4 - the_clock->t1)*0.000000001,
+                          //        the_clock->ip);
                         }
                       } else {
-                        fprintf(stderr, "t5 - t2 time (cycle time) is too long. Discarding. %s\n",
-                                the_clock->ip);
+                        //fprintf(stderr, "t5 - t2 time %f (total transaction time) is too long. Discarding. %s\n", (the_clock->t5 - the_clock->t2)*0.000000001,
+                        //        the_clock->ip);
                       }
                       the_clock->current_stage = nothing_seen;
                     } else {
