@@ -82,7 +82,7 @@ enum messageType {
 
 // 8 samples per second
 
-#define MAX_TIMING_SAMPLES 71
+#define MAX_TIMING_SAMPLES 480
 struct timing_samples {
   uint64_t local, remote;
 } timing_samples;
@@ -104,7 +104,7 @@ struct ptpSource {
 #define BUFLEN 4096 // Max length of buffer
 
 #define MAX_OPEN_SOCKETS 32 // up to 32 sockets open on ports 319 and 320
-#define MAX_SHARED_CLOCKS 64
+#define MAX_SHARED_CLOCKS 8
 
 struct socket_info {
   int number;
@@ -115,6 +115,29 @@ struct socket_info sockets[MAX_OPEN_SOCKETS];
 
 unsigned int sockets_open =
     0; // also doubles as where to put next one, as sockets are never closed.
+
+struct __attribute__((__packed__)) clock_source {
+    char ip[INET6_ADDRSTRLEN]; // where it's coming from
+    int flags;                 // not used yet
+    int valid;                 // this entry is valid
+    uint64_t network_time;     // the network time at the local time
+    uint64_t local_time;       // the time when the network time is valid
+  };
+
+struct __attribute__((__packed__)) shm_basic_structure {
+    pthread_mutex_t shm_mutex; // for safely accessing the structure
+    int total_number_of_clocks;
+    int version;
+    int flags;
+  };
+
+  struct __attribute__((__packed__)) shm_structure {
+    struct shm_basic_structure base;
+    struct clock_source clocks[MAX_SHARED_CLOCKS];
+  };
+
+  struct shm_structure *shared_memory = 0;
+
 
 // struct sockaddr_in6 is bigger than struct sockaddr.
 #ifdef AF_INET6
@@ -319,27 +342,6 @@ int main(void) {
     struct ptp_delay_resp delay_resp;
   };
 
-  struct __attribute__((__packed__)) clock_source {
-    char ip[INET6_ADDRSTRLEN]; // where it's coming from
-    int flags;                 // not used yet
-    int valid;                 // this entry is valid
-    uint64_t network_time;     // the network time at the local time
-    uint64_t local_time;       // the time when the network time is valid
-  };
-
-  struct __attribute__((__packed__)) shm_basic_structure {
-    pthread_mutex_t shm_mutex; // for safely accessing the structure
-    int total_number_of_clocks;
-    int version;
-    int flags;
-  };
-
-  struct __attribute__((__packed__)) shm_structure {
-    struct shm_basic_structure base;
-    struct clock_source clocks[MAX_SHARED_CLOCKS];
-  };
-
-  struct shm_structure *shared_memory;
   int next_free_clock_source_entry = 0;
   pthread_mutexattr_t shared;
   int err;
@@ -352,7 +354,7 @@ int main(void) {
   if (grp == NULL) {
     fprintf(stderr, "Group %s not found, will try root (0) instead.\n", "nqptp");
   }
-  shm_fd = shm_open("nqptp", O_RDWR | O_CREAT, 0666);
+  shm_fd = shm_open("/nqptp", O_RDWR | O_CREAT, 0666);
   if (shm_fd == -1) {
     fprintf(stderr, "Cannot shm_open.\n");
   }
@@ -552,6 +554,7 @@ int main(void) {
   freeaddrinfo(info);
 
   if (sockets_open > 0) {
+
     while (1) {
       fd_set readSockSet;
       struct timeval timeout;
@@ -669,6 +672,7 @@ int main(void) {
                 sender_port = ntohs(sa4->sin_port);
               }
 
+//              if ((sender_port == sockets[t].port) && (connection_ip_family == AF_INET)) {
               if (sender_port == sockets[t].port) {
                 char sender_string[256];
                 memset(sender_string, 0, sizeof(sender_string));
