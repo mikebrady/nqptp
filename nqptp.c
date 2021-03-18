@@ -17,6 +17,8 @@
  * Commercial licensing is also available.
  */
 
+ #include "nqptp-shm-structures.h"
+
 #include <arpa/inet.h>
 #include <stdio.h>  //printf
 #include <stdlib.h> //exit(0);
@@ -84,7 +86,7 @@ enum messageType {
 
 #define MAX_TIMING_SAMPLES 480
 struct timing_samples {
-  uint64_t local, remote;
+  uint64_t local, remote, local_to_remote_offset;
 } timing_samples;
 
 struct ptpSource {
@@ -104,7 +106,7 @@ struct ptpSource {
 #define BUFLEN 4096 // Max length of buffer
 
 #define MAX_OPEN_SOCKETS 32 // up to 32 sockets open on ports 319 and 320
-#define MAX_SHARED_CLOCKS 8
+
 
 struct socket_info {
   int number;
@@ -116,27 +118,7 @@ struct socket_info sockets[MAX_OPEN_SOCKETS];
 unsigned int sockets_open =
     0; // also doubles as where to put next one, as sockets are never closed.
 
-struct __attribute__((__packed__)) clock_source {
-    char ip[INET6_ADDRSTRLEN]; // where it's coming from
-    int flags;                 // not used yet
-    int valid;                 // this entry is valid
-    uint64_t network_time;     // the network time at the local time
-    uint64_t local_time;       // the time when the network time is valid
-  };
-
-struct __attribute__((__packed__)) shm_basic_structure {
-    pthread_mutex_t shm_mutex; // for safely accessing the structure
-    int total_number_of_clocks;
-    int version;
-    int flags;
-  };
-
-  struct __attribute__((__packed__)) shm_structure {
-    struct shm_basic_structure base;
-    struct clock_source clocks[MAX_SHARED_CLOCKS];
-  };
-
-  struct shm_structure *shared_memory = 0;
+struct shm_structure *shared_memory = 0;
 
 
 // struct sockaddr_in6 is bigger than struct sockaddr.
@@ -377,8 +359,8 @@ int main(void) {
 
   // zero it
   memset(shared_memory, 0, sizeof(struct shm_structure));
-  shared_memory->base.total_number_of_clocks = MAX_SHARED_CLOCKS;
-  shared_memory->base.version = 1;
+  shared_memory->size_of_clock_array = MAX_SHARED_CLOCKS;
+  shared_memory->version = NQPTP_SHM_STRUCTURES_VERSION;
 
   /*create mutex attr */
   err = pthread_mutexattr_init(&shared);
@@ -387,7 +369,7 @@ int main(void) {
   }
   pthread_mutexattr_setpshared(&shared, 1);
   /*create a mutex */
-  err = pthread_mutex_init((pthread_mutex_t *)&shared_memory->base.shm_mutex, &shared);
+  err = pthread_mutex_init((pthread_mutex_t *)&shared_memory->shm_mutex, &shared);
   if (err != 0) {
     fprintf(stderr, "mutex initialization failed - %s", strerror(errno));
   }
@@ -572,6 +554,7 @@ int main(void) {
       int retval = select(smax + 1, &readSockSet, NULL, NULL, &timeout);
 
       if (retval > 0) {
+      	uint64_t reception_time = get_time_now(); // use this if other methods fail
         unsigned t;
         for (t = 0; t < sockets_open; t++) {
           if (FD_ISSET(sockets[t].number, &readSockSet)) {
@@ -619,7 +602,6 @@ int main(void) {
             if (recv_len == -1) {
               die("recvfrom()");
             } else if (recv_len >= (ssize_t)sizeof(struct ptp_common_message_header)) {
-              uint64_t reception_time = 0;
 
               // fprintf(stderr, "Received %d bytes control message on reception.\n",
               // msg.msg_controllen);
@@ -647,6 +629,8 @@ int main(void) {
                   reception_time = ts->tv_sec;
                   reception_time = reception_time * 1000000000;
                   reception_time = reception_time + ts->tv_nsec;
+                } else {
+									fprintf(stderr, "Can't establish a reception time -- falling back on get_time_now() \n");
                 }
               }
 
@@ -733,13 +717,13 @@ int main(void) {
 												// associate and initialise a shared clock record
 												int i = next_free_clock_source_entry++;
 												the_clock->shared_clock_number = i;
-												int rc = pthread_mutex_lock(&shared_memory->base.shm_mutex);
+												int rc = pthread_mutex_lock(&shared_memory->shm_mutex);
 												if (rc != 0)
 													fprintf(stderr,"Can't acquire mutex to initialise a clock!\n");
 												memset(&shared_memory->clocks[i],0,sizeof(struct clock_source));
 												strncpy((char *)&shared_memory->clocks[i].ip, the_clock->ip, INET6_ADDRSTRLEN-1);
 												shared_memory->clocks[i].valid = 1;
-												rc = pthread_mutex_unlock(&shared_memory->base.shm_mutex);
+												rc = pthread_mutex_unlock(&shared_memory->shm_mutex);
 												if (rc != 0)
 													fprintf(stderr,"Can't release mutex after initialising a clock!\n");
 											}
@@ -785,11 +769,10 @@ int main(void) {
                       header.msg_iov->iov_base = &m;
                       header.msg_iov->iov_len = sizeof(m);
                       header.msg_iovlen = 1;
+                      uint64_t transmission_time = get_time_now(); // in case nothing better works
                       if ((sendmsg(sockets[t].number, &header, 0)) == -1) {
                         fprintf(stderr, "Error in sendmsg,\t [errno = %d]\n", errno);
                       }
-                      uint64_t transmission_time = 0; // initialised to stop a compiler warning
-
 
                         // Obtain the sent packet timestamp.
                         char data[256];
@@ -817,12 +800,10 @@ int main(void) {
                           tv_ioctl.tv_sec = 0;
                           tv_ioctl.tv_nsec = 0;
                           int error = ioctl(sockets[t].number, SIOCGSTAMPNS, &tv_ioctl);
-                          if (error != 0) {
-                          	transmission_time = get_time_now();
-                          } else {
-                          transmission_time = tv_ioctl.tv_sec;
-                          transmission_time = transmission_time * 1000000000;
-                          transmission_time = transmission_time + tv_ioctl.tv_nsec;
+                          if (error == 0) { // somnetimes, even this doesn't work, so we fall back on the earlier get_time_now();
+														transmission_time = tv_ioctl.tv_sec;
+														transmission_time = transmission_time * 1000000000;
+														transmission_time = transmission_time + tv_ioctl.tv_nsec;
                           }
                         } else {
                           // get the time
@@ -849,8 +830,7 @@ int main(void) {
                               transmission_time = transmission_time * 1000000000;
                               transmission_time = transmission_time + ts->tv_nsec;
                             } else {
-                            	fprintf(stderr, "Can't establish a transmission time!\n");
-                            	transmission_time = get_time_now();
+                            	fprintf(stderr, "Can't establish a transmission time! Falling back on get_time_now().\n");
                             }
                           }
                         }
@@ -916,6 +896,20 @@ int main(void) {
                       receiveTimestamp = receiveTimestamp * 1000000000L;
                       receiveTimestamp = receiveTimestamp + nanoseconds;
                       the_clock->t4 = receiveTimestamp;
+
+                      /*
+                      // reference: Figure 12
+                      (t4 - t1) [always positive, a difference of two distant clock times]
+                      less (t3 -t2) [always positive, a difference of two local clock times]
+                      is equal to t(m->s) + t(s->m), thus twice the propagation time
+                      assuming symmetrical delays
+                      */
+
+                      int64_t distant_time_difference = the_clock->t4 - the_clock->t1;
+                      int64_t local_time_difference = the_clock->t3 - the_clock->t2;
+                      int64_t double_propagation_time = distant_time_difference - distant_time_difference; // better be positive
+                      // fprintf(stderr, "distant_time_difference: %" PRId64 ", local_time_difference: %" PRId64 " , double_propagation_time %" PRId64 ".\n", distant_time_difference, local_time_difference, double_propagation_time);
+
                       the_clock->t5 =
                           reception_time; // t5 - t3 gives us the out-and-back time locally
                                           // -- an instantaneous quality index
@@ -1056,12 +1050,13 @@ int main(void) {
 
                           // here, update the shared clock information
 
-												int rc = pthread_mutex_lock(&shared_memory->base.shm_mutex);
+												int rc = pthread_mutex_lock(&shared_memory->shm_mutex);
 												if (rc != 0)
 													fprintf(stderr,"Can't acquire mutex to update a clock!\n");
 												shared_memory->clocks[the_clock->shared_clock_number].local_time = the_clock->t2;
-												shared_memory->clocks[the_clock->shared_clock_number].network_time = estimated_offset + the_clock->t2;
-												rc = pthread_mutex_unlock(&shared_memory->base.shm_mutex);
+												shared_memory->clocks[the_clock->shared_clock_number].source_time = estimated_offset + the_clock->t2;
+												shared_memory->clocks[the_clock->shared_clock_number].local_to_source_time_offset = estimated_offset;
+												rc = pthread_mutex_unlock(&shared_memory->shm_mutex);
 												if (rc != 0)
 													fprintf(stderr,"Can't release mutex after updating a clock!\n");
 
