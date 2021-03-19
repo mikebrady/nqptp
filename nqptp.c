@@ -941,6 +941,7 @@ int main(void) {
                             the_clock->vacant_samples =
                                 MAX_TIMING_SAMPLES; // invalidate all the previous samples used for
                                                     // averaging, etc.
+                            the_clock->next_sample_goes_here = 0;
                           }
 
                           // now, store the remote and local times in the array
@@ -948,6 +949,8 @@ int main(void) {
                               the_clock->t2;
                           the_clock->samples[the_clock->next_sample_goes_here].remote =
                               the_clock->t1;
+                          uint64_t diff = the_clock->t1 - the_clock->t2;
+                          the_clock->samples[the_clock->next_sample_goes_here].local_to_remote_offset = diff;
                           the_clock->next_sample_goes_here++;
                           if (the_clock->next_sample_goes_here == MAX_TIMING_SAMPLES)
                             the_clock->next_sample_goes_here = 0;
@@ -1026,12 +1029,11 @@ int main(void) {
                           int e;
                           long double offsets = 0;
                           int sample_count = MAX_TIMING_SAMPLES - the_clock->vacant_samples;
-                          for (e = 0; e < MAX_TIMING_SAMPLES - the_clock->vacant_samples; e++) {
-                            offsets = offsets + 1.0 * (the_clock->samples[e].remote -
-                                                       the_clock->samples[e].local);
+                          for (e = 0; e < sample_count; e++) {
+                            offsets = offsets + 1.0 * (the_clock->samples[e].local_to_remote_offset);
                           }
 
-                          offsets = offsets / (MAX_TIMING_SAMPLES - the_clock->vacant_samples);
+                          offsets = offsets / sample_count;
 
                           // uint64_t offset = (uint64_t)offsets;
 
