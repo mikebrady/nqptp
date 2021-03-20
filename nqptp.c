@@ -50,6 +50,21 @@
 
 #include <grp.h>
 
+#ifndef SO_TIMESTAMPING
+# define SO_TIMESTAMPING         37
+# define SCM_TIMESTAMPING        SO_TIMESTAMPING
+#endif
+#ifndef SO_TIMESTAMPNS
+# define SO_TIMESTAMPNS 35
+#endif
+#ifndef SIOCGSTAMPNS
+# define SIOCGSTAMPNS 0x8907
+#endif
+#ifndef SIOCSHWTSTAMP
+# define SIOCSHWTSTAMP 0x89b0
+#endif
+
+
 // References from the IEEE Document ISBN 978-0-7381-5400-8 STD95773.
 // "IEEE Standard for a Precision Clock Synchronization Protocol for Networked Measurement and
 // Control Systems" The IEEE Std 1588-2008 (Revision of IEEE Std 1588-2002)
@@ -830,7 +845,7 @@ int main(void) {
                               transmission_time = transmission_time * 1000000000;
                               transmission_time = transmission_time + ts->tv_nsec;
                             } else {
-                            	fprintf(stderr, "Can't establish a transmission time! Falling back on get_time_now().\n");
+                            	// fprintf(stderr, "Can't establish a transmission time! Falling back on get_time_now().\n");
                             }
                           }
                         }
@@ -872,14 +887,14 @@ int main(void) {
                       the_clock->current_stage = follow_up_seen;
                     } else {
                       if (the_clock->current_stage != waiting_for_sync) {
-
+/*
                         fprintf(
                             stderr,
                             "Follow_Up %u expecting to be in state sync_seen (%u). Stage error -- "
                             "current state is %u, sequence %u. Ignoring it. %s\n",
                             ntohs(msg->header.sequenceId), sync_seen, the_clock->current_stage,
                             the_clock->sequence_number, the_clock->ip);
-
+*/
                       }
                     }
                   } break;
@@ -905,9 +920,9 @@ int main(void) {
                       assuming symmetrical delays
                       */
 
-                      int64_t distant_time_difference = the_clock->t4 - the_clock->t1;
-                      int64_t local_time_difference = the_clock->t3 - the_clock->t2;
-                      int64_t double_propagation_time = distant_time_difference - distant_time_difference; // better be positive
+                      // int64_t distant_time_difference = the_clock->t4 - the_clock->t1;
+                      // int64_t local_time_difference = the_clock->t3 - the_clock->t2;
+                      // int64_t double_propagation_time = distant_time_difference - distant_time_difference; // better be positive
                       // fprintf(stderr, "distant_time_difference: %" PRId64 ", local_time_difference: %" PRId64 " , double_propagation_time %" PRId64 ".\n", distant_time_difference, local_time_difference, double_propagation_time);
 
                       the_clock->t5 =
