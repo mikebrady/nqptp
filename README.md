@@ -1,2 +1,2 @@
-# nqPTP
-Not Quite a PTP Daemon
+# nqptp
+Not Quite a PTP Daemon.
