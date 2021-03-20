@@ -115,6 +115,7 @@ struct ptpSource {
   int next_sample_goes_here; // point to where in the timing samples array the next entries should
                              // go
   int shared_clock_number;   // which entry to use in the shared memory, could be zero!
+  uint64_t sample_number; // should roll over in 2^61 seconds!
   struct ptpSource *next;
 } ptpSource;
 
@@ -438,6 +439,7 @@ int main(void) {
         setsockopt(fd, SOL_SOCKET, SO_TIMESTAMPING, &so_timestamping_flags,
                    sizeof(so_timestamping_flags));
 
+/*
       int val = 0;
       socklen_t len = sizeof(val);
       if (getsockopt(fd, SOL_SOCKET, SO_TIMESTAMPING, &val, &len) < 0)
@@ -445,7 +447,7 @@ int main(void) {
       else
         fprintf(stderr, "SO_TIMESTAMPING requested: %d, obtained: %d\n", so_timestamping_flags,
                 val);
-
+*/
       /*
             if (ret == 0)
               setsockopt(fd, SOL_SOCKET, SO_TIMESTAMPNS, &yes, sizeof(yes));
@@ -511,15 +513,14 @@ int main(void) {
       if (ret == 0)
         setsockopt(fd, SOL_SOCKET, SO_TIMESTAMPING, &so_timestamping_flags,
                    sizeof(so_timestamping_flags));
-
-      int val;
+/*      int val;
       socklen_t len = sizeof(val);
       if (getsockopt(fd, SOL_SOCKET, SO_TIMESTAMPING, &val, &len) < 0)
         fprintf(stderr, "%s: %s\n", "getsockopt SO_TIMESTAMPING", strerror(errno));
       else
         fprintf(stderr, "SO_TIMESTAMPING requested: %d, obtained: %d\n", so_timestamping_flags,
                 val);
-
+*/
       /*
             if (ret == 0)
               setsockopt(fd, SOL_SOCKET, SO_TIMESTAMPNS, &yes, sizeof(yes));
@@ -947,6 +948,16 @@ int main(void) {
                           int64_t change_in_offset =
                               instantaneous_offset - the_clock->previous_offset;
 
+                          // now, decide whether to keep the sample for averaging, etc.
+                          the_clock->sample_number++;
+                          if (the_clock->sample_number == 16) { // discard the approx first two seconds!
+                          	// remove previous samples before this number
+                            the_clock->vacant_samples =
+                              MAX_TIMING_SAMPLES; // invalidate all the previous samples used for
+                                                    // averaging, etc.
+                            the_clock->next_sample_goes_here = 0;
+                          }
+
                           int64_t discontinuity_threshold = 250000000; // nanoseconds
                           if ((change_in_offset > discontinuity_threshold) ||
                               (change_in_offset < (-discontinuity_threshold))) {
@@ -972,12 +983,15 @@ int main(void) {
                           if (the_clock->vacant_samples > 0)
                             the_clock->vacant_samples--;
 
+
+													uint64_t estimated_offset = instantaneous_offset;
+
                           // fprintf(stderr, "Offset: %" PRIx64 ", delay %f.\n", offset,
                           // delay*0.000000001);
 
                           // clang-format off
-/*
 
+/*
                         // here, let's try to use the t1 - remote time and t2 - local time
                         // records to estimate the relationship between the local clock (x) and
                         // remote clock(y) estimate a figure for drift between the local
@@ -1039,23 +1053,72 @@ int main(void) {
 */
                           // clang-format on
 
-                          // here, calculate the average offset
+
+
+													// here, calculate the average offset
 
                           int e;
                           long double offsets = 0;
                           int sample_count = MAX_TIMING_SAMPLES - the_clock->vacant_samples;
                           for (e = 0; e < sample_count; e++) {
-                            offsets = offsets + 1.0 * (the_clock->samples[e].local_to_remote_offset);
+                          	uint64_t ho = the_clock->samples[e].local_to_remote_offset;
+														ho = ho >> 12;
+
+                            offsets = offsets + 1.0 * ho;
                           }
 
                           offsets = offsets / sample_count;
 
                           // uint64_t offset = (uint64_t)offsets;
 
-                          uint64_t estimated_offset = (uint64_t)offsets;
+                          estimated_offset = (uint64_t)offsets;
 
+                          estimated_offset = estimated_offset << 12;
+
+													// just to keep the print line happy
                           long double gradient = 1.0;
                           // uint64_t offset = the_clock->t1 - the_clock->t2;
+
+
+// clang-format on
+
+// clang-format off
+/*
+													// here, use a Savitzky–Golay filter to smooth the last 9 offsets
+													// see https://en.wikipedia.org/wiki/Savitzky–Golay_filter
+
+													int window_size = 9;
+													int coefficients[20] = {15,-55,30,135,179,135,30,-55,15};
+													int normalisation = 429;
+
+													if ((MAX_TIMING_SAMPLES - the_clock->vacant_samples) >= window_size) {
+														uint64_t sg[20];
+														int s = the_clock->next_sample_goes_here;
+														int f;
+														for (f = window_size; f > 0; f--) {
+															s--;
+															if (s < 0)
+																s = MAX_TIMING_SAMPLES - 1;
+															sg[f-1] = the_clock->samples[s].local_to_remote_offset;
+
+														}
+
+														long double yj = 0.0;
+														for (f = 0; f < window_size; f++) {
+															uint64_t ho = sg[f];
+															// ho = ho >> 12;
+															//fprintf(stderr, "element: %d is %" PRIx64 ".\n", f, ho);
+															yj = yj + (1.0 * ho) * coefficients[f];
+														}
+														yj = yj / normalisation;
+														estimated_offset = yj;
+														//fprintf(stderr, "estimated_offset: %" PRIx64 ".\n", estimated_offset);
+													}
+													// just to keep the print line happy
+													long double gradient = 1.0;
+													int sample_count = window_size;
+*/
+// clang-format on
 
                           int64_t variation = 0;
 
