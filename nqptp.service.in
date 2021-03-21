@@ -1,5 +1,5 @@
 [Unit]
-Description=NQPTP -- Not Quite PTP
+Description=NQPTP -- "Not Quite PTP"
 Wants=network-online.target
 After=network.target network-online.target
 
