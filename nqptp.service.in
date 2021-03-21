@@ -1,0 +1,12 @@
+[Unit]
+Description=NQPTP -- Not Quite PTP
+Wants=network-online.target
+After=network.target network-online.target
+
+[Service]
+ExecStart=@prefix@/bin/nqptp
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target
