@@ -21,6 +21,7 @@ autom4te.cache
 /missing
 /stamp-h1
 /.deps/
+/*.service
 
 # https://www.gnu.org/software/libtool/
 

@@ -26,5 +26,5 @@ AC_TYPE_UINT32_T
 AC_FUNC_MALLOC
 AC_CHECK_FUNCS([clock_gettime inet_ntoa memset select socket strerror])
 
-AC_CONFIG_FILES([Makefile])
+AC_CONFIG_FILES([Makefile nqptp.service])
 AC_OUTPUT

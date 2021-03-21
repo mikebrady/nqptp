@@ -214,7 +214,7 @@ struct ptpSource *findOrCreateSource(struct ptpSource **list, char *ip, uint64_t
       response->vacant_samples = MAX_TIMING_SAMPLES; // no valid samples yet
       response->shared_clock_number = -1;            // none allocated yet. Hacky
       *insertion_point = response;
-      fprintf(stderr, "Clock record created for \"%s\".\n", ip);
+      // fprintf(stderr, "Clock record created for \"%s\".\n", ip);
     }
   }
   return response;
@@ -247,9 +247,9 @@ void deleteObseleteClockRecords(struct ptpSource **list, uint64_t time_now) {
 void print_buffer(char *buf, size_t buf_len) {
   uint64_t time_now = get_time_now();
   if (time_then == 0) {
-    printf("          ");
+    fprintf(stderr, "          ");
   } else {
-    printf("%f  ", (time_now - time_then) * 0.000000001);
+    fprintf(stderr, "%f  ", (time_now - time_then) * 0.000000001);
   }
   time_then = time_now;
   // printf("Received %u bytes in a packet from %s:%d\n", buf_len, inet_ntoa(si_other.sin_addr),
@@ -277,22 +277,22 @@ void print_buffer(char *buf, size_t buf_len) {
   switch (buf[0]) {
 
   case 0x10:
-    printf("SYNC: \"%s\".\n", obf);
+    fprintf(stderr, "SYNC: \"%s\".\n", obf);
     break;
   case 0x18:
-    printf("FLUP: \"%s\".\n", obf);
+    fprintf(stderr, "FLUP: \"%s\".\n", obf);
     break;
   case 0x19:
-    printf("DRSP: \"%s\".\n", obf);
+    fprintf(stderr, "DRSP: \"%s\".\n", obf);
     break;
   case 0x1B:
-    printf("ANNC: \"%s\".\n", obf);
+    fprintf(stderr, "ANNC: \"%s\".\n", obf);
     break;
   case 0x1C:
-    printf("SGNL: \"%s\".\n", obf);
+    fprintf(stderr, "SGNL: \"%s\".\n", obf);
     break;
   default:
-    printf("      \"%s\".\n", obf);
+    fprintf(stderr, "      \"%s\".\n", obf);
     break;
   }
 }
@@ -373,7 +373,7 @@ int main(void) {
   mode_t oldumask = umask(0);
   struct group *grp = getgrnam("nqptp");
   if (grp == NULL) {
-    fprintf(stderr, "Group %s not found, will try root (0) instead.\n", "nqptp");
+    fprintf(stderr, "The group \"%s\" not found, will try \"root\" group instead.\n", "nqptp");
   }
   shm_fd = shm_open("/nqptp", O_RDWR | O_CREAT, 0666);
   if (shm_fd == -1) {
@@ -488,8 +488,9 @@ int main(void) {
       // report its availability. do not complain.
 
       if (ret) {
-        fprintf(stderr, "unable to listen on %s port %d. The error is: \"%s\".\n",
-                p->ai_family == AF_INET6 ? "IPv6" : "IPv4", 319, strerror(errno));
+        fprintf(stderr, "Stopped NQPTP. Unable to listen on %s port %d. The error is: \"%s\". Is a separate PTP daemon running?\n",
+                p->ai_family == AF_INET6 ? "IPv6" : "IPv4", 320, strerror(errno));
+        exit(1);
       } else {
         // fprintf(stderr, "listen on %s port %d.\n", p->ai_family == AF_INET6 ? "IPv6" : "IPv4",
         // 319);
@@ -560,8 +561,9 @@ int main(void) {
       // report its availability. do not complain.
 
       if (ret) {
-        fprintf(stderr, "unable to listen on %s port %d. The error is: \"%s\".\n",
+        fprintf(stderr, "Stopped NQPTP. Unable to listen on %s port %d. The error is: \"%s\". Is a separate PTP daemon running?\n",
                 p->ai_family == AF_INET6 ? "IPv6" : "IPv4", 320, strerror(errno));
+        exit(1);
       } else {
         // fprintf(stderr, "listen on %s port %d.\n", p->ai_family == AF_INET6 ? "IPv6" : "IPv4",
         // 320);
@@ -720,8 +722,8 @@ int main(void) {
                 switch (buf[0] & 0xF) {
                 case Sync: { // if it's a sync
                   struct ptp_sync_message *msg = (struct ptp_sync_message *)buf;
-                  if (msg->header.correctionField != 0)
-                    fprintf(stderr, "correctionField: %" PRIx64 ".\n", msg->header.correctionField);
+                  //if (msg->header.correctionField != 0)
+                    // fprintf(stderr, "correctionField: %" PRIx64 ".\n", msg->header.correctionField);
                   // fprintf(stderr, "SYNC %u.\n", ntohs(msg->header.sequenceId));
                   int discard_sync = 0;
 
@@ -1014,9 +1016,10 @@ int main(void) {
                         int64_t discontinuity_threshold = 250000000; // nanoseconds
                         if ((change_in_offset > discontinuity_threshold) ||
                             (change_in_offset < (-discontinuity_threshold))) {
-                          fprintf(stderr,
-                                  "large discontinuity of %+f seconds detected, sequence %u\n",
-                                  change_in_offset * 0.000000001, the_clock->sequence_number);
+
+                          //fprintf(stderr,
+                          //        "large discontinuity of %+f seconds detected, sequence %u\n",
+                          //        change_in_offset * 0.000000001, the_clock->sequence_number);
                           the_clock->vacant_samples =
                               MAX_TIMING_SAMPLES; // invalidate all the previous samples used for
                                                   // averaging, etc.
@@ -1168,10 +1171,10 @@ int main(void) {
 */
                         // clang-format on
 
-                        int64_t variation = 0;
+                        // int64_t variation = 0;
 
                         if (the_clock->previous_estimated_offset != 0) {
-                          variation = estimated_offset - the_clock->previous_estimated_offset;
+                         // variation = estimated_offset - the_clock->previous_estimated_offset;
                         } else {
                           estimated_offset = instantaneous_offset;
                         }
@@ -1192,7 +1195,7 @@ int main(void) {
                           fprintf(stderr, "Can't release mutex after updating a clock!\n");
 
                         // clang-format off
-
+/*
                             fprintf(stderr,"id: %20" PRIu64 ", time: 0x%" PRIx64
                                     ", offset: %" PRIx64
                                     ", variation: %+f, turnaround: %f, ip: %s, sequence: %u samples: %d.\n",
@@ -1201,7 +1204,7 @@ int main(void) {
                                     variation * 0.000000001,
                                     (the_clock->t5 - the_clock->t2) * 0.000000001,
                                     the_clock->ip, the_clock->sequence_number, sample_count);
-
+*/
                         // clang-format on
 
                         the_clock->previous_estimated_offset = estimated_offset;
