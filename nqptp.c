@@ -767,6 +767,7 @@ int main(void) {
                       memset(&shared_memory->clocks[i], 0, sizeof(struct clock_source));
                       strncpy((char *)&shared_memory->clocks[i].ip, the_clock->ip,
                               INET6_ADDRSTRLEN - 1);
+                      shared_memory->clocks[i].clock_id = the_clock->clock_id;
                       shared_memory->clocks[i].valid = 1;
                       rc = pthread_mutex_unlock(&shared_memory->shm_mutex);
                       if (rc != 0)
@@ -783,6 +784,13 @@ int main(void) {
                     m.header.sourcePortID = htons(1);
                     m.header.controlOtherMessage = 5;
                     m.header.sequenceId = htons(the_clock->sequence_number);
+
+
+                    // here we generate the local clock ID
+                    // by getting the first valid MAC address
+
+                  	char local_clock_id[8];
+                  	int len = 0;
                     struct ifaddrs *ifaddr = NULL;
                     struct ifaddrs *ifa = NULL;
 
@@ -794,13 +802,26 @@ int main(void) {
                         if ((ifa->ifa_addr) && (ifa->ifa_addr->sa_family == AF_PACKET)) {
                           struct sockaddr_ll *s = (struct sockaddr_ll *)ifa->ifa_addr;
                           if ((strcmp(ifa->ifa_name, "lo") != 0) && (found == 0)) {
-                            memcpy(&m.header.clockIdentity, &s->sll_addr, s->sll_halen);
+                          	len = s->sll_halen;
+                            memcpy(local_clock_id, &s->sll_addr, len);
                             found = 1;
                           }
                         }
                       }
                       freeifaddrs(ifaddr);
                     }
+                  	// if the length of the MAC address is 6 we need to doctor it a little
+                  	// See Section 7.5.2.2.2 IEEE EUI-64 clockIdentity values, NOTE 2
+
+                    if (len == 6) {// i.e. an EUI-48 MAC Address
+											local_clock_id[7] = local_clock_id[5];
+											local_clock_id[6] = local_clock_id[4];
+											local_clock_id[5] = local_clock_id[3];
+											local_clock_id[3] = 0xFF;
+											local_clock_id[4] = 0xFE;
+                    }
+										// finally, copy this into the record
+                    memcpy(&m.header.clockIdentity,local_clock_id,8);
 
                     struct msghdr header;
                     struct iovec io;
