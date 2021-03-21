@@ -1125,7 +1125,7 @@ int main(void) {
                         estimated_offset = estimated_offset << 12;
 
                         // just to keep the print line happy
-                        long double gradient = 1.0;
+                        // long double gradient = 1.0;
                         // uint64_t offset = the_clock->t1 - the_clock->t2;
 
                         // clang-format on
@@ -1193,13 +1193,14 @@ int main(void) {
 
                         // clang-format off
 
-                            fprintf(stderr,
-                                    "estimated offset: %" PRIx64
-                                    ", variation: %+f, turnaround: %f delta (ppm): %+Lf ip: %s, sequence: %u samples: %d.\n",
+                            fprintf(stderr,"id: %20" PRIu64 ", time: 0x%" PRIx64
+                                    ", offset: %" PRIx64
+                                    ", variation: %+f, turnaround: %f, ip: %s, sequence: %u samples: %d.\n",
+                                    the_clock->clock_id, the_clock->t2 + estimated_offset,
                                     estimated_offset,
                                     variation * 0.000000001,
                                     (the_clock->t5 - the_clock->t2) * 0.000000001,
-                                    (gradient - 1.0) * 1000000, the_clock->ip, the_clock->sequence_number, sample_count);
+                                    the_clock->ip, the_clock->sequence_number, sample_count);
 
                         // clang-format on
 
