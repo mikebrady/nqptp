@@ -51,6 +51,8 @@
 
 #include <grp.h>
 
+#include <signal.h>
+
 #ifndef SO_TIMESTAMPING
 #define SO_TIMESTAMPING 37
 #define SCM_TIMESTAMPING SO_TIMESTAMPING
@@ -129,11 +131,9 @@ struct socket_info {
 };
 
 struct socket_info sockets[MAX_OPEN_SOCKETS];
-
 unsigned int sockets_open =
     0; // also doubles as where to put next one, as sockets are never closed.
-
-struct shm_structure *shared_memory = 0;
+struct shm_structure *shared_memory = NULL;
 
 // struct sockaddr_in6 is bigger than struct sockaddr.
 #ifdef AF_INET6
@@ -173,10 +173,6 @@ uint64_t get_time_now() {
   struct timespec tn;
   clock_gettime(CLOCK_REALTIME, &tn); // this should be optionally CLOCK_MONOTONIC etc.
   return timespec_to_ns(&tn);
-}
-
-void goodbye(void) {
-	debug(1,"goodbye.");
 }
 
 struct ptpSource *findOrCreateSource(struct ptpSource **list, char *ip, uint64_t clock_id) {
@@ -290,13 +286,49 @@ void debug_print_buffer(int level, char *buf, size_t buf_len) {
   }
 }
 
+void goodbye(void) {
+  // close any open sockets
+  unsigned int i;
+  for (i = 0; i < sockets_open; i++)
+    close(sockets[i].number);
+  if (shared_memory != NULL) {
+    // mmap cleanup
+    if (munmap(shared_memory, sizeof(struct shm_structure)) != 0)
+      debug(1, "error unmapping shared memory");
+    // shm_open cleanup
+    if (shm_unlink(STORAGE_ID) == -1)
+      debug(1, "error unlinking shared memory \"%s\"", STORAGE_ID);
+  }
+  debug(1,"goodbye");
+}
+
+void intHandler(__attribute__ ((unused)) int k) {
+	debug(1,"exit on SIGINT");
+  exit(EXIT_SUCCESS);
+}
+
+void termHandler(__attribute__ ((unused)) int k) {
+	debug(1,"exit on SIGTERM");
+  exit(EXIT_SUCCESS);
+}
+
 int main(void) {
   // level 0 is no messages, level 3 is most messages -- see debug.h
-  debug_init(3, 0, 1, 1);
+  debug_init(0, 0, 1, 1);
+  debug(1, "startup");
   atexit(goodbye);
 
+  // control-c (SIGINT) cleanly
+  struct sigaction act;
+  act.sa_handler = intHandler;
+  sigaction(SIGINT, &act, NULL);
+
+  // terminate (SIGTERM)
+  struct sigaction act2;
+  act2.sa_handler = termHandler;
+  sigaction(SIGTERM, &act2, NULL);
+
   ssize_t recv_len;
-  debug(1, "startup");
   struct ptpSource *clocks = NULL; // a one-way linked list
 
   char buf[BUFLEN];
@@ -439,7 +471,8 @@ int main(void) {
       // report its availability. do not complain.
 
       if (ret) {
-        die("unable to listen on %s port %d. The error is: \"%s\". Daemon must run as root. Or is a "
+        die("unable to listen on %s port %d. The error is: \"%s\". Daemon must run as root. Or is "
+            "a "
             "separate PTP daemon running?",
             p->ai_family == AF_INET6 ? "IPv6" : "IPv4", 320, strerror(errno));
       } else {
@@ -510,7 +543,8 @@ int main(void) {
       // report its availability. do not complain.
 
       if (ret) {
-        die("unable to listen on %s port %d. The error is: \"%s\". Daemon must run as root. Or is a "
+        die("unable to listen on %s port %d. The error is: \"%s\". Daemon must run as root. Or is "
+            "a "
             "separate PTP daemon running?",
             p->ai_family == AF_INET6 ? "IPv6" : "IPv4", 320, strerror(errno));
         exit(1);
@@ -524,7 +558,6 @@ int main(void) {
 
   freeaddrinfo(info);
 
-
   // open a shared memory interface.
   int shm_fd = -1;
 
@@ -533,24 +566,24 @@ int main(void) {
   if (grp == NULL) {
     inform("the group \"nqptp\" was not found, will try \"root\" group instead.");
   }
-  shm_fd = shm_open("/nqptp", O_RDWR | O_CREAT, 0660);
+  shm_fd = shm_open(STORAGE_ID, O_RDWR | O_CREAT, 0660);
   if (shm_fd == -1) {
-    die("cannot open shared memory \"/nqptp\".");
+    die("cannot open shared memory \"%s\".",STORAGE_ID);
   }
   (void)umask(oldumask);
 
   if (fchown(shm_fd, -1, grp != NULL ? grp->gr_gid : 0) < 0) {
-    warn("failed to set ownership of shared memory \"/nqptp\" to group \"nqptp\".");
+    warn("failed to set ownership of shared memory \"%s\" to group \"nqptp\".", STORAGE_ID);
   }
 
   if (ftruncate(shm_fd, sizeof(struct shm_structure)) == -1) {
-    die("failed to set size of shared memory \"/nqptp\".");
+    die("failed to set size of shared memory \"%s\".", STORAGE_ID);
   }
   shared_memory =
       (struct shm_structure *)mmap(NULL, sizeof(struct shm_structure), PROT_READ | PROT_WRITE,
                                    MAP_LOCKED | MAP_SHARED, shm_fd, 0);
   if (shared_memory == (struct shm_structure *)-1) {
-    die("failed to mmap shared memory \"/nqptp\".");
+    die("failed to mmap shared memory \"%s\".", STORAGE_ID);
   }
 
   // zero it
@@ -569,11 +602,6 @@ int main(void) {
   if (err != 0) {
     die("mutex initialization failed - %s.", strerror(errno));
   }
-
-
-
-
-
 
   if (sockets_open > 0) {
 
