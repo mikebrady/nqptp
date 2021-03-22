@@ -17,11 +17,12 @@
  * Commercial licensing is also available.
  */
 
+#include "debug.h"
 #include "nqptp-shm-structures.h"
 
 #include <arpa/inet.h>
 #include <stdio.h>  //printf
-#include <stdlib.h> //exit(0);
+#include <stdlib.h> //malloc;
 #include <string.h> //memset
 #include <sys/socket.h>
 #include <unistd.h> // close
@@ -147,11 +148,6 @@ struct sockaddr_in si_me_319, si_me_320, si_other;
 
 uint64_t time_then = 0;
 
-void die(char *s) {
-  perror(s);
-  exit(1);
-}
-
 uint32_t nctohl(const uint8_t *p) { // read 4 characters from *p and do ntohl on them
   // this is to avoid possible aliasing violations
   uint32_t holder;
@@ -179,12 +175,16 @@ uint64_t get_time_now() {
   return timespec_to_ns(&tn);
 }
 
+void goodbye(void) {
+	debug(1,"goodbye.");
+}
+
 struct ptpSource *findOrCreateSource(struct ptpSource **list, char *ip, uint64_t clock_id) {
   struct ptpSource *response;
   struct ptpSource **insertion_point = list; // in case the list is empty
   struct ptpSource *crawler = *list;
   if (crawler == NULL) {
-    // fprintf(stderr, "No clocks recorded\n");
+    debug(3, "No clocks recorded");
     insertion_point = list;
   } else {
     while ((crawler->next != NULL) &&
@@ -214,7 +214,7 @@ struct ptpSource *findOrCreateSource(struct ptpSource **list, char *ip, uint64_t
       response->vacant_samples = MAX_TIMING_SAMPLES; // no valid samples yet
       response->shared_clock_number = -1;            // none allocated yet. Hacky
       *insertion_point = response;
-      // fprintf(stderr, "Clock record created for \"%s\".\n", ip);
+      debug(3, "Clock record created for \"%s\".", ip);
     }
   }
   return response;
@@ -232,11 +232,11 @@ void deleteObseleteClockRecords(struct ptpSource **list, uint64_t time_now) {
 
         int rc = pthread_mutex_lock(&shared_memory->shm_mutex);
         if (rc != 0)
-          fprintf(stderr, "Can't acquire mutex to delete a clock!\n");
+          debug(1, "Can't acquire mutex to delete a clock!");
         memset(&shared_memory->clocks[p->shared_clock_number], 0, sizeof(struct clock_source));
         rc = pthread_mutex_unlock(&shared_memory->shm_mutex);
         if (rc != 0)
-          fprintf(stderr, "Can't release mutex after deleting a clock!\n");
+          debug(1, "Can't release mutex after deleting a clock!");
       }
       temp = &p->next;
       free(p);
@@ -244,14 +244,7 @@ void deleteObseleteClockRecords(struct ptpSource **list, uint64_t time_now) {
   }
 }
 
-void print_buffer(char *buf, size_t buf_len) {
-  uint64_t time_now = get_time_now();
-  if (time_then == 0) {
-    fprintf(stderr, "          ");
-  } else {
-    fprintf(stderr, "%f  ", (time_now - time_then) * 0.000000001);
-  }
-  time_then = time_now;
+void debug_print_buffer(int level, char *buf, size_t buf_len) {
   // printf("Received %u bytes in a packet from %s:%d\n", buf_len, inet_ntoa(si_other.sin_addr),
   // ntohs(si_other.sin_port));
   char obf[BUFLEN * 2 + BUFLEN / 4 + 1 + 1];
@@ -277,29 +270,33 @@ void print_buffer(char *buf, size_t buf_len) {
   switch (buf[0]) {
 
   case 0x10:
-    fprintf(stderr, "SYNC: \"%s\".\n", obf);
+    debug(level, "SYNC: \"%s\".", obf);
     break;
   case 0x18:
-    fprintf(stderr, "FLUP: \"%s\".\n", obf);
+    debug(level, "FLUP: \"%s\".", obf);
     break;
   case 0x19:
-    fprintf(stderr, "DRSP: \"%s\".\n", obf);
+    debug(level, "DRSP: \"%s\".", obf);
     break;
   case 0x1B:
-    fprintf(stderr, "ANNC: \"%s\".\n", obf);
+    debug(level, "ANNC: \"%s\".", obf);
     break;
   case 0x1C:
-    fprintf(stderr, "SGNL: \"%s\".\n", obf);
+    debug(level, "SGNL: \"%s\".", obf);
     break;
   default:
-    fprintf(stderr, "      \"%s\".\n", obf);
+    debug(level, "      \"%s\".", obf);
     break;
   }
 }
 
 int main(void) {
-  ssize_t recv_len;
+  // level 0 is no messages, level 3 is most messages -- see debug.h
+  debug_init(3, 0, 1, 1);
+  atexit(goodbye);
 
+  ssize_t recv_len;
+  debug(1, "startup");
   struct ptpSource *clocks = NULL; // a one-way linked list
 
   char buf[BUFLEN];
@@ -367,51 +364,6 @@ int main(void) {
   pthread_mutexattr_t shared;
   int err;
 
-  // open a shared memory interface.
-  int shm_fd = -1;
-
-  mode_t oldumask = umask(0);
-  struct group *grp = getgrnam("nqptp");
-  if (grp == NULL) {
-    fprintf(stderr, "The group \"%s\" not found, will try \"root\" group instead.\n", "nqptp");
-  }
-  shm_fd = shm_open("/nqptp", O_RDWR | O_CREAT, 0666);
-  if (shm_fd == -1) {
-    fprintf(stderr, "Cannot shm_open.\n");
-  }
-  (void)umask(oldumask);
-
-  if (fchown(shm_fd, -1, grp != NULL ? grp->gr_gid : 0) < 0) {
-    fprintf(stderr, "Failed to set ownership.\n");
-  }
-
-  if (ftruncate(shm_fd, sizeof(struct shm_structure)) == -1) {
-    fprintf(stderr, "Failed to set shm size.\n");
-  }
-  shared_memory =
-      (struct shm_structure *)mmap(NULL, sizeof(struct shm_structure), PROT_READ | PROT_WRITE,
-                                   MAP_LOCKED | MAP_SHARED, shm_fd, 0);
-  if (shared_memory == (struct shm_structure *)-1) {
-    fprintf(stderr, "Failed to mmap.\n");
-  }
-
-  // zero it
-  memset(shared_memory, 0, sizeof(struct shm_structure));
-  shared_memory->size_of_clock_array = MAX_SHARED_CLOCKS;
-  shared_memory->version = NQPTP_SHM_STRUCTURES_VERSION;
-
-  /*create mutex attr */
-  err = pthread_mutexattr_init(&shared);
-  if (err != 0) {
-    fprintf(stderr, "mutex attr initialization failed - %s", strerror(errno));
-  }
-  pthread_mutexattr_setpshared(&shared, 1);
-  /*create a mutex */
-  err = pthread_mutex_init((pthread_mutex_t *)&shared_memory->shm_mutex, &shared);
-  if (err != 0) {
-    fprintf(stderr, "mutex initialization failed - %s", strerror(errno));
-  }
-
   struct ptp_delay_req_message m;
 
   int so_timestamping_flags = SOF_TIMESTAMPING_TX_HARDWARE | SOF_TIMESTAMPING_TX_SOFTWARE |
@@ -434,8 +386,7 @@ int main(void) {
 
   ret = getaddrinfo(NULL, "319", &hints, &info);
   if (ret) {
-    fprintf(stderr, "getifaddrs: %s\n", gai_strerror(ret));
-    die("getaddrinfo");
+    die("getifaddrs: %s", gai_strerror(ret));
   }
 
   for (p = info; p; p = p->ai_next) {
@@ -488,12 +439,11 @@ int main(void) {
       // report its availability. do not complain.
 
       if (ret) {
-        fprintf(stderr, "Stopped NQPTP. Unable to listen on %s port %d. The error is: \"%s\". Is a separate PTP daemon running?\n",
-                p->ai_family == AF_INET6 ? "IPv6" : "IPv4", 320, strerror(errno));
-        exit(1);
+        die("unable to listen on %s port %d. The error is: \"%s\". Daemon must run as root. Or is a "
+            "separate PTP daemon running?",
+            p->ai_family == AF_INET6 ? "IPv6" : "IPv4", 320, strerror(errno));
       } else {
-        // fprintf(stderr, "listen on %s port %d.\n", p->ai_family == AF_INET6 ? "IPv6" : "IPv4",
-        // 319);
+        debug(3, "listen on %s port %d.", p->ai_family == AF_INET6 ? "IPv6" : "IPv4", 319);
         sockets[sockets_open].number = fd;
         sockets[sockets_open++].port = 319;
       }
@@ -510,8 +460,7 @@ int main(void) {
 
   ret = getaddrinfo(NULL, "320", &hints, &info);
   if (ret) {
-    fprintf(stderr, "getifaddrs: %s\n", gai_strerror(ret));
-    die("getaddrinfo");
+    die("getifaddrs: %s", gai_strerror(ret));
   }
 
   for (p = info; p; p = p->ai_next) {
@@ -561,12 +510,12 @@ int main(void) {
       // report its availability. do not complain.
 
       if (ret) {
-        fprintf(stderr, "Stopped NQPTP. Unable to listen on %s port %d. The error is: \"%s\". Is a separate PTP daemon running?\n",
-                p->ai_family == AF_INET6 ? "IPv6" : "IPv4", 320, strerror(errno));
+        die("unable to listen on %s port %d. The error is: \"%s\". Daemon must run as root. Or is a "
+            "separate PTP daemon running?",
+            p->ai_family == AF_INET6 ? "IPv6" : "IPv4", 320, strerror(errno));
         exit(1);
       } else {
-        // fprintf(stderr, "listen on %s port %d.\n", p->ai_family == AF_INET6 ? "IPv6" : "IPv4",
-        // 320);
+        debug(3, "listen on %s port %d.", p->ai_family == AF_INET6 ? "IPv6" : "IPv4", 320);
         sockets[sockets_open].number = fd;
         sockets[sockets_open++].port = 320;
       }
@@ -574,6 +523,57 @@ int main(void) {
   }
 
   freeaddrinfo(info);
+
+
+  // open a shared memory interface.
+  int shm_fd = -1;
+
+  mode_t oldumask = umask(0);
+  struct group *grp = getgrnam("nqptp");
+  if (grp == NULL) {
+    inform("the group \"nqptp\" was not found, will try \"root\" group instead.");
+  }
+  shm_fd = shm_open("/nqptp", O_RDWR | O_CREAT, 0660);
+  if (shm_fd == -1) {
+    die("cannot open shared memory \"/nqptp\".");
+  }
+  (void)umask(oldumask);
+
+  if (fchown(shm_fd, -1, grp != NULL ? grp->gr_gid : 0) < 0) {
+    warn("failed to set ownership of shared memory \"/nqptp\" to group \"nqptp\".");
+  }
+
+  if (ftruncate(shm_fd, sizeof(struct shm_structure)) == -1) {
+    die("failed to set size of shared memory \"/nqptp\".");
+  }
+  shared_memory =
+      (struct shm_structure *)mmap(NULL, sizeof(struct shm_structure), PROT_READ | PROT_WRITE,
+                                   MAP_LOCKED | MAP_SHARED, shm_fd, 0);
+  if (shared_memory == (struct shm_structure *)-1) {
+    die("failed to mmap shared memory \"/nqptp\".");
+  }
+
+  // zero it
+  memset(shared_memory, 0, sizeof(struct shm_structure));
+  shared_memory->size_of_clock_array = MAX_SHARED_CLOCKS;
+  shared_memory->version = NQPTP_SHM_STRUCTURES_VERSION;
+
+  /*create mutex attr */
+  err = pthread_mutexattr_init(&shared);
+  if (err != 0) {
+    die("mutex attribute initialization failed - %s.", strerror(errno));
+  }
+  pthread_mutexattr_setpshared(&shared, 1);
+  /*create a mutex */
+  err = pthread_mutex_init((pthread_mutex_t *)&shared_memory->shm_mutex, &shared);
+  if (err != 0) {
+    die("mutex initialization failed - %s.", strerror(errno));
+  }
+
+
+
+
+
 
   if (sockets_open > 0) {
 
@@ -628,23 +628,11 @@ int main(void) {
 
             recv_len = recvmsg(sockets[t].number, &msg, 0);
 
-            // clang-format off
-/*
-            SOCKADDR from_sock_addr;
-            socklen_t from_sock_addr_length = sizeof(SOCKADDR);
-            memset(&from_sock_addr, 0, sizeof(SOCKADDR));
-
-            recv_len = recvfrom(sockets[t].number, buf, BUFLEN, 0,
-                                (struct sockaddr *)&from_sock_addr, &from_sock_addr_length);
-*/
-            // clang-format on
-
             if (recv_len == -1) {
-              die("recvfrom()");
+              debug(1, "recvfrom() error");
             } else if (recv_len >= (ssize_t)sizeof(struct ptp_common_message_header)) {
 
-              // fprintf(stderr, "Received %d bytes control message on reception.\n",
-              // msg.msg_controllen);
+              debug(3, "Received %d bytes control message on reception.", msg.msg_controllen);
 
               // get the time
               int level, type;
@@ -670,8 +658,7 @@ int main(void) {
                   reception_time = reception_time * 1000000000;
                   reception_time = reception_time + ts->tv_nsec;
                 } else {
-                  fprintf(stderr,
-                          "Can't establish a reception time -- falling back on get_time_now() \n");
+                  debug(3, "Can't establish a reception time -- falling back on get_time_now().");
                 }
               }
 
@@ -703,13 +690,6 @@ int main(void) {
                 char sender_string[256];
                 memset(sender_string, 0, sizeof(sender_string));
                 inet_ntop(connection_ip_family, sender_addr, sender_string, sizeof(sender_string));
-
-                // fprintf(stderr, "connection from %s:%u on port %u\n", sender_string,
-                // sender_port,
-                //        sockets[t].port);
-
-                // print_buffer(buf, recv_len);
-
                 // now, find or create a record for this ip / clock_id combination
                 struct ptp_common_message_header *mt = (struct ptp_common_message_header *)buf;
                 uint64_t packet_clock_id = nctohl(&mt->clockIdentity[0]);
@@ -722,9 +702,9 @@ int main(void) {
                 switch (buf[0] & 0xF) {
                 case Sync: { // if it's a sync
                   struct ptp_sync_message *msg = (struct ptp_sync_message *)buf;
-                  //if (msg->header.correctionField != 0)
-                    // fprintf(stderr, "correctionField: %" PRIx64 ".\n", msg->header.correctionField);
-                  // fprintf(stderr, "SYNC %u.\n", ntohs(msg->header.sequenceId));
+                  if (msg->header.correctionField != 0)
+                    debug(3, "correctionField: %" PRIx64 ".", msg->header.correctionField);
+                  // debug(3, "SYNC %u.", ntohs(msg->header.sequenceId));
                   int discard_sync = 0;
 
                   if ((the_clock->current_stage != nothing_seen) &&
@@ -741,17 +721,13 @@ int main(void) {
                     if ((sequence_number_difference > 0) && (sequence_number_difference < 8))
                       discard_sync = 1;
 
-                    // clang-format off
-/*
-                      fprintf(stderr,
-                              "Sync %u expecting to be in state nothing_seen (%u) or waiting_for_sync "
-                              "(%u). Stage error -- "
-                              "current state is %u, sequence %u.%s %s\n",
-                              ntohs(msg->header.sequenceId), nothing_seen, waiting_for_sync, the_clock->current_stage, the_clock->sequence_number,
-                              discard_sync ? " Discarded because it is older." : "",
-                              the_clock->ip);
-*/
-                    // clang-format on
+                    debug(3,
+                          "Sync %u expecting to be in state nothing_seen (%u) or waiting_for_sync "
+                          "(%u). Stage error -- "
+                          "current state is %u, sequence %u.%s %s",
+                          ntohs(msg->header.sequenceId), nothing_seen, waiting_for_sync,
+                          the_clock->current_stage, the_clock->sequence_number,
+                          discard_sync ? " Discarded because it is older." : "", the_clock->ip);
                   }
                   if (discard_sync == 0) {
 
@@ -759,13 +735,13 @@ int main(void) {
                     // hacky.
                     if (the_clock->shared_clock_number == -1) {
                       if (next_free_clock_source_entry == MAX_SHARED_CLOCKS)
-                        fprintf(stderr, "No more shared clocks!\n");
+                        die("No more shared clocks!");
                       // associate and initialise a shared clock record
                       int i = next_free_clock_source_entry++;
                       the_clock->shared_clock_number = i;
                       int rc = pthread_mutex_lock(&shared_memory->shm_mutex);
                       if (rc != 0)
-                        fprintf(stderr, "Can't acquire mutex to initialise a clock!\n");
+                        die("Can't acquire mutex to initialise a clock!");
                       memset(&shared_memory->clocks[i], 0, sizeof(struct clock_source));
                       strncpy((char *)&shared_memory->clocks[i].ip, the_clock->ip,
                               INET6_ADDRSTRLEN - 1);
@@ -773,7 +749,7 @@ int main(void) {
                       shared_memory->clocks[i].valid = 1;
                       rc = pthread_mutex_unlock(&shared_memory->shm_mutex);
                       if (rc != 0)
-                        fprintf(stderr, "Can't release mutex after initialising a clock!\n");
+                        die("Can't release mutex after initialising a clock!");
                     }
 
                     the_clock->sequence_number = ntohs(msg->header.sequenceId);
@@ -787,24 +763,23 @@ int main(void) {
                     m.header.controlOtherMessage = 5;
                     m.header.sequenceId = htons(the_clock->sequence_number);
 
-
                     // here we generate the local clock ID
                     // by getting the first valid MAC address
 
-                  	char local_clock_id[8];
-                  	int len = 0;
+                    char local_clock_id[8];
+                    int len = 0;
                     struct ifaddrs *ifaddr = NULL;
                     struct ifaddrs *ifa = NULL;
 
                     if ((status = getifaddrs(&ifaddr) == -1)) {
-                      fprintf(stderr, "getifaddrs: %s\n", gai_strerror(status));
+                      die("getifaddrs: %s", gai_strerror(status));
                     } else {
                       int found = 0;
                       for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
                         if ((ifa->ifa_addr) && (ifa->ifa_addr->sa_family == AF_PACKET)) {
                           struct sockaddr_ll *s = (struct sockaddr_ll *)ifa->ifa_addr;
                           if ((strcmp(ifa->ifa_name, "lo") != 0) && (found == 0)) {
-                          	len = s->sll_halen;
+                            len = s->sll_halen;
                             memcpy(local_clock_id, &s->sll_addr, len);
                             found = 1;
                           }
@@ -812,18 +787,18 @@ int main(void) {
                       }
                       freeifaddrs(ifaddr);
                     }
-                  	// if the length of the MAC address is 6 we need to doctor it a little
-                  	// See Section 7.5.2.2.2 IEEE EUI-64 clockIdentity values, NOTE 2
+                    // if the length of the MAC address is 6 we need to doctor it a little
+                    // See Section 7.5.2.2.2 IEEE EUI-64 clockIdentity values, NOTE 2
 
-                    if (len == 6) {// i.e. an EUI-48 MAC Address
-											local_clock_id[7] = local_clock_id[5];
-											local_clock_id[6] = local_clock_id[4];
-											local_clock_id[5] = local_clock_id[3];
-											local_clock_id[3] = 0xFF;
-											local_clock_id[4] = 0xFE;
+                    if (len == 6) { // i.e. an EUI-48 MAC Address
+                      local_clock_id[7] = local_clock_id[5];
+                      local_clock_id[6] = local_clock_id[4];
+                      local_clock_id[5] = local_clock_id[3];
+                      local_clock_id[3] = 0xFF;
+                      local_clock_id[4] = 0xFE;
                     }
-										// finally, copy this into the record
-                    memcpy(&m.header.clockIdentity,local_clock_id,8);
+                    // finally, copy this into the record
+                    memcpy(&m.header.clockIdentity, local_clock_id, 8);
 
                     struct msghdr header;
                     struct iovec io;
@@ -837,7 +812,7 @@ int main(void) {
                     header.msg_iovlen = 1;
                     uint64_t transmission_time = get_time_now(); // in case nothing better works
                     if ((sendmsg(sockets[t].number, &header, 0)) == -1) {
-                      fprintf(stderr, "Error in sendmsg,\t [errno = %d]\n", errno);
+                      debug(1, "Error in sendmsg [errno = %d]", errno);
                     }
 
                     // Obtain the sent packet timestamp.
@@ -897,8 +872,8 @@ int main(void) {
                           transmission_time = transmission_time * 1000000000;
                           transmission_time = transmission_time + ts->tv_nsec;
                         } else {
-                          // fprintf(stderr, "Can't establish a transmission time! Falling back on
-                          // get_time_now().\n");
+                          debug(3, "Can't establish a transmission time! Falling back on "
+                                   "get_time_now().");
                         }
                       }
                     }
@@ -939,14 +914,12 @@ int main(void) {
                     the_clock->current_stage = follow_up_seen;
                   } else {
                     if (the_clock->current_stage != waiting_for_sync) {
-                      /*
-                                              fprintf(
-                                                  stderr,
-                                                  "Follow_Up %u expecting to be in state sync_seen
-                         (%u). Stage error -- " "current state is %u, sequence %u. Ignoring it.
-                         %s\n", ntohs(msg->header.sequenceId), sync_seen, the_clock->current_stage,
-                                                  the_clock->sequence_number, the_clock->ip);
-                      */
+
+                      debug(3,
+                            "Follow_Up %u expecting to be in state sync_seen (%u). Stage error -- "
+                            "current state is %u, sequence %u. Ignoring it. %s",
+                            ntohs(msg->header.sequenceId), sync_seen, the_clock->current_stage,
+                            the_clock->sequence_number, the_clock->ip);
                     }
                   }
                 } break;
@@ -971,14 +944,17 @@ int main(void) {
                     is equal to t(m->s) + t(s->m), thus twice the propagation time
                     assuming symmetrical delays
                     */
-
-                    // int64_t distant_time_difference = the_clock->t4 - the_clock->t1;
-                    // int64_t local_time_difference = the_clock->t3 - the_clock->t2;
-                    // int64_t double_propagation_time = distant_time_difference -
-                    // distant_time_difference; // better be positive fprintf(stderr,
-                    // "distant_time_difference: %" PRId64 ", local_time_difference: %" PRId64 " ,
-                    // double_propagation_time %" PRId64 ".\n", distant_time_difference,
-                    // local_time_difference, double_propagation_time);
+                    // some devices return the same value for t4 and t1. Go figure.
+                    int64_t distant_time_difference = the_clock->t4 - the_clock->t1;
+                    int64_t local_time_difference = the_clock->t3 - the_clock->t2;
+                    int64_t double_propagation_time =
+                        distant_time_difference - distant_time_difference; // better be positive
+                    if (distant_time_difference != 0)
+                      debug(3,
+                            "distant_time_difference: %" PRId64 ", local_time_difference: %" PRId64
+                            " , double_propagation_time %" PRId64 ".",
+                            distant_time_difference, local_time_difference,
+                            double_propagation_time);
 
                     the_clock->t5 =
                         reception_time; // t5 - t3 gives us the out-and-back time locally
@@ -1017,9 +993,8 @@ int main(void) {
                         if ((change_in_offset > discontinuity_threshold) ||
                             (change_in_offset < (-discontinuity_threshold))) {
 
-                          //fprintf(stderr,
-                          //        "large discontinuity of %+f seconds detected, sequence %u\n",
-                          //        change_in_offset * 0.000000001, the_clock->sequence_number);
+                          debug(3, "large discontinuity of %+f seconds detected, sequence %u.",
+                                change_in_offset * 0.000000001, the_clock->sequence_number);
                           the_clock->vacant_samples =
                               MAX_TIMING_SAMPLES; // invalidate all the previous samples used for
                                                   // averaging, etc.
@@ -1039,9 +1014,6 @@ int main(void) {
                           the_clock->vacant_samples--;
 
                         uint64_t estimated_offset = instantaneous_offset;
-
-                        // fprintf(stderr, "Offset: %" PRIx64 ", delay %f.\n", offset,
-                        // delay*0.000000001);
 
                         // clang-format off
 
@@ -1171,10 +1143,10 @@ int main(void) {
 */
                         // clang-format on
 
-                        // int64_t variation = 0;
+                        int64_t variation = 0;
 
                         if (the_clock->previous_estimated_offset != 0) {
-                         // variation = estimated_offset - the_clock->previous_estimated_offset;
+                          variation = estimated_offset - the_clock->previous_estimated_offset;
                         } else {
                           estimated_offset = instantaneous_offset;
                         }
@@ -1183,7 +1155,7 @@ int main(void) {
 
                         int rc = pthread_mutex_lock(&shared_memory->shm_mutex);
                         if (rc != 0)
-                          fprintf(stderr, "Can't acquire mutex to update a clock!\n");
+                          warn("Can't acquire mutex to update a clock!");
                         shared_memory->clocks[the_clock->shared_clock_number].local_time =
                             the_clock->t2;
                         shared_memory->clocks[the_clock->shared_clock_number].source_time =
@@ -1192,28 +1164,25 @@ int main(void) {
                             .local_to_source_time_offset = estimated_offset;
                         rc = pthread_mutex_unlock(&shared_memory->shm_mutex);
                         if (rc != 0)
-                          fprintf(stderr, "Can't release mutex after updating a clock!\n");
+                          warn("Can't release mutex after updating a clock!");
 
                         // clang-format off
-/*
-                            fprintf(stderr,"id: %20" PRIu64 ", time: 0x%" PRIx64
+
+                            debug(2,"id: %20" PRIu64 ", time: 0x%" PRIx64
                                     ", offset: %" PRIx64
-                                    ", variation: %+f, turnaround: %f, ip: %s, sequence: %u samples: %d.\n",
+                                    ", variation: %+f, turnaround: %f, ip: %s, sequence: %u samples: %d.",
                                     the_clock->clock_id, the_clock->t2 + estimated_offset,
                                     estimated_offset,
                                     variation * 0.000000001,
                                     (the_clock->t5 - the_clock->t2) * 0.000000001,
                                     the_clock->ip, the_clock->sequence_number, sample_count);
-*/
-                        // clang-format on
 
                         the_clock->previous_estimated_offset = estimated_offset;
                         the_clock->previous_offset = instantaneous_offset;
                       } else {
-                        // fprintf(stderr,
-                        //        "t4 - t1 (sync and delay response) time %f is too long.
-                        //        Discarding. %s\n", (the_clock->t4 - the_clock->t1)*0.000000001,
-                        //        the_clock->ip);
+                         debug(3,
+                                "t4 - t1 (sync and delay response) time %f is too long. Discarding. %s", (the_clock->t4 - the_clock->t1)*0.000000001,
+                                the_clock->ip);
                       }
                     } else {
                       // fprintf(stderr, "t5 - t2 time %f (total transaction time) is too long.
@@ -1223,14 +1192,12 @@ int main(void) {
                     the_clock->current_stage = nothing_seen;
                   } else {
                     if (the_clock->current_stage != waiting_for_sync) {
-                      /*
-                                              fprintf(stderr,
-                                                      "Delay_Resp %u expecting to be in state
-                         follow_up_seen (%u). Stage " "error -- " "current state is %u, sequence %u.
-                         Ignoring it. %s\n", ntohs(msg->header.sequenceId), follow_up_seen,
+
+                                              debug(3,
+                                                      "Delay_Resp %u expecting to be in state follow_up_seen (%u). Stage " "error -- " "current state is %u, sequence %u. Ignoring it. %s", ntohs(msg->header.sequenceId), follow_up_seen,
                                                       the_clock->current_stage,
                          the_clock->sequence_number, the_clock->ip);
-                      */
+
                     }
                   }
                 } break;

@@ -1,5 +1,5 @@
 bin_PROGRAMS = nqptp
-nqptp_SOURCES = nqptp.c
+nqptp_SOURCES = nqptp.c debug.c
 
 AM_CFLAGS = -fno-common -Wno-multichar -Wall -Wextra -Wno-clobbered -Wno-psabi -pthread
 
