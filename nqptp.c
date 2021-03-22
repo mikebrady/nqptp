@@ -67,6 +67,8 @@
 #define SIOCSHWTSTAMP 0x89b0
 #endif
 
+#define DEBUG_LEVEL 0
+
 // References from the IEEE Document ISBN 978-0-7381-5400-8 STD95773.
 // "IEEE Standard for a Precision Clock Synchronization Protocol for Networked Measurement and
 // Control Systems" The IEEE Std 1588-2008 (Revision of IEEE Std 1588-2002)
@@ -328,7 +330,7 @@ void termHandler(__attribute__((unused)) int k) {
 
 int main(void) {
   // level 0 is no messages, level 3 is most messages -- see debug.h
-  debug_init(1, 0, 1, 1);
+  debug_init(DEBUG_LEVEL, 0, 1, 1);
   debug(1, "startup");
   atexit(goodbye);
 
