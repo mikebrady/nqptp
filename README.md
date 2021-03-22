@@ -38,5 +38,5 @@ The `make install` creates the `nqptp` group and installs a `systemd` startup sc
 Since `nqptp` uses ports 319 and 320, it can not coexist with any other user of those ports, such as full PTP service daemons.
 
 # Known Issues
-1 Old clock records are not garbage-collected, so once it has seen 32 different clock/ip combinations, it fills up. This will be fixed real soon now.
-2 At present, `nqptp` does not take advantage of hardware timestamping. It will soon.
+1. Old clock records are not garbage-collected, so once it has seen 32 different clock/ip combinations, it fills up. This will be fixed real soon now.
+2. At present, `nqptp` does not take advantage of hardware timestamping. It will soon.
