@@ -23,7 +23,7 @@ struct shm_structure {
   struct clock_source clocks[MAX_SHARED_CLOCKS];
 };
 ```
-A unix group called `nqptp` is created by the `make install` step. Members of this group have write access to the shared memory interface and can therefore use the `shm_mutex` for safe access to the information. Be aware that while your program has the lock, it can halt `nqptp`, so keep any activity while you have the lock very short and very simple, e.g. copying it to local memory. 
+A unix group called `nqptp` is created by the `make install` step. Members of this group have write access to the shared memory interface and can therefore use the `shm_mutex` for safe access to the information.
 
 # Installation
 ```
@@ -35,10 +35,12 @@ $ make
 The `make install` creates the `nqptp` group and installs a `systemd` startup script. You should enable it and start it in the normal way. Note that `nqptp` must run in `root` mode to be able to access ports 319 and 320.
 
 # Notes
+Be aware that while your program has the lock, it can halt `nqptp`, so keep any activity while you have the lock very short and very simple, e.g. copying it to local memory. 
+
 The `source_time` and `local_to_source_time_offset` values are averaged over up to 480 samples. Since samples should be make at the rate of eight per second, this means that the values are averaged over the previous minute.
 
 Since `nqptp` uses ports 319 and 320, it can not coexist with any other user of those ports, such as full PTP service daemons.
 
 # Known Issues
-1. Old clock records are not garbage-collected, so once it has seen 32 different clock/ip combinations, `nqptp` fills up.
+1. Unused clock records are not garbage-collected, so once it has seen 32 different clock/ip combinations, `nqptp` fills up.
 2. At present, `nqptp` does not take advantage of hardware timestamping.
