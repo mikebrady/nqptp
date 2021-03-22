@@ -1,3 +1,22 @@
+/*
+ * This file is part of the nqptp distribution (https://github.com/mikebrady/nqptp).
+ * Copyright (c) 2021 Mike Brady.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, version 2.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ *
+ * Commercial licensing is also available.
+ */
+
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
@@ -19,7 +38,6 @@ uint64_t ns_time_at_last_debug_message;
 // always lock use this when accessing the ns_time_at_last_debug_message
 static pthread_mutex_t debug_timing_lock = PTHREAD_MUTEX_INITIALIZER;
 
-
 uint64_t get_absolute_time_in_ns() {
   uint64_t time_now_ns;
   struct timespec tn;
@@ -40,7 +58,6 @@ void debug_init(int level, int show_elapsed_time, int show_relative_time, int sh
 	debugger_show_relative_time = show_relative_time;
 	debugger_show_file_and_line = show_file_and_line;
 }
-
 
 char *generate_preliminary_string(char *buffer, size_t buffer_length, double tss, double tsl,
                                   const char *filename, const int linenumber, const char *prefix) {

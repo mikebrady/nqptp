@@ -1,5 +1,5 @@
 /*
- * This file is part of the nqPTP distribution (https://github.com/mikebrady/nqPTP).
+ * This file is part of the nqptp distribution (https://github.com/mikebrady/nqptp).
  * Copyright (c) 2021 Mike Brady.
  *
  * This program is free software: you can redistribute it and/or modify
@@ -210,7 +210,10 @@ struct ptpSource *findOrCreateSource(struct ptpSource **list, char *ip, uint64_t
       response->vacant_samples = MAX_TIMING_SAMPLES; // no valid samples yet
       response->shared_clock_number = -1;            // none allocated yet. Hacky
       *insertion_point = response;
-      debug(3, "Clock record created for \"%s\".", ip);
+      debug(1,
+            "Clock record created for Clock ID: '%" PRIu64 "', aka '%" PRIu64 "', aka '%" PRIx64
+            "' at %s.",
+            clock_id, clock_id, clock_id, ip);
     }
   }
   return response;
@@ -299,22 +302,22 @@ void goodbye(void) {
     if (shm_unlink(STORAGE_ID) == -1)
       debug(1, "error unlinking shared memory \"%s\"", STORAGE_ID);
   }
-  debug(1,"goodbye");
+  debug(1, "goodbye");
 }
 
-void intHandler(__attribute__ ((unused)) int k) {
-	debug(1,"exit on SIGINT");
+void intHandler(__attribute__((unused)) int k) {
+  debug(1, "exit on SIGINT");
   exit(EXIT_SUCCESS);
 }
 
-void termHandler(__attribute__ ((unused)) int k) {
-	debug(1,"exit on SIGTERM");
+void termHandler(__attribute__((unused)) int k) {
+  debug(1, "exit on SIGTERM");
   exit(EXIT_SUCCESS);
 }
 
 int main(void) {
   // level 0 is no messages, level 3 is most messages -- see debug.h
-  debug_init(0, 0, 1, 1);
+  debug_init(1, 0, 1, 1);
   debug(1, "startup");
   atexit(goodbye);
 
@@ -476,7 +479,8 @@ int main(void) {
             "separate PTP daemon running?",
             p->ai_family == AF_INET6 ? "IPv6" : "IPv4", 320, strerror(errno));
       } else {
-        debug(3, "listen on %s port %d.", p->ai_family == AF_INET6 ? "IPv6" : "IPv4", 319);
+
+        debug(1, "listening on %s port %d.", p->ai_family == AF_INET6 ? "IPv6" : "IPv4", 319);
         sockets[sockets_open].number = fd;
         sockets[sockets_open++].port = 319;
       }
@@ -549,7 +553,7 @@ int main(void) {
             p->ai_family == AF_INET6 ? "IPv6" : "IPv4", 320, strerror(errno));
         exit(1);
       } else {
-        debug(3, "listen on %s port %d.", p->ai_family == AF_INET6 ? "IPv6" : "IPv4", 320);
+        debug(1, "listening on %s port %d.", p->ai_family == AF_INET6 ? "IPv6" : "IPv4", 320);
         sockets[sockets_open].number = fd;
         sockets[sockets_open++].port = 320;
       }
@@ -568,7 +572,7 @@ int main(void) {
   }
   shm_fd = shm_open(STORAGE_ID, O_RDWR | O_CREAT, 0660);
   if (shm_fd == -1) {
-    die("cannot open shared memory \"%s\".",STORAGE_ID);
+    die("cannot open shared memory \"%s\".", STORAGE_ID);
   }
   (void)umask(oldumask);
 

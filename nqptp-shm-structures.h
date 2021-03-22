@@ -1,5 +1,5 @@
 /*
- * This file is part of the nqPTP distribution (https://github.com/mikebrady/nqPTP).
+ * This file is part of the nqptp distribution (https://github.com/mikebrady/nqptp).
  * Copyright (c) 2021 Mike Brady.
  *
  * This program is free software: you can redistribute it and/or modify
