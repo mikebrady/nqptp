@@ -583,7 +583,7 @@ int main(void) {
   if (grp == NULL) {
     inform("the group \"nqptp\" was not found, will try \"root\" group instead.");
   }
-  shm_fd = shm_open(STORAGE_ID, O_RDWR | O_CREAT, 0660);
+  shm_fd = shm_open(STORAGE_ID, O_RDWR | O_CREAT, 0666);
   if (shm_fd == -1) {
     die("cannot open shared memory \"%s\".", STORAGE_ID);
   }
