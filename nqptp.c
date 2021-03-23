@@ -236,7 +236,7 @@ void deleteObseleteClockRecords(struct ptpSource **list, uint64_t time_now) {
     debug(2, "checking record for Clock ID %" PRIx64 " at %s. Time difference is %" PRId64 ".",
           p->clock_id, p->ip, time_since_last_use);
 
-    if (time_since_last_use > 3600000000000) {	// drop them if idle for an hour
+    if (time_since_last_use > 5000000000) {	// drop them if idle
       debug(2, "delete record for Clock ID %" PRIx64 " at %s.", p->clock_id, p->ip);
       if (p->shared_clock_number != -1) {
         int rc = pthread_mutex_lock(&shared_memory->shm_mutex);
@@ -635,7 +635,7 @@ int main(void) {
         FD_SET(sockets[s].number, &readSockSet);
       }
 
-      timeout.tv_sec = 10;
+      timeout.tv_sec = 1;
       timeout.tv_usec = 0;
       int retval = select(smax + 1, &readSockSet, NULL, NULL, &timeout);
       uint64_t reception_time = get_time_now(); // use this if other methods fail
@@ -1277,7 +1277,7 @@ int main(void) {
       }
       // here, invalidate records and entries that are out of date
       uint64_t tn = get_time_now();
-      // deleteObseleteClockRecords(&clocks, tn);
+      deleteObseleteClockRecords(&clocks, tn);
     }
   }
 
