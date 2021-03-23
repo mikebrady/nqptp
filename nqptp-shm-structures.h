@@ -33,8 +33,7 @@ struct clock_source {
   char ip[64]; // 64 is nicely aligned and bigger than INET6_ADDRSTRLEN (46)
   uint64_t clock_id;
   uint64_t reserved;
-  uint64_t source_time;                 // the time at the source at
-  uint64_t local_time;                  // the local time when the source time is valid
+  uint64_t local_time;                  // the local time when the offset was calculated
   uint64_t local_to_source_time_offset; // add this to the local time to get source time
   int flags;                            // not used yet
   int valid;                            // this entry is valid
