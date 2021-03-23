@@ -235,7 +235,8 @@ void deleteObseleteClockRecords(struct ptpSource **list, uint64_t time_now) {
     int64_t time_since_last_use = time_now - p->t2; // this is the time of the last sync record
     debug(2, "checking record for Clock ID %" PRIx64 " at %s. Time difference is %" PRId64 ".",
           p->clock_id, p->ip, time_since_last_use);
-    if (time_since_last_use > 15000000000) {
+
+    if (time_since_last_use > 3600000000000) {	// drop them if idle for an hour
       debug(2, "delete record for Clock ID %" PRIx64 " at %s.", p->clock_id, p->ip);
       if (p->shared_clock_number != -1) {
         int rc = pthread_mutex_lock(&shared_memory->shm_mutex);
