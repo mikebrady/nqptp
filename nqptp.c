@@ -1277,7 +1277,7 @@ int main(void) {
       }
       // here, invalidate records and entries that are out of date
       uint64_t tn = get_time_now();
-      deleteObseleteClockRecords(&clocks, tn);
+      // deleteObseleteClockRecords(&clocks, tn);
     }
   }
 
