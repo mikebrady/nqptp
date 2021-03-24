@@ -210,6 +210,9 @@ struct ptpSource *create_source(char *sender_string, uint64_t packet_clock_id) {
 		sources[i].in_use = 1;
 		strncpy((char *)&sources[i].ip, sender_string, sizeof(ptpSource.ip)-1);
 		sources[i].clock_id = packet_clock_id;
+		sources[i].t2 = 0;
+		sources[i].t4 = 0;
+		sources[i].current_stage = nothing_seen;
 		sources[i].shared_clock_number = -1;
 		response = &sources[i];
 		debug(1,"activated source %d with clock_id %" PRIx64 " on ip: %s.", i, sources[i].clock_id, &sources[i].ip);
@@ -230,6 +233,7 @@ void deactivate_old_sources(uint64_t reception_time) {
 					debug(1,"deactivated shared clock %d with clock_id %" PRIx64 " on ip: %s.",sources[i].shared_clock_number, shared_memory->clocks[sources[i].shared_clock_number].clock_id, &shared_memory->clocks[sources[i].shared_clock_number].ip);
 				}
 				sources[i].in_use = 0;
+				sources[i].shared_clock_number = -1;
 				debug(1,"deactivated source %d with clock_id %" PRIx64 " on ip: %s.", i, sources[i].clock_id, &sources[i].ip);
 			}
 		}
@@ -545,8 +549,21 @@ int main(void) {
         ret = bind(fd, p->ai_addr, p->ai_addrlen);
 
       if (ret == 0)
-        setsockopt(fd, SOL_SOCKET, SO_TIMESTAMPING, &so_timestamping_flags,
+        ret = setsockopt(fd, SOL_SOCKET, SO_TIMESTAMPING, &so_timestamping_flags,
                    sizeof(so_timestamping_flags));
+
+/*
+ 			struct timeval tv;
+      tv.tv_sec = 0;
+      tv.tv_usec = 100000;
+      if (setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, (const char *)&tv, sizeof tv) == -1)
+        debug(1, "Error %d setting outgoing timeout.", errno);
+      if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv, sizeof tv) == -1)
+        debug(1, "Error %d setting incoming timeout.", errno);
+*/
+			int flags = fcntl(fd, F_GETFL);
+			fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+
 
       /*
             int val = 0;
@@ -623,6 +640,19 @@ int main(void) {
       if (ret == 0)
         setsockopt(fd, SOL_SOCKET, SO_TIMESTAMPING, &so_timestamping_flags,
                    sizeof(so_timestamping_flags));
+
+			int flags = fcntl(fd, F_GETFL);
+			fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+
+
+/*
+     struct timeval tv;
+      tv.tv_sec = 0;
+      tv.tv_usec = 500000;
+      if (setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, (const char *)&tv, sizeof tv) == -1)
+        debug(1, "Error %d setting send outgoing timeout.", errno);
+*/
+
       /*      int val;
             socklen_t len = sizeof(val);
             if (getsockopt(fd, SOL_SOCKET, SO_TIMESTAMPING, &val, &len) < 0)
@@ -690,11 +720,11 @@ int main(void) {
   if (shared_memory == (struct shm_structure *)-1) {
     die("failed to mmap shared memory \"%s\".", STORAGE_ID);
   }
-  
+
   if ((close(shm_fd) == -1)) {
     warn("error closing \"/nqptp\" after mapping.");
   }
-  
+
   // zero it
   memset(shared_memory, 0, sizeof(struct shm_structure));
   shared_memory->size_of_clock_array = MAX_SHARED_CLOCKS;
@@ -763,10 +793,14 @@ int main(void) {
 
             // int msgsize = recv(udpsocket_fd, &msg_buffer, 4, 0);
 
-            recv_len = recvmsg(sockets[t].number, &msg, 0);
+            recv_len = recvmsg(sockets[t].number, &msg, MSG_DONTWAIT);
 
             if (recv_len == -1) {
-              debug(1, "recvfrom() error");
+            	if (errno == EAGAIN)
+            		// apparently this is a thing that can happen with select();
+            		usleep(4000);
+            	else
+              	debug(1, "recvmsg() error %d", errno);
             } else if (recv_len >= (ssize_t)sizeof(struct ptp_common_message_header)) {
 
               debug(3, "Received %d bytes control message on reception.", msg.msg_controllen);
@@ -954,7 +988,8 @@ int main(void) {
                       msg.msg_namelen = sizeof(from_addr);
                       msg.msg_control = &control;
                       msg.msg_controllen = sizeof(control);
-                      if (recvmsg(sockets[t].number, &msg, MSG_ERRQUEUE) == -1) {
+                      if (recvmsg(sockets[t].number, &msg, MSG_ERRQUEUE | MSG_DONTWAIT) == -1) {
+                      	debug(3,"recvmsg error %d attempting to retrieve the sent packet timestamp.", errno);
                         // can't get the transmission time directly
                         // possibly because it's not implemented
                         struct timespec tv_ioctl;
@@ -1056,6 +1091,8 @@ int main(void) {
                       receiveTimestamp = receiveTimestamp + seconds_low;
                       receiveTimestamp = receiveTimestamp * 1000000000L;
                       receiveTimestamp = receiveTimestamp + nanoseconds;
+                      if (the_clock->t4 == 0)
+                      	debug(1,"%" PRIx64 " at %s has seen a first Delay_Resp",the_clock->clock_id,&the_clock->ip);
                       the_clock->t4 = receiveTimestamp;
 
                       /*
@@ -1306,8 +1343,9 @@ int main(void) {
 														shared_memory->clocks[i].flags = 0;
 														debug(1,
 																	"shared memory clock entry %d created for Clock ID: '%" PRIx64
-																	"' at %s.",
-																	i, the_clock->clock_id, the_clock->ip);
+																	"' at %s. The entry reads: '%" PRIx64
+																	"', %s.",
+																	i, the_clock->clock_id, the_clock->ip, shared_memory->clocks[i].clock_id, &shared_memory->clocks[i].ip);
 
 													}
 
@@ -1365,12 +1403,14 @@ int main(void) {
           }
         }
 
-      } else if (retval < 0) {
-        // check errno/WSAGetLastError(), call perror(), etc ...
+      } else {
+				// debug(1,"retval %d at time %" PRIx64 ".", retval, reception_time);
+				if (retval < 0) {
+					// check errno/WSAGetLastError(), call perror(), etc ...
+				}
       }
       // here, invalidate records and entries that are out of date
       //uint64_t tn = get_time_now();
-      debug(1,"check for obsolete sources at time %" PRIx64 ".", reception_time);
       deactivate_old_sources(reception_time);
     }
   }
