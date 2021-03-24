@@ -54,6 +54,7 @@
 #include <grp.h>
 
 #include <signal.h>
+#include <sys/epoll.h>
 
 #ifndef SO_TIMESTAMPING
 #define SO_TIMESTAMPING 37
@@ -138,7 +139,7 @@ unsigned int sockets_open =
     0; // also doubles as where to put next one, as sockets are never closed.
 struct shm_structure *shared_memory = NULL;
 struct ptpSource *clocks = NULL; // a one-way linked list
-
+int epoll_fd;
 
 // struct sockaddr_in6 is bigger than struct sockaddr.
 #ifdef AF_INET6
@@ -181,75 +182,81 @@ uint64_t get_time_now() {
 }
 
 struct ptpSource *find_source(char *sender_string, uint64_t packet_clock_id) {
-	struct ptpSource *response = NULL;
-	int i = 0;
-	int found = 0;
-	while ((found == 0) && (i < MAX_SHARED_CLOCKS)) {
-		if ((sources[i].in_use != 0) && (sources[i].clock_id == packet_clock_id) && (strcasecmp(sender_string,(const char *)&sources[i].ip) == 0))
-			found = 1;
-		else
-			i++;
-	}
-	if (found != 0)
-		response = &sources[i];
-	return response;
+  struct ptpSource *response = NULL;
+  int i = 0;
+  int found = 0;
+  while ((found == 0) && (i < MAX_SHARED_CLOCKS)) {
+    if ((sources[i].in_use != 0) && (sources[i].clock_id == packet_clock_id) &&
+        (strcasecmp(sender_string, (const char *)&sources[i].ip) == 0))
+      found = 1;
+    else
+      i++;
+  }
+  if (found != 0)
+    response = &sources[i];
+  return response;
 }
 
 struct ptpSource *create_source(char *sender_string, uint64_t packet_clock_id) {
-	struct ptpSource *response = NULL;
-	int i = 0;
-	int found = 0;
-	while ((found == 0) && (i < MAX_SHARED_CLOCKS)) {
-		if (sources[i].in_use == 0)
-			found = 1;
-		else
-			i++;
-	}
-	if (found != 0) {
-		memset(&sources[i],0,sizeof(struct ptpSource));
-		sources[i].in_use = 1;
-		strncpy((char *)&sources[i].ip, sender_string, sizeof(ptpSource.ip)-1);
-		sources[i].clock_id = packet_clock_id;
-		sources[i].t2 = 0;
-		sources[i].t4 = 0;
-		sources[i].current_stage = nothing_seen;
-		sources[i].shared_clock_number = -1;
-		response = &sources[i];
-		debug(1,"activated source %d with clock_id %" PRIx64 " on ip: %s.", i, sources[i].clock_id, &sources[i].ip);
-	} else {
-		die("Clock table full!");
-	}
-	return response;
+  struct ptpSource *response = NULL;
+  int i = 0;
+  int found = 0;
+  while ((found == 0) && (i < MAX_SHARED_CLOCKS)) {
+    if (sources[i].in_use == 0)
+      found = 1;
+    else
+      i++;
+  }
+  if (found != 0) {
+    memset(&sources[i], 0, sizeof(struct ptpSource));
+    sources[i].in_use = 1;
+    strncpy((char *)&sources[i].ip, sender_string, sizeof(ptpSource.ip) - 1);
+    sources[i].clock_id = packet_clock_id;
+    sources[i].t1 = 0;
+    sources[i].t2 = 0;
+    sources[i].t3 = 0;
+    sources[i].t4 = 0;
+    sources[i].current_stage = nothing_seen;
+    sources[i].shared_clock_number = -1;
+    response = &sources[i];
+    debug(1, "activated source %d with clock_id %" PRIx64 " on ip: %s.", i, sources[i].clock_id,
+          &sources[i].ip);
+  } else {
+    die("Clock table full!");
+  }
+  return response;
 }
 
 void deactivate_old_sources(uint64_t reception_time) {
-	int i;
-	for (i = 0; i < MAX_SHARED_CLOCKS; i++) {
-		if (sources[i].in_use != 0) {
-			int64_t time_since_last_sync = reception_time - sources[i].t2;
-			if (time_since_last_sync > 1000000000) {
-				if (sources[i].shared_clock_number != -1) {
-					shared_memory->clocks[sources[i].shared_clock_number].valid = 0;
-					debug(1,"deactivated shared clock %d with clock_id %" PRIx64 " on ip: %s.",sources[i].shared_clock_number, shared_memory->clocks[sources[i].shared_clock_number].clock_id, &shared_memory->clocks[sources[i].shared_clock_number].ip);
-				}
-				sources[i].in_use = 0;
-				sources[i].shared_clock_number = -1;
-				debug(1,"deactivated source %d with clock_id %" PRIx64 " on ip: %s.", i, sources[i].clock_id, &sources[i].ip);
-			}
-		}
-	}
+  debug(3, "deactivate_old_sources");
+  int i;
+  for (i = 0; i < MAX_SHARED_CLOCKS; i++) {
+    if (sources[i].in_use != 0) {
+      int64_t time_since_last_sync = reception_time - sources[i].t2;
+      if (time_since_last_sync > 1000000000) {
+        if (sources[i].shared_clock_number != -1) {
+          shared_memory->clocks[sources[i].shared_clock_number].valid = 0;
+          debug(1, "deactivated shared clock %d with clock_id %" PRIx64 " on ip: %s.",
+                sources[i].shared_clock_number,
+                shared_memory->clocks[sources[i].shared_clock_number].clock_id,
+                &shared_memory->clocks[sources[i].shared_clock_number].ip);
+        }
+        sources[i].in_use = 0;
+        sources[i].shared_clock_number = -1;
+        debug(1, "deactivated source %d with clock_id %" PRIx64 " on ip: %s.", i,
+              sources[i].clock_id, &sources[i].ip);
+      }
+    }
+  }
 }
-
-
-
 
 /*
 void listSourceRecords(struct ptpSource *list) {
-	struct ptpSource *p = list;
-	while (p != NULL) {
-		debug(1,"Clock ID: '%" PRIx64 "' at %s, with shm entry %d.", p->clock_id, p->ip, p->shared_clock_number);
-		p = p->next;
-	}
+        struct ptpSource *p = list;
+        while (p != NULL) {
+                debug(1,"Clock ID: '%" PRIx64 "' at %s, with shm entry %d.", p->clock_id, p->ip,
+p->shared_clock_number); p = p->next;
+        }
 }
 
 
@@ -282,8 +289,8 @@ struct ptpSource *findOrCreateSource(struct ptpSource **list, char *ip, uint64_t
   } else {
     // only create a record for a Sync message
     if (message_type == Sync) {
-    	debug(1,"New before");
-    	listSourceRecords(clocks);
+        debug(1,"New before");
+        listSourceRecords(clocks);
       response = (struct ptpSource *)malloc(sizeof(ptpSource));
       if (response != NULL) {
         memset((void *)response, 0, sizeof(ptpSource));
@@ -293,12 +300,13 @@ struct ptpSource *findOrCreateSource(struct ptpSource **list, char *ip, uint64_t
         response->shared_clock_number = -1;            // none allocated yet. Hacky
         *insertion_point = response;
         debug(1,
-              "New clock record created for Clock ID: '%" PRIu64 "', aka '%" PRIu64 "', aka '%" PRIx64
+              "New clock record created for Clock ID: '%" PRIu64 "', aka '%" PRIu64 "', aka '%"
+PRIx64
               "' at %s.",
               clock_id, clock_id, clock_id, ip);
       }
       debug(1,"New after");
-    	listSourceRecords(clocks);
+        listSourceRecords(clocks);
 
     } else {
       response = NULL;
@@ -316,8 +324,8 @@ void deleteObseleteClockRecords(struct ptpSource **list, uint64_t time_now) {
     struct ptpSource *p = *temp;
     int deleting_something = 0;
     int64_t time_since_last_use = time_now - p->t2; // this is the time of the last sync record
-    debug(1, "checking record for Clock ID %" PRIx64 " at %s. Shared clock is %d Time difference is %" PRId64 ".",
-          p->clock_id, p->ip, p->shared_clock_number, time_since_last_use);
+    debug(1, "checking record for Clock ID %" PRIx64 " at %s. Shared clock is %d Time difference is
+%" PRId64 ".", p->clock_id, p->ip, p->shared_clock_number, time_since_last_use);
 
     if (time_since_last_use > 1000000000) {	// drop them if idle
       debug(1,"Delete Before");
@@ -404,6 +412,9 @@ void goodbye(void) {
     if (shm_unlink(STORAGE_ID) == -1)
       debug(1, "error unlinking shared memory \"%s\"", STORAGE_ID);
   }
+  if (epoll_fd != -1)
+    close(epoll_fd);
+
   debug(1, "goodbye");
 }
 
@@ -418,9 +429,10 @@ void termHandler(__attribute__((unused)) int k) {
 }
 
 int main(void) {
-	clocks = NULL;
-	shared_memory = NULL;
-	// memset(sources,0,sizeof(sources));
+  epoll_fd = -1;
+  clocks = NULL;
+  shared_memory = NULL;
+  // memset(sources,0,sizeof(sources));
   // level 0 is no messages, level 3 is most messages -- see debug.h
   debug_init(DEBUG_LEVEL, 0, 1, 1);
   debug(1, "startup");
@@ -428,13 +440,13 @@ int main(void) {
 
   // control-c (SIGINT) cleanly
   struct sigaction act;
-  memset(&act,0,sizeof(struct sigaction));
+  memset(&act, 0, sizeof(struct sigaction));
   act.sa_handler = intHandler;
   sigaction(SIGINT, &act, NULL);
 
   // terminate (SIGTERM)
   struct sigaction act2;
-  memset(&act2,0,sizeof(struct sigaction));
+  memset(&act2, 0, sizeof(struct sigaction));
   act2.sa_handler = termHandler;
   sigaction(SIGTERM, &act2, NULL);
 
@@ -550,20 +562,19 @@ int main(void) {
 
       if (ret == 0)
         ret = setsockopt(fd, SOL_SOCKET, SO_TIMESTAMPING, &so_timestamping_flags,
-                   sizeof(so_timestamping_flags));
+                         sizeof(so_timestamping_flags));
 
-/*
- 			struct timeval tv;
-      tv.tv_sec = 0;
-      tv.tv_usec = 100000;
-      if (setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, (const char *)&tv, sizeof tv) == -1)
-        debug(1, "Error %d setting outgoing timeout.", errno);
-      if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv, sizeof tv) == -1)
-        debug(1, "Error %d setting incoming timeout.", errno);
-*/
-			int flags = fcntl(fd, F_GETFL);
-			fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-
+      /*
+                              struct timeval tv;
+            tv.tv_sec = 0;
+            tv.tv_usec = 100000;
+            if (setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, (const char *)&tv, sizeof tv) == -1)
+              debug(1, "Error %d setting outgoing timeout.", errno);
+            if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv, sizeof tv) == -1)
+              debug(1, "Error %d setting incoming timeout.", errno);
+      */
+      int flags = fcntl(fd, F_GETFL);
+      fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 
       /*
             int val = 0;
@@ -641,17 +652,16 @@ int main(void) {
         setsockopt(fd, SOL_SOCKET, SO_TIMESTAMPING, &so_timestamping_flags,
                    sizeof(so_timestamping_flags));
 
-			int flags = fcntl(fd, F_GETFL);
-			fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+      int flags = fcntl(fd, F_GETFL);
+      fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 
-
-/*
-     struct timeval tv;
-      tv.tv_sec = 0;
-      tv.tv_usec = 500000;
-      if (setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, (const char *)&tv, sizeof tv) == -1)
-        debug(1, "Error %d setting send outgoing timeout.", errno);
-*/
+      /*
+           struct timeval tv;
+            tv.tv_sec = 0;
+            tv.tv_usec = 500000;
+            if (setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, (const char *)&tv, sizeof tv) == -1)
+              debug(1, "Error %d setting send outgoing timeout.", errno);
+      */
 
       /*      int val;
             socklen_t len = sizeof(val);
@@ -744,296 +754,318 @@ int main(void) {
 
   if (sockets_open > 0) {
 
+#define MAX_EVENTS 128
+    struct epoll_event event;
+    int epoll_fd = epoll_create(32);
+
+    if (epoll_fd == -1)
+      die("Failed to create epoll file descriptor\n");
+
+    unsigned int ep;
+    for (ep = 0; ep < sockets_open; ep++) {
+      // if (sockets[s].number > smax)
+      // smax = sockets[s].number;
+      event.events = EPOLLIN;
+      event.data.fd = sockets[ep].number;
+      if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, sockets[ep].number, &event) != 0)
+        die("failed to add socket %d to epoll", sockets[ep].number);
+      else
+        debug(3, "add socket %d to epoll", sockets[ep].number);
+    }
+
     while (1) {
-      fd_set readSockSet;
-      struct timeval timeout;
-      FD_ZERO(&readSockSet);
-      int smax = -1;
-      unsigned int s;
-      for (s = 0; s < sockets_open; s++) {
-        if (sockets[s].number > smax)
-          smax = sockets[s].number;
-        FD_SET(sockets[s].number, &readSockSet);
-      }
+      /*
+            fd_set readSockSet;
+            struct timeval timeout;
+            FD_ZERO(&readSockSet);
+            int smax = -1;
+            unsigned int s;
+            for (s = 0; s < sockets_open; s++) {
+              if (sockets[s].number > smax)
+                smax = sockets[s].number;
+              FD_SET(sockets[s].number, &readSockSet);
+            }
 
-      timeout.tv_sec = 1;
-      timeout.tv_usec = 0;
-      int retval = select(smax + 1, &readSockSet, NULL, NULL, &timeout);
+            timeout.tv_sec = 1;
+            timeout.tv_usec = 0;
+            int retval = select(smax + 1, &readSockSet, NULL, NULL, &timeout);
+      */
+
+      struct epoll_event events[MAX_EVENTS];
+      int event_count = epoll_wait(epoll_fd, events, MAX_EVENTS, 1000);
       uint64_t reception_time = get_time_now(); // use this if other methods fail
-      if (retval > 0) {
 
-        unsigned t;
-        for (t = 0; t < sockets_open; t++) {
-          if (FD_ISSET(sockets[t].number, &readSockSet)) {
+      int t;
+      for (t = 0; t < event_count; t++) {
+        int socket_number = events[t].data.fd;
+        {
 
-            SOCKADDR from_sock_addr;
-            memset(&from_sock_addr, 0, sizeof(SOCKADDR));
+          SOCKADDR from_sock_addr;
+          memset(&from_sock_addr, 0, sizeof(SOCKADDR));
 
-            struct {
-              struct cmsghdr cm;
-              char control[512];
-            } control;
+          struct {
+            struct cmsghdr cm;
+            char control[512];
+          } control;
 
-            struct msghdr msg;
-            struct iovec iov[1];
-            memset(iov, 0, sizeof(iov));
-            memset(&msg, 0, sizeof(msg));
-            memset(&control, 0, sizeof(control));
+          struct msghdr msg;
+          struct iovec iov[1];
+          memset(iov, 0, sizeof(iov));
+          memset(&msg, 0, sizeof(msg));
+          memset(&control, 0, sizeof(control));
 
-            iov[0].iov_base = buf;
-            iov[0].iov_len = BUFLEN;
+          iov[0].iov_base = buf;
+          iov[0].iov_len = BUFLEN;
 
-            msg.msg_iov = iov;
-            msg.msg_iovlen = 1;
+          msg.msg_iov = iov;
+          msg.msg_iovlen = 1;
 
-            msg.msg_name = &from_sock_addr;
-            msg.msg_namelen = sizeof(from_sock_addr);
-            msg.msg_control = &control;
-            msg.msg_controllen = sizeof(control);
+          msg.msg_name = &from_sock_addr;
+          msg.msg_namelen = sizeof(from_sock_addr);
+          msg.msg_control = &control;
+          msg.msg_controllen = sizeof(control);
 
-            // int msgsize = recv(udpsocket_fd, &msg_buffer, 4, 0);
+          // int msgsize = recv(udpsocket_fd, &msg_buffer, 4, 0);
 
-            recv_len = recvmsg(sockets[t].number, &msg, MSG_DONTWAIT);
+          recv_len = recvmsg(socket_number, &msg, MSG_DONTWAIT);
 
-            if (recv_len == -1) {
-            	if (errno == EAGAIN)
-            		// apparently this is a thing that can happen with select();
-            		usleep(4000);
-            	else
-              	debug(1, "recvmsg() error %d", errno);
-            } else if (recv_len >= (ssize_t)sizeof(struct ptp_common_message_header)) {
-
-              debug(3, "Received %d bytes control message on reception.", msg.msg_controllen);
-
-              // get the time
-              int level, type;
-              struct cmsghdr *cm;
-              struct timespec *ts = NULL;
-              for (cm = CMSG_FIRSTHDR(&msg); cm != NULL; cm = CMSG_NXTHDR(&msg, cm)) {
-                level = cm->cmsg_level;
-                type = cm->cmsg_type;
-                if (SOL_SOCKET == level && SO_TIMESTAMPING == type) {
-                  /*
-                                    struct timespec *stamp = (struct timespec *)CMSG_DATA(cm);
-                                    fprintf(stderr, "SO_TIMESTAMPING Rx: ");
-                                    fprintf(stderr, "SW %ld.%09ld\n", (long)stamp->tv_sec,
-                     (long)stamp->tv_nsec); stamp++;
-                                    // skip deprecated HW transformed
-                                    stamp++;
-                                    fprintf(stderr, "SO_TIMESTAMPING Rx: ");
-                                    fprintf(stderr, "HW raw %ld.%09ld\n", (long)stamp->tv_sec,
-                     (long)stamp->tv_nsec);
-                  */
-                  ts = (struct timespec *)CMSG_DATA(cm);
-                  reception_time = ts->tv_sec;
-                  reception_time = reception_time * 1000000000;
-                  reception_time = reception_time + ts->tv_nsec;
-                } else {
-                  debug(3, "Can't establish a reception time -- falling back on get_time_now().");
-                }
+          if (recv_len == -1) {
+            if (errno == EAGAIN) {
+              usleep(1000); // this can happen, it seems...
+            } else {
+              debug(1, "recvmsg() error %d", errno);
+            }
+          } else if (recv_len >= (ssize_t)sizeof(struct ptp_common_message_header)) {
+            debug(3, "Received %d bytes control message on reception.", msg.msg_controllen);
+            // get the time
+            int level, type;
+            struct cmsghdr *cm;
+            struct timespec *ts = NULL;
+            for (cm = CMSG_FIRSTHDR(&msg); cm != NULL; cm = CMSG_NXTHDR(&msg, cm)) {
+              level = cm->cmsg_level;
+              type = cm->cmsg_type;
+              if (SOL_SOCKET == level && SO_TIMESTAMPING == type) {
+                /*
+                                  struct timespec *stamp = (struct timespec *)CMSG_DATA(cm);
+                                  fprintf(stderr, "SO_TIMESTAMPING Rx: ");
+                                  fprintf(stderr, "SW %ld.%09ld\n", (long)stamp->tv_sec,
+                   (long)stamp->tv_nsec); stamp++;
+                                  // skip deprecated HW transformed
+                                  stamp++;
+                                  fprintf(stderr, "SO_TIMESTAMPING Rx: ");
+                                  fprintf(stderr, "HW raw %ld.%09ld\n", (long)stamp->tv_sec,
+                   (long)stamp->tv_nsec);
+                */
+                ts = (struct timespec *)CMSG_DATA(cm);
+                reception_time = ts->tv_sec;
+                reception_time = reception_time * 1000000000;
+                reception_time = reception_time + ts->tv_nsec;
+              } else {
+                debug(3, "Can't establish a reception time -- falling back on get_time_now().");
               }
+            }
 
-              // check its credentials
-              // the sending and receiving ports must be the same (i.e. 319 -> 319 or 320 -> 320)
+            // check its credentials
+            // the sending and receiving ports must be the same (i.e. 319 -> 319 or 320 -> 320)
 
-              // initialise the connection info
-              void *sender_addr = NULL;
-              uint16_t sender_port = 0;
+            // initialise the connection info
+            void *sender_addr = NULL;
+            uint16_t sender_port = 0;
 
-              sa_family_t connection_ip_family = from_sock_addr.SAFAMILY;
+            sa_family_t connection_ip_family = from_sock_addr.SAFAMILY;
 
 #ifdef AF_INET6
-              if (connection_ip_family == AF_INET6) {
-                struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *)&from_sock_addr;
-                sender_addr = &(sa6->sin6_addr);
-                sender_port = ntohs(sa6->sin6_port);
-              }
+            if (connection_ip_family == AF_INET6) {
+              struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *)&from_sock_addr;
+              sender_addr = &(sa6->sin6_addr);
+              sender_port = ntohs(sa6->sin6_port);
+            }
 #endif
-              if (connection_ip_family == AF_INET) {
-                struct sockaddr_in *sa4 = (struct sockaddr_in *)&from_sock_addr;
-                sender_addr = &(sa4->sin_addr);
-                sender_port = ntohs(sa4->sin_port);
+            if (connection_ip_family == AF_INET) {
+              struct sockaddr_in *sa4 = (struct sockaddr_in *)&from_sock_addr;
+              sender_addr = &(sa4->sin_addr);
+              sender_port = ntohs(sa4->sin_port);
+            }
+
+            //              if ((sender_port == sockets[t].port) && (connection_ip_family ==
+            //              AF_INET)) {
+            if (sender_port == sockets[t].port) {
+              char sender_string[256];
+              memset(sender_string, 0, sizeof(sender_string));
+              inet_ntop(connection_ip_family, sender_addr, sender_string, sizeof(sender_string));
+              // now, find or create a record for this ip / clock_id combination
+              struct ptp_common_message_header *mt = (struct ptp_common_message_header *)buf;
+              uint64_t packet_clock_id = nctohl(&mt->clockIdentity[0]);
+              uint64_t packet_clock_id_low = nctohl(&mt->clockIdentity[4]);
+              packet_clock_id = packet_clock_id << 32;
+              packet_clock_id = packet_clock_id + packet_clock_id_low;
+
+              struct ptpSource *the_clock = find_source(sender_string, packet_clock_id);
+              if ((the_clock == NULL) && ((buf[0] & 0xF) == Sync)) {
+                the_clock = create_source(sender_string, packet_clock_id);
               }
+              if (the_clock != NULL) {
+                switch (buf[0] & 0xF) {
+                case Sync: { // if it's a sync
+                  struct ptp_sync_message *msg = (struct ptp_sync_message *)buf;
+                  if (msg->header.correctionField != 0)
+                    debug(3, "correctionField: %" PRIx64 ".", msg->header.correctionField);
+                  // debug(3, "SYNC %u.", ntohs(msg->header.sequenceId));
+                  int discard_sync = 0;
 
-              //              if ((sender_port == sockets[t].port) && (connection_ip_family ==
-              //              AF_INET)) {
-              if (sender_port == sockets[t].port) {
-                char sender_string[256];
-                memset(sender_string, 0, sizeof(sender_string));
-                inet_ntop(connection_ip_family, sender_addr, sender_string, sizeof(sender_string));
-                // now, find or create a record for this ip / clock_id combination
-                struct ptp_common_message_header *mt = (struct ptp_common_message_header *)buf;
-                uint64_t packet_clock_id = nctohl(&mt->clockIdentity[0]);
-                uint64_t packet_clock_id_low = nctohl(&mt->clockIdentity[4]);
-                packet_clock_id = packet_clock_id << 32;
-                packet_clock_id = packet_clock_id + packet_clock_id_low;
+                  if ((the_clock->current_stage != nothing_seen) &&
+                      (the_clock->current_stage != waiting_for_sync)) {
 
-                struct ptpSource *the_clock = find_source(sender_string, packet_clock_id);
-                if ((the_clock == NULL) && ((buf[0] & 0xF) == Sync)) {
-                	the_clock = create_source(sender_string, packet_clock_id);
-                }
-                if (the_clock != NULL) {
-                  switch (buf[0] & 0xF) {
-                  case Sync: { // if it's a sync
-                    struct ptp_sync_message *msg = (struct ptp_sync_message *)buf;
-                    if (msg->header.correctionField != 0)
-                      debug(3, "correctionField: %" PRIx64 ".", msg->header.correctionField);
-                    // debug(3, "SYNC %u.", ntohs(msg->header.sequenceId));
-                    int discard_sync = 0;
+                    // here, we have an unexpected SYNC. It could be because the
+                    // previous transaction sequence failed for some reason
+                    // But, if that is so, the SYNC will have a newer sequence number
+                    // so, ignore it if it's older.
 
-                    if ((the_clock->current_stage != nothing_seen) &&
-                        (the_clock->current_stage != waiting_for_sync)) {
+                    uint16_t new_sync_sequence_number = ntohs(msg->header.sequenceId);
+                    int16_t sequence_number_difference =
+                        (the_clock->sequence_number - new_sync_sequence_number);
+                    if ((sequence_number_difference > 0) && (sequence_number_difference < 8))
+                      discard_sync = 1;
 
-                      // here, we have an unexpected SYNC. It could be because the
-                      // previous transaction sequence failed for some reason
-                      // But, if that is so, the SYNC will have a newer sequence number
-                      // so, ignore it if it's older.
-
-                      uint16_t new_sync_sequence_number = ntohs(msg->header.sequenceId);
-                      int16_t sequence_number_difference =
-                          (the_clock->sequence_number - new_sync_sequence_number);
-                      if ((sequence_number_difference > 0) && (sequence_number_difference < 8))
-                        discard_sync = 1;
-
-                      debug(
-                          3,
+                    debug(3,
                           "Sync %u expecting to be in state nothing_seen (%u) or waiting_for_sync "
                           "(%u). Stage error -- "
                           "current state is %u, sequence %u.%s %s",
                           ntohs(msg->header.sequenceId), nothing_seen, waiting_for_sync,
                           the_clock->current_stage, the_clock->sequence_number,
                           discard_sync ? " Discarded because it is older." : "", the_clock->ip);
+                  }
+                  if (discard_sync == 0) {
+
+                    the_clock->sequence_number = ntohs(msg->header.sequenceId);
+                    the_clock->t2 = reception_time;
+                    memset(&m, 0, sizeof(m));
+                    m.header.transportSpecificAndMessageID = 0x11;
+                    m.header.reservedAndVersionPTP = 0x02;
+                    m.header.messageLength = htons(44);
+                    m.header.flags = htons(0x608);
+                    m.header.sourcePortID = htons(1);
+                    m.header.controlOtherMessage = 5;
+                    m.header.sequenceId = htons(the_clock->sequence_number);
+
+                    // here we generate the local clock ID
+                    // by getting the first valid MAC address
+
+                    char local_clock_id[8];
+                    int len = 0;
+                    struct ifaddrs *ifaddr = NULL;
+                    struct ifaddrs *ifa = NULL;
+
+                    if ((status = getifaddrs(&ifaddr) == -1)) {
+                      die("getifaddrs: %s", gai_strerror(status));
+                    } else {
+                      int found = 0;
+                      for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
+                        if ((ifa->ifa_addr) && (ifa->ifa_addr->sa_family == AF_PACKET)) {
+                          struct sockaddr_ll *s = (struct sockaddr_ll *)ifa->ifa_addr;
+                          if ((strcmp(ifa->ifa_name, "lo") != 0) && (found == 0)) {
+                            len = s->sll_halen;
+                            memcpy(local_clock_id, &s->sll_addr, len);
+                            found = 1;
+                          }
+                        }
+                      }
+                      freeifaddrs(ifaddr);
                     }
-                    if (discard_sync == 0) {
+                    // if the length of the MAC address is 6 we need to doctor it a little
+                    // See Section 7.5.2.2.2 IEEE EUI-64 clockIdentity values, NOTE 2
 
-                      the_clock->sequence_number = ntohs(msg->header.sequenceId);
-                      the_clock->t2 = reception_time;
-                      memset(&m, 0, sizeof(m));
-                      m.header.transportSpecificAndMessageID = 0x11;
-                      m.header.reservedAndVersionPTP = 0x02;
-                      m.header.messageLength = htons(44);
-                      m.header.flags = htons(0x608);
-                      m.header.sourcePortID = htons(1);
-                      m.header.controlOtherMessage = 5;
-                      m.header.sequenceId = htons(the_clock->sequence_number);
+                    if (len == 6) { // i.e. an EUI-48 MAC Address
+                      local_clock_id[7] = local_clock_id[5];
+                      local_clock_id[6] = local_clock_id[4];
+                      local_clock_id[5] = local_clock_id[3];
+                      local_clock_id[3] = 0xFF;
+                      local_clock_id[4] = 0xFE;
+                    }
+                    // finally, copy this into the record
+                    memcpy(&m.header.clockIdentity, local_clock_id, 8);
 
-                      // here we generate the local clock ID
-                      // by getting the first valid MAC address
+                    struct msghdr header;
+                    struct iovec io;
+                    memset(&header, 0, sizeof(header));
+                    memset(&io, 0, sizeof(io));
+                    header.msg_name = &from_sock_addr;
+                    header.msg_namelen = sizeof(from_sock_addr);
+                    header.msg_iov = &io;
+                    header.msg_iov->iov_base = &m;
+                    header.msg_iov->iov_len = sizeof(m);
+                    header.msg_iovlen = 1;
+                    uint64_t transmission_time = get_time_now(); // in case nothing better works
+                    if ((sendmsg(socket_number, &header, 0)) == -1) {
+                      debug(1, "Error in sendmsg [errno = %d]", errno);
+                    }
 
-                      char local_clock_id[8];
-                      int len = 0;
-                      struct ifaddrs *ifaddr = NULL;
-                      struct ifaddrs *ifa = NULL;
+                    // Obtain the sent packet timestamp.
+                    char data[256];
+                    struct msghdr msg;
+                    struct iovec entry;
+                    struct sockaddr_in from_addr;
+                    struct {
+                      struct cmsghdr cm;
+                      char control[512];
+                    } control;
 
-                      if ((status = getifaddrs(&ifaddr) == -1)) {
-                        die("getifaddrs: %s", gai_strerror(status));
-                      } else {
-                        int found = 0;
-                        for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
-                          if ((ifa->ifa_addr) && (ifa->ifa_addr->sa_family == AF_PACKET)) {
-                            struct sockaddr_ll *s = (struct sockaddr_ll *)ifa->ifa_addr;
-                            if ((strcmp(ifa->ifa_name, "lo") != 0) && (found == 0)) {
-                              len = s->sll_halen;
-                              memcpy(local_clock_id, &s->sll_addr, len);
-                              found = 1;
-                            }
-                          }
-                        }
-                        freeifaddrs(ifaddr);
+                    memset(&msg, 0, sizeof(msg));
+                    msg.msg_iov = &entry;
+                    msg.msg_iovlen = 1;
+                    entry.iov_base = data;
+                    entry.iov_len = sizeof(data);
+                    msg.msg_name = (caddr_t)&from_addr;
+                    msg.msg_namelen = sizeof(from_addr);
+                    msg.msg_control = &control;
+                    msg.msg_controllen = sizeof(control);
+                    if (recvmsg(socket_number, &msg, MSG_ERRQUEUE | MSG_DONTWAIT) == -1) {
+                      debug(3, "recvmsg error %d attempting to retrieve the sent packet timestamp.",
+                            errno);
+                      // can't get the transmission time directly
+                      // possibly because it's not implemented
+                      struct timespec tv_ioctl;
+                      tv_ioctl.tv_sec = 0;
+                      tv_ioctl.tv_nsec = 0;
+                      int error = ioctl(socket_number, SIOCGSTAMPNS, &tv_ioctl);
+                      if (error == 0) { // somnetimes, even this doesn't work, so we fall back on
+                                        // the earlier get_time_now();
+                        transmission_time = tv_ioctl.tv_sec;
+                        transmission_time = transmission_time * 1000000000;
+                        transmission_time = transmission_time + tv_ioctl.tv_nsec;
                       }
-                      // if the length of the MAC address is 6 we need to doctor it a little
-                      // See Section 7.5.2.2.2 IEEE EUI-64 clockIdentity values, NOTE 2
-
-                      if (len == 6) { // i.e. an EUI-48 MAC Address
-                        local_clock_id[7] = local_clock_id[5];
-                        local_clock_id[6] = local_clock_id[4];
-                        local_clock_id[5] = local_clock_id[3];
-                        local_clock_id[3] = 0xFF;
-                        local_clock_id[4] = 0xFE;
-                      }
-                      // finally, copy this into the record
-                      memcpy(&m.header.clockIdentity, local_clock_id, 8);
-
-                      struct msghdr header;
-                      struct iovec io;
-                      memset(&header, 0, sizeof(header));
-                      memset(&io, 0, sizeof(io));
-                      header.msg_name = &from_sock_addr;
-                      header.msg_namelen = sizeof(from_sock_addr);
-                      header.msg_iov = &io;
-                      header.msg_iov->iov_base = &m;
-                      header.msg_iov->iov_len = sizeof(m);
-                      header.msg_iovlen = 1;
-                      uint64_t transmission_time = get_time_now(); // in case nothing better works
-                      if ((sendmsg(sockets[t].number, &header, 0)) == -1) {
-                        debug(1, "Error in sendmsg [errno = %d]", errno);
-                      }
-
-                      // Obtain the sent packet timestamp.
-                      char data[256];
-                      struct msghdr msg;
-                      struct iovec entry;
-                      struct sockaddr_in from_addr;
-                      struct {
-                        struct cmsghdr cm;
-                        char control[512];
-                      } control;
-
-                      memset(&msg, 0, sizeof(msg));
-                      msg.msg_iov = &entry;
-                      msg.msg_iovlen = 1;
-                      entry.iov_base = data;
-                      entry.iov_len = sizeof(data);
-                      msg.msg_name = (caddr_t)&from_addr;
-                      msg.msg_namelen = sizeof(from_addr);
-                      msg.msg_control = &control;
-                      msg.msg_controllen = sizeof(control);
-                      if (recvmsg(sockets[t].number, &msg, MSG_ERRQUEUE | MSG_DONTWAIT) == -1) {
-                      	debug(3,"recvmsg error %d attempting to retrieve the sent packet timestamp.", errno);
-                        // can't get the transmission time directly
-                        // possibly because it's not implemented
-                        struct timespec tv_ioctl;
-                        tv_ioctl.tv_sec = 0;
-                        tv_ioctl.tv_nsec = 0;
-                        int error = ioctl(sockets[t].number, SIOCGSTAMPNS, &tv_ioctl);
-                        if (error == 0) { // somnetimes, even this doesn't work, so we fall back on
-                                          // the earlier get_time_now();
-                          transmission_time = tv_ioctl.tv_sec;
+                    } else {
+                      // get the time
+                      int level, type;
+                      struct cmsghdr *cm;
+                      struct timespec *ts = NULL;
+                      for (cm = CMSG_FIRSTHDR(&msg); cm != NULL; cm = CMSG_NXTHDR(&msg, cm)) {
+                        level = cm->cmsg_level;
+                        type = cm->cmsg_type;
+                        if (SOL_SOCKET == level && SO_TIMESTAMPING == type) {
+                          /*
+                                                      struct timespec *stamp = (struct timespec
+                             *)CMSG_DATA(cm); fprintf(stderr, "SO_TIMESTAMPING Tx: ");
+                                                      fprintf(stderr, "SW %ld.%09ld\n",
+                             (long)stamp->tv_sec, (long)stamp->tv_nsec); stamp++;
+                                                      // skip deprecated HW transformed
+                                                      stamp++;
+                                                      fprintf(stderr, "SO_TIMESTAMPING Tx: ");
+                                                      fprintf(stderr, "HW raw %ld.%09ld\n",
+                             (long)stamp->tv_sec, (long)stamp->tv_nsec);
+                          */
+                          ts = (struct timespec *)CMSG_DATA(cm);
+                          transmission_time = ts->tv_sec;
                           transmission_time = transmission_time * 1000000000;
-                          transmission_time = transmission_time + tv_ioctl.tv_nsec;
-                        }
-                      } else {
-                        // get the time
-                        int level, type;
-                        struct cmsghdr *cm;
-                        struct timespec *ts = NULL;
-                        for (cm = CMSG_FIRSTHDR(&msg); cm != NULL; cm = CMSG_NXTHDR(&msg, cm)) {
-                          level = cm->cmsg_level;
-                          type = cm->cmsg_type;
-                          if (SOL_SOCKET == level && SO_TIMESTAMPING == type) {
-                            /*
-                                                        struct timespec *stamp = (struct timespec
-                               *)CMSG_DATA(cm); fprintf(stderr, "SO_TIMESTAMPING Tx: ");
-                                                        fprintf(stderr, "SW %ld.%09ld\n",
-                               (long)stamp->tv_sec, (long)stamp->tv_nsec); stamp++;
-                                                        // skip deprecated HW transformed
-                                                        stamp++;
-                                                        fprintf(stderr, "SO_TIMESTAMPING Tx: ");
-                                                        fprintf(stderr, "HW raw %ld.%09ld\n",
-                               (long)stamp->tv_sec, (long)stamp->tv_nsec);
-                            */
-                            ts = (struct timespec *)CMSG_DATA(cm);
-                            transmission_time = ts->tv_sec;
-                            transmission_time = transmission_time * 1000000000;
-                            transmission_time = transmission_time + ts->tv_nsec;
-                          } else {
-                            debug(3, "Can't establish a transmission time! Falling back on "
-                                     "get_time_now().");
-                          }
+                          transmission_time = transmission_time + ts->tv_nsec;
+                        } else {
+                          debug(3, "Can't establish a transmission time! Falling back on "
+                                   "get_time_now().");
                         }
                       }
+                    }
 
-                      // clang-format off
+                    // clang-format off
                     /*
                     // fprintf(stderr, "DREQ to %s\n", the_clock->ip);
                     if (sendto(sockets[t].number, &m, sizeof(m), 0,
@@ -1043,140 +1075,143 @@ int main(void) {
                       return 4;
                     }
                     */
-                      // clang-format on
+                    // clang-format on
 
-                      the_clock->t3 = transmission_time;
-                      // int64_t ttd = transmission_time - the_clock->t3;
-                      // fprintf(stderr, "transmission time delta: %f.\n", ttd*0.000000001);
+                    the_clock->t3 = transmission_time;
+                    // int64_t ttd = transmission_time - the_clock->t3;
+                    // fprintf(stderr, "transmission time delta: %f.\n", ttd*0.000000001);
 
-                      the_clock->current_stage = sync_seen;
-                    }
-                  } break;
+                    the_clock->current_stage = sync_seen;
+                  }
+                } break;
 
-                  case Follow_Up: {
-                    struct ptp_follow_up_message *msg = (struct ptp_follow_up_message *)buf;
-                    if ((the_clock->current_stage == sync_seen) &&
-                        (the_clock->sequence_number == ntohs(msg->header.sequenceId))) {
-                      uint16_t seconds_hi = nctohs(&msg->follow_up.preciseOriginTimestamp[0]);
-                      uint32_t seconds_low = nctohl(&msg->follow_up.preciseOriginTimestamp[2]);
-                      uint32_t nanoseconds = nctohl(&msg->follow_up.preciseOriginTimestamp[6]);
-                      uint64_t preciseOriginTimestamp = seconds_hi;
-                      preciseOriginTimestamp = preciseOriginTimestamp << 32;
-                      preciseOriginTimestamp = preciseOriginTimestamp + seconds_low;
-                      preciseOriginTimestamp = preciseOriginTimestamp * 1000000000L;
-                      preciseOriginTimestamp = preciseOriginTimestamp + nanoseconds;
-                      the_clock->t1 = preciseOriginTimestamp;
-                      the_clock->current_stage = follow_up_seen;
-                    } else {
-                      if (the_clock->current_stage != waiting_for_sync) {
+                case Follow_Up: {
+                  struct ptp_follow_up_message *msg = (struct ptp_follow_up_message *)buf;
+                  if ((the_clock->current_stage == sync_seen) &&
+                      (the_clock->sequence_number == ntohs(msg->header.sequenceId))) {
+                    uint16_t seconds_hi = nctohs(&msg->follow_up.preciseOriginTimestamp[0]);
+                    uint32_t seconds_low = nctohl(&msg->follow_up.preciseOriginTimestamp[2]);
+                    uint32_t nanoseconds = nctohl(&msg->follow_up.preciseOriginTimestamp[6]);
+                    uint64_t preciseOriginTimestamp = seconds_hi;
+                    preciseOriginTimestamp = preciseOriginTimestamp << 32;
+                    preciseOriginTimestamp = preciseOriginTimestamp + seconds_low;
+                    preciseOriginTimestamp = preciseOriginTimestamp * 1000000000L;
+                    preciseOriginTimestamp = preciseOriginTimestamp + nanoseconds;
+                    if (the_clock->t1 == 0)
+                      debug(1, "%" PRIx64 " at %s has seen a first Follow_Up", the_clock->clock_id,
+                            &the_clock->ip);
+                    the_clock->t1 = preciseOriginTimestamp;
 
-                        debug(
-                            3,
+                    // we will use t1 as the distant reference until we get a Delay_Resp, which
+                    // should be more accurate. Is some casses, though, t4 and t1 are the same.
+                    the_clock->current_stage = follow_up_seen;
+                  } else {
+                    if (the_clock->current_stage != waiting_for_sync) {
+
+                      debug(3,
                             "Follow_Up %u expecting to be in state sync_seen (%u). Stage error -- "
                             "current state is %u, sequence %u. Ignoring it. %s",
                             ntohs(msg->header.sequenceId), sync_seen, the_clock->current_stage,
                             the_clock->sequence_number, the_clock->ip);
-                      }
                     }
-                  } break;
-                  case Delay_Resp: {
-                    struct ptp_delay_resp_message *msg = (struct ptp_delay_resp_message *)buf;
-                    if ((the_clock->current_stage == follow_up_seen) &&
-                        (the_clock->sequence_number == ntohs(msg->header.sequenceId))) {
-                      uint16_t seconds_hi = nctohs(&msg->delay_resp.receiveTimestamp[0]);
-                      uint32_t seconds_low = nctohl(&msg->delay_resp.receiveTimestamp[2]);
-                      uint32_t nanoseconds = nctohl(&msg->delay_resp.receiveTimestamp[6]);
-                      uint64_t receiveTimestamp = seconds_hi;
-                      receiveTimestamp = receiveTimestamp << 32;
-                      receiveTimestamp = receiveTimestamp + seconds_low;
-                      receiveTimestamp = receiveTimestamp * 1000000000L;
-                      receiveTimestamp = receiveTimestamp + nanoseconds;
-                      if (the_clock->t4 == 0)
-                      	debug(1,"%" PRIx64 " at %s has seen a first Delay_Resp",the_clock->clock_id,&the_clock->ip);
-                      the_clock->t4 = receiveTimestamp;
+                  }
+                } break;
+                case Delay_Resp: {
+                  struct ptp_delay_resp_message *msg = (struct ptp_delay_resp_message *)buf;
+                  if ((the_clock->current_stage == follow_up_seen) &&
+                      (the_clock->sequence_number == ntohs(msg->header.sequenceId))) {
+                    uint16_t seconds_hi = nctohs(&msg->delay_resp.receiveTimestamp[0]);
+                    uint32_t seconds_low = nctohl(&msg->delay_resp.receiveTimestamp[2]);
+                    uint32_t nanoseconds = nctohl(&msg->delay_resp.receiveTimestamp[6]);
+                    uint64_t receiveTimestamp = seconds_hi;
+                    receiveTimestamp = receiveTimestamp << 32;
+                    receiveTimestamp = receiveTimestamp + seconds_low;
+                    receiveTimestamp = receiveTimestamp * 1000000000L;
+                    receiveTimestamp = receiveTimestamp + nanoseconds;
+                    if (the_clock->t4 == 0)
+                      debug(1, "%" PRIx64 " at %s has seen a first Delay_Resp", the_clock->clock_id,
+                            &the_clock->ip);
+                    the_clock->t4 = receiveTimestamp;
 
-                      /*
-                      // reference: Figure 12
-                      (t4 - t1) [always positive, a difference of two distant clock times]
-                      less (t3 -t2) [always positive, a difference of two local clock times]
-                      is equal to t(m->s) + t(s->m), thus twice the propagation time
-                      assuming symmetrical delays
-                      */
-                      // some devices return the same value for t4 and t1. Go figure.
-                      int64_t distant_time_difference = the_clock->t4 - the_clock->t1;
-                      int64_t local_time_difference = the_clock->t3 - the_clock->t2;
-                      int64_t double_propagation_time =
-                          distant_time_difference - distant_time_difference; // better be positive
-                      if (distant_time_difference != 0)
-                        debug(3,
-                              "distant_time_difference: %" PRId64
-                              ", local_time_difference: %" PRId64
-                              " , double_propagation_time %" PRId64 ".",
-                              distant_time_difference, local_time_difference,
-                              double_propagation_time);
+                    /*
+                    // reference: Figure 12
+                    (t4 - t1) [always positive, a difference of two distant clock times]
+                    less (t3 -t2) [always positive, a difference of two local clock times]
+                    is equal to t(m->s) + t(s->m), thus twice the propagation time
+                    assuming symmetrical delays
+                    */
+                    // some devices return the same value for t4 and t1. Go figure.
+                    int64_t distant_time_difference = the_clock->t4 - the_clock->t1;
+                    int64_t local_time_difference = the_clock->t3 - the_clock->t2;
+                    int64_t double_propagation_time =
+                        distant_time_difference - distant_time_difference; // better be positive
+                    if (distant_time_difference != 0)
+                      debug(3,
+                            "distant_time_difference: %" PRId64 ", local_time_difference: %" PRId64
+                            " , double_propagation_time %" PRId64 ".",
+                            distant_time_difference, local_time_difference,
+                            double_propagation_time);
 
-                      the_clock->t5 =
-                          reception_time; // t5 - t3 gives us the out-and-back time locally
-                                          // -- an instantaneous quality index
-                                          // t5 - t2 gives us an overall interchange time
-                                          // from the Sync to the Delay Resp
+                    the_clock->t5 =
+                        reception_time; // t5 - t3 gives us the out-and-back time locally
+                                        // -- an instantaneous quality index
+                                        // t5 - t2 gives us an overall interchange time
+                                        // from the Sync to the Delay Resp
 
-                      if ((the_clock->t5 - the_clock->t2) < 25 * 1000000) {
-                        if ((the_clock->t4 - the_clock->t1) < 60 * 1000000) {
+                    if ((the_clock->t5 - the_clock->t2) < 25 * 1000000) {
+                      if ((the_clock->t4 - the_clock->t1) < 60 * 1000000) {
 
-                          // calculate delay and calculate offset
-                          // fprintf(stderr, "t1: %016" PRIx64 ", t2: %" PRIx64 ", t3: %" PRIx64 ",
-                          // t4:
-                          // %" PRIx64
-                          // ".\n",t1,t2,t3,t4); fprintf(stderr, "nominal remote transaction time:
-                          // %" PRIx64 " =
-                          // %" PRIu64 "ns; local transaction time: %" PRIx64 " = %" PRId64 "ns.\n",
-                          // t4-t1, t4-t1, t3-t2, t3-t2);
+                        // calculate delay and calculate offset
+                        // fprintf(stderr, "t1: %016" PRIx64 ", t2: %" PRIx64 ", t3: %" PRIx64 ",
+                        // t4:
+                        // %" PRIx64
+                        // ".\n",t1,t2,t3,t4); fprintf(stderr, "nominal remote transaction time:
+                        // %" PRIx64 " =
+                        // %" PRIu64 "ns; local transaction time: %" PRIx64 " = %" PRId64 "ns.\n",
+                        // t4-t1, t4-t1, t3-t2, t3-t2);
 
-                          uint64_t instantaneous_offset = the_clock->t1 - the_clock->t2;
-                          int64_t change_in_offset =
-                              instantaneous_offset - the_clock->previous_offset;
+                        uint64_t instantaneous_offset = the_clock->t1 - the_clock->t2;
+                        int64_t change_in_offset =
+                            instantaneous_offset - the_clock->previous_offset;
 
-                          // now, decide whether to keep the sample for averaging, etc.
-                          the_clock->sample_number++;
-                          if (the_clock->sample_number ==
-                              16) { // discard the approx first two seconds!
-                                    // remove previous samples before this number
-                            the_clock->vacant_samples =
-                                MAX_TIMING_SAMPLES; // invalidate all the previous samples used for
-                                                    // averaging, etc.
-                            the_clock->next_sample_goes_here = 0;
-                          }
+                        // now, decide whether to keep the sample for averaging, etc.
+                        the_clock->sample_number++;
+                        if (the_clock->sample_number ==
+                            16) { // discard the approx first two seconds!
+                                  // remove previous samples before this number
+                          the_clock->vacant_samples =
+                              MAX_TIMING_SAMPLES; // invalidate all the previous samples used for
+                                                  // averaging, etc.
+                          the_clock->next_sample_goes_here = 0;
+                        }
 
-                          int64_t discontinuity_threshold = 250000000; // nanoseconds
-                          if ((change_in_offset > discontinuity_threshold) ||
-                              (change_in_offset < (-discontinuity_threshold))) {
+                        int64_t discontinuity_threshold = 250000000; // nanoseconds
+                        if ((change_in_offset > discontinuity_threshold) ||
+                            (change_in_offset < (-discontinuity_threshold))) {
 
-                            debug(3, "large discontinuity of %+f seconds detected, sequence %u.",
-                                  change_in_offset * 0.000000001, the_clock->sequence_number);
-                            the_clock->vacant_samples =
-                                MAX_TIMING_SAMPLES; // invalidate all the previous samples used for
-                                                    // averaging, etc.
-                            the_clock->next_sample_goes_here = 0;
-                          }
+                          debug(3, "large discontinuity of %+f seconds detected, sequence %u.",
+                                change_in_offset * 0.000000001, the_clock->sequence_number);
+                          the_clock->vacant_samples =
+                              MAX_TIMING_SAMPLES; // invalidate all the previous samples used for
+                                                  // averaging, etc.
+                          the_clock->next_sample_goes_here = 0;
+                        }
 
-                          // now, store the remote and local times in the array
-                          the_clock->samples[the_clock->next_sample_goes_here].local =
-                              the_clock->t2;
-                          the_clock->samples[the_clock->next_sample_goes_here].remote =
-                              the_clock->t1;
-                          uint64_t diff = the_clock->t1 - the_clock->t2;
-                          the_clock->samples[the_clock->next_sample_goes_here]
-                              .local_to_remote_offset = diff;
-                          the_clock->next_sample_goes_here++;
-                          if (the_clock->next_sample_goes_here == MAX_TIMING_SAMPLES)
-                            the_clock->next_sample_goes_here = 0;
-                          if (the_clock->vacant_samples > 0)
-                            the_clock->vacant_samples--;
+                        // now, store the remote and local times in the array
+                        the_clock->samples[the_clock->next_sample_goes_here].local = the_clock->t2;
+                        the_clock->samples[the_clock->next_sample_goes_here].remote = the_clock->t1;
+                        uint64_t diff = the_clock->t1 - the_clock->t2;
+                        the_clock->samples[the_clock->next_sample_goes_here]
+                            .local_to_remote_offset = diff;
+                        the_clock->next_sample_goes_here++;
+                        if (the_clock->next_sample_goes_here == MAX_TIMING_SAMPLES)
+                          the_clock->next_sample_goes_here = 0;
+                        if (the_clock->vacant_samples > 0)
+                          the_clock->vacant_samples--;
 
-                          uint64_t estimated_offset = instantaneous_offset;
+                        uint64_t estimated_offset = instantaneous_offset;
 
-                          // clang-format off
+                        // clang-format off
 
 /*
                         // here, let's try to use the t1 - remote time and t2 - local time
@@ -1238,35 +1273,35 @@ int main(void) {
                         // uint64_t offset = the_clock->t1 - the_clock->t2;
                         uint64_t estimated_offset = remote_estimate - the_clock->t2;
 */
-                          // clang-format on
+                        // clang-format on
 
-                          // here, calculate the average offset
+                        // here, calculate the average offset
 
-                          int e;
-                          long double offsets = 0;
-                          int sample_count = MAX_TIMING_SAMPLES - the_clock->vacant_samples;
-                          for (e = 0; e < sample_count; e++) {
-                            uint64_t ho = the_clock->samples[e].local_to_remote_offset;
-                            ho = ho >> 12;
+                        int e;
+                        long double offsets = 0;
+                        int sample_count = MAX_TIMING_SAMPLES - the_clock->vacant_samples;
+                        for (e = 0; e < sample_count; e++) {
+                          uint64_t ho = the_clock->samples[e].local_to_remote_offset;
+                          ho = ho >> 12;
 
-                            offsets = offsets + 1.0 * ho;
-                          }
+                          offsets = offsets + 1.0 * ho;
+                        }
 
-                          offsets = offsets / sample_count;
+                        offsets = offsets / sample_count;
 
-                          // uint64_t offset = (uint64_t)offsets;
+                        // uint64_t offset = (uint64_t)offsets;
 
-                          estimated_offset = (uint64_t)offsets;
+                        estimated_offset = (uint64_t)offsets;
 
-                          estimated_offset = estimated_offset << 12;
+                        estimated_offset = estimated_offset << 12;
 
-                          // just to keep the print line happy
-                          // long double gradient = 1.0;
-                          // uint64_t offset = the_clock->t1 - the_clock->t2;
+                        // just to keep the print line happy
+                        // long double gradient = 1.0;
+                        // uint64_t offset = the_clock->t1 - the_clock->t2;
 
-                          // clang-format on
+                        // clang-format on
 
-                          // clang-format off
+                        // clang-format off
 /*
 													// here, use a Savitzky–Golay filter to smooth the last 9 offsets
 													// see https://en.wikipedia.org/wiki/Savitzky–Golay_filter
@@ -1302,64 +1337,61 @@ int main(void) {
 													long double gradient = 1.0;
 													int sample_count = window_size;
 */
-                          // clang-format on
+                        // clang-format on
 
-                          int64_t variation = 0;
+                        int64_t variation = 0;
 
-                          if (the_clock->previous_estimated_offset != 0) {
-                            variation = estimated_offset - the_clock->previous_estimated_offset;
-                          } else {
-                            estimated_offset = instantaneous_offset;
+                        if (the_clock->previous_estimated_offset != 0) {
+                          variation = estimated_offset - the_clock->previous_estimated_offset;
+                        } else {
+                          estimated_offset = instantaneous_offset;
+                        }
+
+                        // here, update the shared clock information
+
+                        int rc = pthread_mutex_lock(&shared_memory->shm_mutex);
+                        if (rc != 0)
+                          warn("Can't acquire mutex to update a clock!");
+
+                        // if necessary, initialise a new shared clock record
+                        // hacky.
+
+                        if (the_clock->shared_clock_number == -1) {
+
+                          // associate and initialise a shared clock record
+                          int i = 0;
+                          while ((shared_memory->clocks[i].valid != 0) && (i < MAX_SHARED_CLOCKS)) {
+                            i++;
                           }
+                          if (i == MAX_SHARED_CLOCKS)
+                            die("All %d clock entries are in use -- no more available!",
+                                MAX_SHARED_CLOCKS);
+                          the_clock->shared_clock_number = i;
 
-                          // here, update the shared clock information
+                          strncpy((char *)&shared_memory->clocks[i].ip,
+                                  (const char *)&the_clock->ip, INET6_ADDRSTRLEN - 1);
+                          shared_memory->clocks[i].clock_id = the_clock->clock_id;
+                          shared_memory->clocks[i].valid = 1;
+                          shared_memory->clocks[i].reserved = 0;
+                          shared_memory->clocks[i].flags = 0;
+                          debug(1,
+                                "shared memory clock entry %d created for Clock ID: '%" PRIx64
+                                "' at %s. The entry reads: '%" PRIx64 "', %s.",
+                                i, the_clock->clock_id, the_clock->ip,
+                                shared_memory->clocks[i].clock_id, &shared_memory->clocks[i].ip);
+                        }
 
+                        // now update the clock
+                        shared_memory->clocks[the_clock->shared_clock_number].local_time =
+                            the_clock->t2;
+                        shared_memory->clocks[the_clock->shared_clock_number]
+                            .local_to_source_time_offset = estimated_offset;
 
+                        rc = pthread_mutex_unlock(&shared_memory->shm_mutex);
+                        if (rc != 0)
+                          warn("Can't release mutex after updating a clock!");
 
-
-                          int rc = pthread_mutex_lock(&shared_memory->shm_mutex);
-                          if (rc != 0)
-                            warn("Can't acquire mutex to update a clock!");
-
-                          // if necessary, initialise a new shared clock record
-													// hacky.
-
-													if (the_clock->shared_clock_number == -1) {
-
-														// associate and initialise a shared clock record
-														int i = 0;
-														while ((shared_memory->clocks[i].valid != 0) && (i < MAX_SHARED_CLOCKS)) {
-															i++;
-														}
-														if (i == MAX_SHARED_CLOCKS)
-															die("All %d clock entries are in use -- no more available!", MAX_SHARED_CLOCKS);
-														the_clock->shared_clock_number = i;
-
-														strncpy((char *)&shared_memory->clocks[i].ip, (const char *)&the_clock->ip,
-																		INET6_ADDRSTRLEN - 1);
-														shared_memory->clocks[i].clock_id = the_clock->clock_id;
-														shared_memory->clocks[i].valid = 1;
-														shared_memory->clocks[i].reserved = 0;
-														shared_memory->clocks[i].flags = 0;
-														debug(1,
-																	"shared memory clock entry %d created for Clock ID: '%" PRIx64
-																	"' at %s. The entry reads: '%" PRIx64
-																	"', %s.",
-																	i, the_clock->clock_id, the_clock->ip, shared_memory->clocks[i].clock_id, &shared_memory->clocks[i].ip);
-
-													}
-
-													// now update the clock
-                          shared_memory->clocks[the_clock->shared_clock_number].local_time =
-                              the_clock->t2;
-                          shared_memory->clocks[the_clock->shared_clock_number]
-                              .local_to_source_time_offset = estimated_offset;
-
-                          rc = pthread_mutex_unlock(&shared_memory->shm_mutex);
-                          if (rc != 0)
-                            warn("Can't release mutex after updating a clock!");
-
-                          // clang-format off
+                        // clang-format off
 
                             debug(3,"id: %20" PRIu64 ", time: 0x%" PRIx64
                                     ", offset: %" PRIx64
@@ -1402,17 +1434,10 @@ int main(void) {
             }
           }
         }
-
-      } else {
-				// debug(1,"retval %d at time %" PRIx64 ".", retval, reception_time);
-				if (retval < 0) {
-					// check errno/WSAGetLastError(), call perror(), etc ...
-				}
+      	deactivate_old_sources(reception_time);
       }
       // here, invalidate records and entries that are out of date
       //uint64_t tn = get_time_now();
-      deactivate_old_sources(reception_time);
-    }
   }
 
   // here, close all the sockets...
