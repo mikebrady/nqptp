@@ -424,11 +424,13 @@ int main(void) {
 
   // control-c (SIGINT) cleanly
   struct sigaction act;
+  memset(&act,0,sizeof(struct sigaction));
   act.sa_handler = intHandler;
   sigaction(SIGINT, &act, NULL);
 
   // terminate (SIGTERM)
   struct sigaction act2;
+  memset(&act2,0,sizeof(struct sigaction));
   act2.sa_handler = termHandler;
   sigaction(SIGTERM, &act2, NULL);
 
@@ -495,7 +497,6 @@ int main(void) {
     struct ptp_delay_resp delay_resp;
   };
 
-  int next_free_clock_source_entry = 0;
   pthread_mutexattr_t shared;
   int err;
 
@@ -689,7 +690,11 @@ int main(void) {
   if (shared_memory == (struct shm_structure *)-1) {
     die("failed to mmap shared memory \"%s\".", STORAGE_ID);
   }
-
+  
+  if ((close(shm_fd) == -1)) {
+    warn("error closing \"/nqptp\" after mapping.");
+  }
+  
   // zero it
   memset(shared_memory, 0, sizeof(struct shm_structure));
   shared_memory->size_of_clock_array = MAX_SHARED_CLOCKS;
