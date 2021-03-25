@@ -17,7 +17,9 @@
  * Commercial licensing is also available.
  */
 
-#define DEBUG_LEVEL 2
+// 0 means no debug messages. 3 means lots!
+
+#define DEBUG_LEVEL 0
 
 #include "debug.h"
 #include "nqptp-shm-structures.h"
@@ -115,6 +117,7 @@ struct ptpSource {
   uint16_t sequence_number;
   enum stage current_stage;
   uint64_t t1, t2, t3, t4, t5, previous_offset, previous_estimated_offset;
+  int at_least_one_follow_up_seen, at_least_one_delay_resp_seen;
   struct timing_samples samples[MAX_TIMING_SAMPLES];
   int vacant_samples; // the number of elements in the timing_samples array that are not yet used
   int next_sample_goes_here; // point to where in the timing samples array the next entries should
@@ -122,7 +125,6 @@ struct ptpSource {
   int shared_clock_number;   // which entry to use in the shared memory, could be -1!
   uint64_t sample_number;    // should roll over in 2^61 seconds!
   int in_use;
-  struct ptpSource *next;
 } ptpSource;
 
 #define BUFLEN 4096 // Max length of buffer
@@ -140,6 +142,8 @@ unsigned int sockets_open =
 struct shm_structure *shared_memory = NULL;
 struct ptpSource *clocks = NULL; // a one-way linked list
 int epoll_fd;
+
+int t4_t1_difference_reported = 0;
 
 // struct sockaddr_in6 is bigger than struct sockaddr.
 #ifdef AF_INET6
@@ -216,6 +220,8 @@ struct ptpSource *create_source(char *sender_string, uint64_t packet_clock_id) {
     sources[i].t2 = 0;
     sources[i].t3 = 0;
     sources[i].t4 = 0;
+    sources[i].at_least_one_follow_up_seen = 0;
+    sources[i].at_least_one_delay_resp_seen = 0;
     sources[i].current_stage = nothing_seen;
     sources[i].shared_clock_number = -1;
     response = &sources[i];
@@ -250,108 +256,149 @@ void deactivate_old_sources(uint64_t reception_time) {
   }
 }
 
-/*
-void listSourceRecords(struct ptpSource *list) {
-        struct ptpSource *p = list;
-        while (p != NULL) {
-                debug(1,"Clock ID: '%" PRIx64 "' at %s, with shm entry %d.", p->clock_id, p->ip,
-p->shared_clock_number); p = p->next;
-        }
-}
+void update_clock_interface(struct ptpSource *the_clock) {
+  // we may have a Delay_Resp or we may only have a Follow_Up,
+  // but we have to make the best of it.
 
+  // we get
+  // t1 from Follow_Up -- when Sync was sent
+  // t2 from Sync -- when Sync was received
+  // t3 from Sync -- when Delay_Req was sent
+  // t4 from Delay_Resp -- when Delay_Resp was sent which could be equal to t1.
 
-struct ptpSource *findOrCreateSource(struct ptpSource **list, char *ip, uint64_t clock_id,
-                                     uint8_t message_type) {
-  struct ptpSource *response;
-  struct ptpSource **insertion_point = list; // in case the list is empty
-  struct ptpSource *crawler = *list;
-  if (crawler == NULL) {
-    debug(3, "No clocks recorded");
-    insertion_point = list;
+  // (t4 - t1) [always positive, a difference of two distant clock times]
+  // less (t3 -t2) [always positive, a difference of two local clock times]
+  // is equal to t(m->s) + t(s->m), thus twice the propagation time
+  // assuming symmetrical delays.
+
+  // sometimes, t4 and t1 are the same
+
+  // calculate delay and calculate offset
+  // fprintf(stderr, "t1: %016" PRIx64 ", t2: %" PRIx64 ", t3: %" PRIx64 ",
+  // t4:
+  // %" PRIx64
+  // ".\n",t1,t2,t3,t4); fprintf(stderr, "nominal remote transaction time:
+  // %" PRIx64 " =
+  // %" PRIu64 "ns; local transaction time: %" PRIx64 " = %" PRId64 "ns.\n",
+  // t4-t1, t4-t1, t3-t2, t3-t2);
+
+  // we definitely have t2 and t1
+  uint64_t instantaneous_offset = the_clock->t1 - the_clock->t2;
+  int64_t change_in_offset = instantaneous_offset - the_clock->previous_offset;
+
+  // now, decide whether to keep the sample for averaging, etc.
+  the_clock->sample_number++;
+  if (the_clock->sample_number == 16) {             // discard the approx first two seconds!
+                                                    // remove previous samples before this number
+    the_clock->vacant_samples = MAX_TIMING_SAMPLES; // invalidate all the previous samples used for
+                                                    // averaging, etc.
+    the_clock->next_sample_goes_here = 0;
+  }
+
+  int64_t discontinuity_threshold = 250000000; // nanoseconds
+  if ((change_in_offset > discontinuity_threshold) ||
+      (change_in_offset < (-discontinuity_threshold))) {
+
+    debug(3, "large discontinuity of %+f seconds detected, sequence %u.",
+          change_in_offset * 0.000000001, the_clock->sequence_number);
+    the_clock->vacant_samples = MAX_TIMING_SAMPLES; // invalidate all the previous samples used for
+                                                    // averaging, etc.
+    the_clock->next_sample_goes_here = 0;
+  }
+
+  // now, store the remote and local times in the array
+  the_clock->samples[the_clock->next_sample_goes_here].local = the_clock->t2;
+  the_clock->samples[the_clock->next_sample_goes_here].remote = the_clock->t1;
+  uint64_t diff = the_clock->t1 - the_clock->t2;
+  the_clock->samples[the_clock->next_sample_goes_here].local_to_remote_offset = diff;
+  the_clock->next_sample_goes_here++;
+  if (the_clock->next_sample_goes_here == MAX_TIMING_SAMPLES)
+    the_clock->next_sample_goes_here = 0;
+  if (the_clock->vacant_samples > 0)
+    the_clock->vacant_samples--;
+
+  uint64_t estimated_offset = instantaneous_offset;
+
+  // here, calculate the average offset
+
+  int e;
+  long double offsets = 0;
+  int sample_count = MAX_TIMING_SAMPLES - the_clock->vacant_samples;
+  for (e = 0; e < sample_count; e++) {
+    uint64_t ho = the_clock->samples[e].local_to_remote_offset;
+    ho = ho >> 12;
+
+    offsets = offsets + 1.0 * ho;
+  }
+
+  offsets = offsets / sample_count;
+
+  // uint64_t offset = (uint64_t)offsets;
+
+  estimated_offset = (uint64_t)offsets;
+
+  estimated_offset = estimated_offset << 12;
+
+  int64_t variation = 0;
+
+  if (the_clock->previous_estimated_offset != 0) {
+    variation = estimated_offset - the_clock->previous_estimated_offset;
   } else {
-    while ((crawler->next != NULL) &&
-           ((crawler->clock_id != clock_id) || (strcasecmp(ip, crawler->ip) != 0))) {
-      crawler = crawler->next;
-    }
-    if ((crawler->clock_id == clock_id) && (strcasecmp(ip, crawler->ip) == 0)) {
-      // found, so no insertion
-      insertion_point = NULL;
-    } else {
-      // not found, so we are on the last item. Add a new one on to the end.
-      insertion_point = &crawler->next;
-    }
+    estimated_offset = instantaneous_offset;
   }
-  // here, if the insertion point is null, then
-  // the record is pointed to by crawler
-  // otherwise, add a new record at the insertion point
-  if (insertion_point == NULL) {
-    response = crawler;
-  } else {
-    // only create a record for a Sync message
-    if (message_type == Sync) {
-        debug(1,"New before");
-        listSourceRecords(clocks);
-      response = (struct ptpSource *)malloc(sizeof(ptpSource));
-      if (response != NULL) {
-        memset((void *)response, 0, sizeof(ptpSource));
-        response->ip = strdup(ip);
-        response->clock_id = clock_id;
-        response->vacant_samples = MAX_TIMING_SAMPLES; // no valid samples yet
-        response->shared_clock_number = -1;            // none allocated yet. Hacky
-        *insertion_point = response;
-        debug(1,
-              "New clock record created for Clock ID: '%" PRIu64 "', aka '%" PRIu64 "', aka '%"
-PRIx64
-              "' at %s.",
-              clock_id, clock_id, clock_id, ip);
-      }
-      debug(1,"New after");
-        listSourceRecords(clocks);
 
-    } else {
-      response = NULL;
+  // here, update the shared clock information
+
+  int rc = pthread_mutex_lock(&shared_memory->shm_mutex);
+  if (rc != 0)
+    warn("Can't acquire mutex to update a clock!");
+
+  // if necessary, initialise a new shared clock record
+  // hacky.
+
+  if (the_clock->shared_clock_number == -1) {
+
+    // associate and initialise a shared clock record
+    int i = 0;
+    while ((shared_memory->clocks[i].valid != 0) && (i < MAX_SHARED_CLOCKS)) {
+      i++;
     }
+    if (i == MAX_SHARED_CLOCKS)
+      die("All %d clock entries are in use -- no more available!", MAX_SHARED_CLOCKS);
+    the_clock->shared_clock_number = i;
+
+    strncpy((char *)&shared_memory->clocks[i].ip, (const char *)&the_clock->ip,
+            INET6_ADDRSTRLEN - 1);
+    shared_memory->clocks[i].clock_id = the_clock->clock_id;
+    shared_memory->clocks[i].valid = 1;
+    shared_memory->clocks[i].reserved = 0;
+    shared_memory->clocks[i].flags = 0;
+    debug(1,
+          "shared memory clock entry %d created for Clock ID: '%" PRIx64
+          "' at %s. The entry reads: '%" PRIx64 "', %s.",
+          i, the_clock->clock_id, the_clock->ip, shared_memory->clocks[i].clock_id,
+          &shared_memory->clocks[i].ip);
   }
-  return response;
+
+  // now update the clock
+  shared_memory->clocks[the_clock->shared_clock_number].local_time = the_clock->t2;
+  shared_memory->clocks[the_clock->shared_clock_number].local_to_source_time_offset =
+      estimated_offset;
+
+  rc = pthread_mutex_unlock(&shared_memory->shm_mutex);
+  if (rc != 0)
+    warn("Can't release mutex after updating a clock!");
+
+  debug(3,
+        "id: %20" PRIu64 ", time: 0x%" PRIx64 ", offset: %" PRIx64
+        ", variation: %+f, turnaround: %f, ip: %s, sequence: %u samples: %d.",
+        the_clock->clock_id, the_clock->t2 + estimated_offset, estimated_offset,
+        variation * 0.000000001, (the_clock->t5 - the_clock->t2) * 0.000000001, the_clock->ip,
+        the_clock->sequence_number, sample_count);
+
+  the_clock->previous_estimated_offset = estimated_offset;
+  the_clock->previous_offset = instantaneous_offset;
 }
-
-void deleteObseleteClockRecords(struct ptpSource **list, uint64_t time_now) {
-  // debug(1,"delete -- time now: % " PRIx64 ".", time_now);
-
-  struct ptpSource **temp = list;
-  debug(1,"check");
-  while (*temp != NULL) {
-    struct ptpSource *p = *temp;
-    int deleting_something = 0;
-    int64_t time_since_last_use = time_now - p->t2; // this is the time of the last sync record
-    debug(1, "checking record for Clock ID %" PRIx64 " at %s. Shared clock is %d Time difference is
-%" PRId64 ".", p->clock_id, p->ip, p->shared_clock_number, time_since_last_use);
-
-    if (time_since_last_use > 1000000000) {	// drop them if idle
-      debug(1,"Delete Before");
-      listSourceRecords(clocks);
-      debug(1, "delete record for Clock ID %" PRIx64 " at %s.", p->clock_id, p->ip);
-      if (p->shared_clock_number != -1) {
-        int rc = pthread_mutex_lock(&shared_memory->shm_mutex);
-        if (rc != 0)
-          debug(1, "Can't acquire mutex to delete a clock!");
-        memset(&shared_memory->clocks[p->shared_clock_number], 0, sizeof(struct clock_source));
-        rc = pthread_mutex_unlock(&shared_memory->shm_mutex);
-        if (rc != 0)
-          debug(1, "Can't release mutex after deleting a clock!");
-      }
-
-      *temp = p->next;
-      free(p->ip); // the IP was strdup'ed in
-      free(p);
-      debug(1,"Delete After:");
-      listSourceRecords(clocks);
-    } else {
-      temp = &p->next;
-    }
-  }
-}
-*/
 
 void debug_print_buffer(int level, char *buf, size_t buf_len) {
   // printf("Received %u bytes in a packet from %s:%d\n", buf_len, inet_ntoa(si_other.sin_addr),
@@ -429,14 +476,16 @@ void termHandler(__attribute__((unused)) int k) {
 }
 
 int main(void) {
+  debug_init(DEBUG_LEVEL, 0, 1, 1);
+  debug(1, "startup");
+  atexit(goodbye);
+
+  t4_t1_difference_reported = 0;
   epoll_fd = -1;
   clocks = NULL;
   shared_memory = NULL;
   // memset(sources,0,sizeof(sources));
   // level 0 is no messages, level 3 is most messages -- see debug.h
-  debug_init(DEBUG_LEVEL, 0, 1, 1);
-  debug(1, "startup");
-  atexit(goodbye);
 
   // control-c (SIGINT) cleanly
   struct sigaction act;
@@ -908,6 +957,15 @@ int main(void) {
                 switch (buf[0] & 0xF) {
                 case Sync: { // if it's a sync
                   struct ptp_sync_message *msg = (struct ptp_sync_message *)buf;
+                  int ck;
+                  int non_empty_origin_timestamp = 0;
+                  for (ck = 0; ck < 10; ck++) {
+                    if (msg->sync.originTimestamp[ck] != 0) {
+                      non_empty_origin_timestamp = (non_empty_origin_timestamp | 1);
+                    }
+                  }
+                  if (non_empty_origin_timestamp != 0)
+                    debug(1, "Sync Origin Timestamp!");
                   if (msg->header.correctionField != 0)
                     debug(3, "correctionField: %" PRIx64 ".", msg->header.correctionField);
                   // debug(3, "SYNC %u.", ntohs(msg->header.sequenceId));
@@ -1089,6 +1147,10 @@ int main(void) {
                   struct ptp_follow_up_message *msg = (struct ptp_follow_up_message *)buf;
                   if ((the_clock->current_stage == sync_seen) &&
                       (the_clock->sequence_number == ntohs(msg->header.sequenceId))) {
+                    if (the_clock->at_least_one_follow_up_seen == 0)
+                      debug(1, "Clock \"%" PRIx64 "\" at %s has seen a first Follow_Up",
+                            the_clock->clock_id, &the_clock->ip);
+                    the_clock->at_least_one_follow_up_seen = 1;
                     uint16_t seconds_hi = nctohs(&msg->follow_up.preciseOriginTimestamp[0]);
                     uint32_t seconds_low = nctohl(&msg->follow_up.preciseOriginTimestamp[2]);
                     uint32_t nanoseconds = nctohl(&msg->follow_up.preciseOriginTimestamp[6]);
@@ -1097,14 +1159,13 @@ int main(void) {
                     preciseOriginTimestamp = preciseOriginTimestamp + seconds_low;
                     preciseOriginTimestamp = preciseOriginTimestamp * 1000000000L;
                     preciseOriginTimestamp = preciseOriginTimestamp + nanoseconds;
-                    if (the_clock->t1 == 0)
-                      debug(1, "%" PRIx64 " at %s has seen a first Follow_Up", the_clock->clock_id,
-                            &the_clock->ip);
                     the_clock->t1 = preciseOriginTimestamp;
+                    the_clock->current_stage = follow_up_seen;
 
                     // we will use t1 as the distant reference until we get a Delay_Resp, which
                     // should be more accurate. Is some casses, though, t4 and t1 are the same.
-                    the_clock->current_stage = follow_up_seen;
+                    update_clock_interface(the_clock);
+
                   } else {
                     if (the_clock->current_stage != waiting_for_sync) {
 
@@ -1120,6 +1181,10 @@ int main(void) {
                   struct ptp_delay_resp_message *msg = (struct ptp_delay_resp_message *)buf;
                   if ((the_clock->current_stage == follow_up_seen) &&
                       (the_clock->sequence_number == ntohs(msg->header.sequenceId))) {
+                    if (the_clock->at_least_one_delay_resp_seen == 0)
+                      debug(1, "%" PRIx64 " at %s has seen a first Delay_Resp", the_clock->clock_id,
+                            &the_clock->ip);
+                    the_clock->at_least_one_delay_resp_seen = 1;
                     uint16_t seconds_hi = nctohs(&msg->delay_resp.receiveTimestamp[0]);
                     uint32_t seconds_low = nctohl(&msg->delay_resp.receiveTimestamp[2]);
                     uint32_t nanoseconds = nctohl(&msg->delay_resp.receiveTimestamp[6]);
@@ -1128,9 +1193,6 @@ int main(void) {
                     receiveTimestamp = receiveTimestamp + seconds_low;
                     receiveTimestamp = receiveTimestamp * 1000000000L;
                     receiveTimestamp = receiveTimestamp + nanoseconds;
-                    if (the_clock->t4 == 0)
-                      debug(1, "%" PRIx64 " at %s has seen a first Delay_Resp", the_clock->clock_id,
-                            &the_clock->ip);
                     the_clock->t4 = receiveTimestamp;
 
                     /*
@@ -1140,304 +1202,38 @@ int main(void) {
                     is equal to t(m->s) + t(s->m), thus twice the propagation time
                     assuming symmetrical delays
                     */
-                    // some devices return the same value for t4 and t1. Go figure.
-                    int64_t distant_time_difference = the_clock->t4 - the_clock->t1;
-                    int64_t local_time_difference = the_clock->t3 - the_clock->t2;
-                    int64_t double_propagation_time =
-                        distant_time_difference - distant_time_difference; // better be positive
-                    if (distant_time_difference != 0)
-                      debug(3,
-                            "distant_time_difference: %" PRId64 ", local_time_difference: %" PRId64
-                            " , double_propagation_time %" PRId64 ".",
-                            distant_time_difference, local_time_difference,
-                            double_propagation_time);
-
-                    the_clock->t5 =
-                        reception_time; // t5 - t3 gives us the out-and-back time locally
-                                        // -- an instantaneous quality index
-                                        // t5 - t2 gives us an overall interchange time
-                                        // from the Sync to the Delay Resp
-
-                    if ((the_clock->t5 - the_clock->t2) < 25 * 1000000) {
-                      if ((the_clock->t4 - the_clock->t1) < 60 * 1000000) {
-
-                        // calculate delay and calculate offset
-                        // fprintf(stderr, "t1: %016" PRIx64 ", t2: %" PRIx64 ", t3: %" PRIx64 ",
-                        // t4:
-                        // %" PRIx64
-                        // ".\n",t1,t2,t3,t4); fprintf(stderr, "nominal remote transaction time:
-                        // %" PRIx64 " =
-                        // %" PRIu64 "ns; local transaction time: %" PRIx64 " = %" PRId64 "ns.\n",
-                        // t4-t1, t4-t1, t3-t2, t3-t2);
-
-                        uint64_t instantaneous_offset = the_clock->t1 - the_clock->t2;
-                        int64_t change_in_offset =
-                            instantaneous_offset - the_clock->previous_offset;
-
-                        // now, decide whether to keep the sample for averaging, etc.
-                        the_clock->sample_number++;
-                        if (the_clock->sample_number ==
-                            16) { // discard the approx first two seconds!
-                                  // remove previous samples before this number
-                          the_clock->vacant_samples =
-                              MAX_TIMING_SAMPLES; // invalidate all the previous samples used for
-                                                  // averaging, etc.
-                          the_clock->next_sample_goes_here = 0;
-                        }
-
-                        int64_t discontinuity_threshold = 250000000; // nanoseconds
-                        if ((change_in_offset > discontinuity_threshold) ||
-                            (change_in_offset < (-discontinuity_threshold))) {
-
-                          debug(3, "large discontinuity of %+f seconds detected, sequence %u.",
-                                change_in_offset * 0.000000001, the_clock->sequence_number);
-                          the_clock->vacant_samples =
-                              MAX_TIMING_SAMPLES; // invalidate all the previous samples used for
-                                                  // averaging, etc.
-                          the_clock->next_sample_goes_here = 0;
-                        }
-
-                        // now, store the remote and local times in the array
-                        the_clock->samples[the_clock->next_sample_goes_here].local = the_clock->t2;
-                        the_clock->samples[the_clock->next_sample_goes_here].remote = the_clock->t1;
-                        uint64_t diff = the_clock->t1 - the_clock->t2;
-                        the_clock->samples[the_clock->next_sample_goes_here]
-                            .local_to_remote_offset = diff;
-                        the_clock->next_sample_goes_here++;
-                        if (the_clock->next_sample_goes_here == MAX_TIMING_SAMPLES)
-                          the_clock->next_sample_goes_here = 0;
-                        if (the_clock->vacant_samples > 0)
-                          the_clock->vacant_samples--;
-
-                        uint64_t estimated_offset = instantaneous_offset;
-
-                        // clang-format off
-
-/*
-                        // here, let's try to use the t1 - remote time and t2 - local time
-                        // records to estimate the relationship between the local clock (x) and
-                        // remote clock(y) estimate a figure for drift between the local
-                        // clock (x) and the remote clock (y)
-
-                        // if we plug in a local interval, we will get back what that is in remote
-                        // time
-
-                        // calculate the line of best fit for relating the local time and the remote
-                        // time we will calculate the slope, which is the drift. See
-                        // https://www.varsitytutors.com/hotmath/hotmath_help/topics/line-of-best-fit
-
-                        long double y_bar = 0; // remote timestamp average
-                        long double x_bar = 0; // local timestamp average
-                        int sample_count = 0;
-                        long double gradient;
-                        long double intercept;
-                        int i;
-                        for (i = 0; i < MAX_TIMING_SAMPLES - the_clock->vacant_samples; i++) {
-                          y_bar += (1.0 * the_clock->samples[i].remote);
-                          x_bar += (1.0 * the_clock->samples[i].local);
-                          sample_count++;
-                        }
-
-                        y_bar = y_bar / sample_count;
-                        x_bar = x_bar / sample_count;
-
-                        long double xid, yid;
-                        long double mtl, mbl;
-                        mtl = 0;
-                        mbl = 0;
-                        for (i = 0; i < MAX_TIMING_SAMPLES - the_clock->vacant_samples; i++) {
-                          xid = 1.0 * the_clock->samples[i].local - x_bar;
-                          yid = 1.0 * the_clock->samples[i].remote - y_bar;
-                          mtl = mtl + xid * yid;
-                          mbl = mbl + xid * xid;
-                        }
-
-                        if (mbl)
-                          gradient = (1.0 * mtl) / mbl;
-                        else {
-                          gradient = 1.0;
-                        }
-
-                        // intercept = y_bar  - gradient * x_bar
-
-                        intercept = 1.0 * y_bar - gradient * x_bar;
-
-                        // y = mx + c
-                        // remote = gradient * local + intercept
-
-                        long double remote_f = gradient * the_clock->t2 + intercept;
-                        uint64_t remote_estimate = (uint64_t)remote_f;
-                        // fprintf(stderr, "remote actual: %" PRIx64 ", remote estimated: %" PRIx64
-                        // ".\n", the_clock->t1, remote_estimate);
-
-                        // uint64_t offset = the_clock->t1 - the_clock->t2;
-                        uint64_t estimated_offset = remote_estimate - the_clock->t2;
-*/
-                        // clang-format on
-
-                        // here, calculate the average offset
-
-                        int e;
-                        long double offsets = 0;
-                        int sample_count = MAX_TIMING_SAMPLES - the_clock->vacant_samples;
-                        for (e = 0; e < sample_count; e++) {
-                          uint64_t ho = the_clock->samples[e].local_to_remote_offset;
-                          ho = ho >> 12;
-
-                          offsets = offsets + 1.0 * ho;
-                        }
-
-                        offsets = offsets / sample_count;
-
-                        // uint64_t offset = (uint64_t)offsets;
-
-                        estimated_offset = (uint64_t)offsets;
-
-                        estimated_offset = estimated_offset << 12;
-
-                        // just to keep the print line happy
-                        // long double gradient = 1.0;
-                        // uint64_t offset = the_clock->t1 - the_clock->t2;
-
-                        // clang-format on
-
-                        // clang-format off
-/*
-													// here, use a Savitzky–Golay filter to smooth the last 9 offsets
-													// see https://en.wikipedia.org/wiki/Savitzky–Golay_filter
-
-													int window_size = 9;
-													int coefficients[20] = {15,-55,30,135,179,135,30,-55,15};
-													int normalisation = 429;
-
-													if ((MAX_TIMING_SAMPLES - the_clock->vacant_samples) >= window_size) {
-														uint64_t sg[20];
-														int s = the_clock->next_sample_goes_here;
-														int f;
-														for (f = window_size; f > 0; f--) {
-															s--;
-															if (s < 0)
-																s = MAX_TIMING_SAMPLES - 1;
-															sg[f-1] = the_clock->samples[s].local_to_remote_offset;
-
-														}
-
-														long double yj = 0.0;
-														for (f = 0; f < window_size; f++) {
-															uint64_t ho = sg[f];
-															// ho = ho >> 12;
-															//fprintf(stderr, "element: %d is %" PRIx64 ".\n", f, ho);
-															yj = yj + (1.0 * ho) * coefficients[f];
-														}
-														yj = yj / normalisation;
-														estimated_offset = yj;
-														//fprintf(stderr, "estimated_offset: %" PRIx64 ".\n", estimated_offset);
-													}
-													// just to keep the print line happy
-													long double gradient = 1.0;
-													int sample_count = window_size;
-*/
-                        // clang-format on
-
-                        int64_t variation = 0;
-
-                        if (the_clock->previous_estimated_offset != 0) {
-                          variation = estimated_offset - the_clock->previous_estimated_offset;
-                        } else {
-                          estimated_offset = instantaneous_offset;
-                        }
-
-                        // here, update the shared clock information
-
-                        int rc = pthread_mutex_lock(&shared_memory->shm_mutex);
-                        if (rc != 0)
-                          warn("Can't acquire mutex to update a clock!");
-
-                        // if necessary, initialise a new shared clock record
-                        // hacky.
-
-                        if (the_clock->shared_clock_number == -1) {
-
-                          // associate and initialise a shared clock record
-                          int i = 0;
-                          while ((shared_memory->clocks[i].valid != 0) && (i < MAX_SHARED_CLOCKS)) {
-                            i++;
-                          }
-                          if (i == MAX_SHARED_CLOCKS)
-                            die("All %d clock entries are in use -- no more available!",
-                                MAX_SHARED_CLOCKS);
-                          the_clock->shared_clock_number = i;
-
-                          strncpy((char *)&shared_memory->clocks[i].ip,
-                                  (const char *)&the_clock->ip, INET6_ADDRSTRLEN - 1);
-                          shared_memory->clocks[i].clock_id = the_clock->clock_id;
-                          shared_memory->clocks[i].valid = 1;
-                          shared_memory->clocks[i].reserved = 0;
-                          shared_memory->clocks[i].flags = 0;
-                          debug(1,
-                                "shared memory clock entry %d created for Clock ID: '%" PRIx64
-                                "' at %s. The entry reads: '%" PRIx64 "', %s.",
-                                i, the_clock->clock_id, the_clock->ip,
-                                shared_memory->clocks[i].clock_id, &shared_memory->clocks[i].ip);
-                        }
-
-                        // now update the clock
-                        shared_memory->clocks[the_clock->shared_clock_number].local_time =
-                            the_clock->t2;
-                        shared_memory->clocks[the_clock->shared_clock_number]
-                            .local_to_source_time_offset = estimated_offset;
-
-                        rc = pthread_mutex_unlock(&shared_memory->shm_mutex);
-                        if (rc != 0)
-                          warn("Can't release mutex after updating a clock!");
-
-                        // clang-format off
-
-                            debug(3,"id: %20" PRIu64 ", time: 0x%" PRIx64
-                                    ", offset: %" PRIx64
-                                    ", variation: %+f, turnaround: %f, ip: %s, sequence: %u samples: %d.",
-                                    the_clock->clock_id, the_clock->t2 + estimated_offset,
-                                    estimated_offset,
-                                    variation * 0.000000001,
-                                    (the_clock->t5 - the_clock->t2) * 0.000000001,
-                                    the_clock->ip, the_clock->sequence_number, sample_count);
-
-                        the_clock->previous_estimated_offset = estimated_offset;
-                        the_clock->previous_offset = instantaneous_offset;
-                      } else {
-                         debug(3,
-                                "t4 - t1 (sync and delay response) time %f is too long. Discarding. %s", (the_clock->t4 - the_clock->t1)*0.000000001,
-                                the_clock->ip);
-                      }
-                    } else {
-                      // fprintf(stderr, "t5 - t2 time %f (total transaction time) is too long.
-                      // Discarding. %s\n", (the_clock->t5 - the_clock->t2)*0.000000001,
-                      //        the_clock->ip);
+                    // all devices tested return the same value for t4 and t1. Go figure.
+                    if ((the_clock->t4 != the_clock->t1) && (t4_t1_difference_reported == 0)) {
+                      inform("Clock \"%" PRIx64
+                             "\" at \"%s\" is providing different t4 and t1 figures!",
+                             the_clock->clock_id, &the_clock->ip);
+                      t4_t1_difference_reported = 1;
                     }
                     the_clock->current_stage = nothing_seen;
                   } else {
                     if (the_clock->current_stage != waiting_for_sync) {
 
-                                              debug(3,
-                                                      "Delay_Resp %u expecting to be in state follow_up_seen (%u). Stage " "error -- " "current state is %u, sequence %u. Ignoring it. %s", ntohs(msg->header.sequenceId), follow_up_seen,
-                                                      the_clock->current_stage,
-                         the_clock->sequence_number, the_clock->ip);
-
+                      debug(3,
+                            "Delay_Resp %u expecting to be in state follow_up_seen (%u). Stage "
+                            "error -- "
+                            "current state is %u, sequence %u. Ignoring it. %s",
+                            ntohs(msg->header.sequenceId), follow_up_seen, the_clock->current_stage,
+                            the_clock->sequence_number, the_clock->ip);
                     }
                   }
                 } break;
                 default:
                   break;
                 }
-                }
               }
             }
           }
         }
-      	deactivate_old_sources(reception_time);
       }
-      // here, invalidate records and entries that are out of date
-      //uint64_t tn = get_time_now();
+      deactivate_old_sources(reception_time);
+    }
+    // here, invalidate records and entries that are out of date
+    // uint64_t tn = get_time_now();
   }
 
   // here, close all the sockets...
