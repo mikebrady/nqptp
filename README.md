@@ -34,7 +34,7 @@ A unix group called `nqptp` is created by the `make install` step. Members of th
 If you wish to use the shared mutex to ensure records are not altered while you are accessing them, you should open your side of the shared memory interface with read-write permission. Be aware that while your program has the mutex lock, it can halt `nqptp`, so keep any activity while you have the lock very short and very simple, e.g. copying it to local memory. 
 
 The `source_time` and `local_to_source_time_offset` values are averaged over up to 480 samples. Since samples should be received at the rate of eight per second,
-the values are averaged should be dropped the previous minute.
+the values are averaged over the previous minute.
 
 Clock records not updated for a period are deleted.
 
