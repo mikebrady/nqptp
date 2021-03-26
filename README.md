@@ -5,8 +5,7 @@ struct clock_source {
   char ip[64];                           // the IP the clock information is coming from
   uint64_t clock_id;
   uint64_t reserved;
-  uint64_t source_time;                 // the time at the source
-  uint64_t local_time;                  // the local time for which when the source time is valid
+  uint64_t local_time;                  // the local time at which a measurement was done
   uint64_t local_to_source_time_offset; // add this to the local time to get source time
   int flags;                            // not used yet
   int valid;                            // true if this entry is valid
