@@ -1,5 +1,5 @@
 # nqptp
-Not Quite a PTP Daemon, `nqptp` monitors PTP traffic. Briefly, `nqptp` monitors the times of any [PTP](https://en.wikipedia.org/wiki/Precision_Time_Protocol) clocks -- up to 32 -- it sees on port 319/320. It maintains a record for each clock, identified by its Clock ID and IP. This information is provided via a Posix shared memory interface at `/nqptp`. Here are details of the interface:
+*Not Quite a PTP Daemon*, `nqptp` monitors PTP traffic. Briefly, `nqptp` monitors the times of any [PTP](https://en.wikipedia.org/wiki/Precision_Time_Protocol) clocks -- up to 32 -- it sees on port 319/320. It maintains a record for each clock, identified by its Clock ID and IP. This information is provided via a Posix shared memory interface at `/nqptp`. Here are details of the interface:
 ```c
 struct clock_source {
   char ip[64];                           // the IP the clock information is coming from
@@ -31,13 +31,18 @@ $ make
 The `make install` creates the `nqptp` group and installs a `systemd` startup script. You should enable it and start it in the normal way. Note that `nqptp` must run in `root` mode to be able to access ports 319 and 320.
 
 # Notes
-A unix group called `nqptp` is created by the `make install` step. Members of this group have write access to the shared memory interface and can therefore use the `shm_mutex` for safe access to the information.
-Be aware that while your program has the lock, it can halt `nqptp`, so keep any activity while you have the lock very short and very simple, e.g. copying it to local memory. 
+A unix group called `nqptp` is created by the `make install` step. Members of this group have write access to the shared memory interface.
+If you wish to use the shared mutex to ensure records are not altered while you are accessing them, you should open your side of the shared memory interface with read-write permission. Be aware that while your program has the mutex lock, it can halt `nqptp`, so keep any activity while you have the lock very short and very simple, e.g. copying it to local memory. 
 
-The `source_time` and `local_to_source_time_offset` values are averaged over up to 480 samples. Since samples should be make at the rate of eight per second, this means that the values are averaged over the previous minute.
+The `source_time` and `local_to_source_time_offset` values are averaged over up to 480 samples. Since samples should be received at the rate of eight per second,
+the values are averaged should be dropped the previous minute.
+
+Clock records not updated for a period are deleted.
 
 Since `nqptp` uses ports 319 and 320, it can not coexist with any other user of those ports, such as full PTP service daemons.
 
 # Known Issues
-1. Unused clock records are not garbage-collected, so once it has seen 32 different clock/ip combinations, `nqptp` fills up.
-2. At present, `nqptp` does not take advantage of hardware timestamping.
+* At present, `nqptp` does not take advantage of hardware timestamping.
+
+# Things Can Change!
+The `nqptp` daemon is under active development and, consequently, everything here can change, possibly very radically.
