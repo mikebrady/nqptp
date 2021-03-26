@@ -1,5 +1,5 @@
 # nqptp
-*Not Quite a PTP Daemon*, `nqptp` monitors PTP traffic. Briefly, `nqptp` monitors the times of any [PTP](https://en.wikipedia.org/wiki/Precision_Time_Protocol) clocks -- up to 32 -- it sees on ports 319 and 320. It maintains a record for each clock, identified by its Clock ID and IP. This information is provided via a [POSIX shared memory](https://pubs.opengroup.org/onlinepubs/007908799/xsh/shm_open.html) interface at `/nqptp`. Here are details of the interface:
+Not Quite a PTP daemon, `nqptp` monitors PTP traffic. Briefly, `nqptp` monitors the times of any [PTP](https://en.wikipedia.org/wiki/Precision_Time_Protocol) clocks -- up to 32 -- it sees on ports 319 and 320. It maintains a record for each clock, identified by its Clock ID and IP. This information is provided via a [POSIX shared memory](https://pubs.opengroup.org/onlinepubs/007908799/xsh/shm_open.html) interface at `/nqptp`. Here are details of the interface:
 ```c
 struct clock_source {
   char ip[64];                           // the IP the clock information is coming from
@@ -43,6 +43,7 @@ Since `nqptp` uses ports 319 and 320, it can not coexist with any other user of 
 
 # Known Issues
 * At present, `nqptp` does not take advantage of hardware timestamping.
+* The daemon is Linux only, and has been developed and tested on a `systemd` Linux only.
 
 # Things Can Change!
 The `nqptp` daemon is under active development and, consequently, everything here can change, possibly very radically.
