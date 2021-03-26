@@ -1,5 +1,5 @@
-# NQPTP -- Not Quite PTP
-The `nqptp` daemon monitors PTP traffic. Briefly, `nqptp` monitors the times of any [PTP](https://en.wikipedia.org/wiki/Precision_Time_Protocol) clocks -- up to 32 -- it sees on ports 319 and 320. It maintains a record for each clock, identified by its Clock ID and IP. This information is provided via a [POSIX shared memory](https://pubs.opengroup.org/onlinepubs/007908799/xsh/shm_open.html) interface at `/nqptp`. Here are details of the interface:
+# NQPTP – Not Quite PTP
+The `nqptp` daemon monitors PTP traffic. Briefly, `nqptp` monitors the times of any [PTP](https://en.wikipedia.org/wiki/Precision_Time_Protocol) clocks – up to 32 – it sees on ports 319 and 320. It maintains a record for each clock, identified by its Clock ID and IP. This information is provided via a [POSIX shared memory](https://pubs.opengroup.org/onlinepubs/007908799/xsh/shm_open.html) interface at `/nqptp`. Here are details of the interface:
 ```c
 struct clock_source {
   char ip[64];                           // the IP the clock information is coming from
@@ -48,4 +48,4 @@ Since `nqptp` uses ports 319 and 320, it can not coexist with any other user of 
 The `nqptp` daemon is under active development and, consequently, everything here can change, possibly very radically.
 
 # NQPTP is not PTP!
-`nqptp` uses a small part of the IEEE Std 1588-2008 protocol. It is not a PTP clock of any kind.
+`nqptp` uses just a part of the IEEE Std 1588-2008 protocol. It is not a PTP clock of any kind.
