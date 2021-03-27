@@ -22,6 +22,8 @@ struct shm_structure {
 
 # Installation
 ```
+$ git clone git@github.com:mikebrady/nqptp.git
+$ cd nqptp
 $ autoreconf -fi
 $ ./configure
 $ make
