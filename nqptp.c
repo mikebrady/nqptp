@@ -19,7 +19,7 @@
 
 // 0 means no debug messages. 3 means lots!
 
-#define DEBUG_LEVEL 2
+#define DEBUG_LEVEL 0
 
 #include "debug.h"
 #include "nqptp-shm-structures.h"
@@ -367,8 +367,12 @@ void update_clock_interface(struct ptpSource *the_clock) {
       die("All %d clock entries are in use -- no more available!", MAX_SHARED_CLOCKS);
     the_clock->shared_clock_number = i;
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstringop-truncation"
     strncpy((char *)&shared_memory->clocks[i].ip, (const char *)&the_clock->ip,
             INET6_ADDRSTRLEN - 1);
+#pragma GCC diagnostic pop
+
     shared_memory->clocks[i].clock_id = the_clock->clock_id;
     shared_memory->clocks[i].valid = 1;
     shared_memory->clocks[i].reserved = 0;
@@ -631,40 +635,9 @@ int main(void) {
         ret = setsockopt(fd, SOL_SOCKET, SO_TIMESTAMPING, &so_timestamping_flags,
                          sizeof(so_timestamping_flags));
 
-      /*
-                              struct timeval tv;
-            tv.tv_sec = 0;
-            tv.tv_usec = 100000;
-            if (setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, (const char *)&tv, sizeof tv) == -1)
-              debug(1, "Error %d setting outgoing timeout.", errno);
-            if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv, sizeof tv) == -1)
-              debug(1, "Error %d setting incoming timeout.", errno);
-      */
+
       int flags = fcntl(fd, F_GETFL);
       fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-
-      /*
-            int val = 0;
-            socklen_t len = sizeof(val);
-            if (getsockopt(fd, SOL_SOCKET, SO_TIMESTAMPING, &val, &len) < 0)
-              fprintf(stderr, "%s: %s\n", "getsockopt SO_TIMESTAMPING", strerror(errno));
-            else
-              fprintf(stderr, "SO_TIMESTAMPING requested: %d, obtained: %d\n",
-         so_timestamping_flags, val);
-      */
-      /*
-            if (ret == 0)
-              setsockopt(fd, SOL_SOCKET, SO_TIMESTAMPNS, &yes, sizeof(yes));
-            if (ret != 0)
-              fprintf(stderr, "unable to enable timestamping.\n");
-
-            int val;
-            socklen_t len = sizeof(val);
-            if (getsockopt(fd, SOL_SOCKET, SO_TIMESTAMPNS, &val, &len) < 0)
-              printf("%s: %s\n", "getsockopt SO_TIMESTAMPNS", strerror(errno));
-            else
-              printf("SO_TIMESTAMPNS %d\n", val);
-      */
 
       // one of the address families will fail on some systems that
       // report its availability. do not complain.
@@ -678,7 +651,8 @@ int main(void) {
 
         debug(2, "listening on %s port %d.", p->ai_family == AF_INET6 ? "IPv6" : "IPv4", 319);
         sockets[sockets_open].number = fd;
-        sockets[sockets_open++].port = 319;
+        sockets[sockets_open].port = 319;
+        sockets_open++;
       }
     }
   }
@@ -722,35 +696,6 @@ int main(void) {
       int flags = fcntl(fd, F_GETFL);
       fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 
-      /*
-           struct timeval tv;
-            tv.tv_sec = 0;
-            tv.tv_usec = 500000;
-            if (setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, (const char *)&tv, sizeof tv) == -1)
-              debug(1, "Error %d setting send outgoing timeout.", errno);
-      */
-
-      /*      int val;
-            socklen_t len = sizeof(val);
-            if (getsockopt(fd, SOL_SOCKET, SO_TIMESTAMPING, &val, &len) < 0)
-              fprintf(stderr, "%s: %s\n", "getsockopt SO_TIMESTAMPING", strerror(errno));
-            else
-              fprintf(stderr, "SO_TIMESTAMPING requested: %d, obtained: %d\n",
-         so_timestamping_flags, val);
-      */
-      /*
-            if (ret == 0)
-              setsockopt(fd, SOL_SOCKET, SO_TIMESTAMPNS, &yes, sizeof(yes));
-            if (ret != 0)
-              fprintf(stderr, "unable to enable timestamping.\n");
-
-            int val;
-            socklen_t len = sizeof(val);
-            if (getsockopt(fd, SOL_SOCKET, SO_TIMESTAMPNS, &val, &len) < 0)
-              printf("%s: %s\n", "getsockopt SO_TIMESTAMPNS", strerror(errno));
-            else
-              printf("SO_TIMESTAMPNS %d\n", val);
-      */
       // one of the address families will fail on some systems that
       // report its availability. do not complain.
 
@@ -763,7 +708,8 @@ int main(void) {
       } else {
         debug(2, "listening on %s port %d.", p->ai_family == AF_INET6 ? "IPv6" : "IPv4", 320);
         sockets[sockets_open].number = fd;
-        sockets[sockets_open++].port = 320;
+        sockets[sockets_open].port = 320;
+        sockets_open++;
       }
     }
   }
@@ -841,22 +787,6 @@ int main(void) {
     }
 
     while (1) {
-      /*
-            fd_set readSockSet;
-            struct timeval timeout;
-            FD_ZERO(&readSockSet);
-            int smax = -1;
-            unsigned int s;
-            for (s = 0; s < sockets_open; s++) {
-              if (sockets[s].number > smax)
-                smax = sockets[s].number;
-              FD_SET(sockets[s].number, &readSockSet);
-            }
-
-            timeout.tv_sec = 1;
-            timeout.tv_usec = 0;
-            int retval = select(smax + 1, &readSockSet, NULL, NULL, &timeout);
-      */
 
       struct epoll_event events[MAX_EVENTS];
       int event_count = epoll_wait(epoll_fd, events, MAX_EVENTS, 1000);
@@ -893,8 +823,9 @@ int main(void) {
           msg.msg_controllen = sizeof(control);
 
           // int msgsize = recv(udpsocket_fd, &msg_buffer, 4, 0);
-
           recv_len = recvmsg(socket_number, &msg, MSG_DONTWAIT);
+
+          debug_print_buffer(2,buf,recv_len);
 
           if (recv_len == -1) {
             if (errno == EAGAIN) {
@@ -954,11 +885,16 @@ int main(void) {
               sender_port = ntohs(sa4->sin_port);
             }
 
-            //              if ((sender_port == sockets[t].port) && (connection_ip_family ==
-            //              AF_INET)) {
-            if (sender_port == sockets[t].port) {
+            //check here if the sender port and receiver port are the same
+            // find the socket in the socket list
+            uint16_t receiver_port = 0;
+            unsigned int jp;
+            for (jp =0; jp < sockets_open; jp++) {
+              if (socket_number == sockets[jp].number)
+                receiver_port = sockets[jp].port;
+            }
 
-              debug_print_buffer(1, buf, recv_len);
+            if (sender_port == receiver_port) {
 
               char sender_string[256];
               memset(sender_string, 0, sizeof(sender_string));
@@ -1253,8 +1189,6 @@ int main(void) {
       }
       deactivate_old_sources(reception_time);
     }
-    // here, invalidate records and entries that are out of date
-    // uint64_t tn = get_time_now();
   }
 
   // here, close all the sockets...
