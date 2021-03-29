@@ -19,7 +19,7 @@
 
 // 0 means no debug messages. 3 means lots!
 
-#define DEBUG_LEVEL 0
+#define DEBUG_LEVEL 2
 
 #include "debug.h"
 #include "nqptp-shm-structures.h"
@@ -521,6 +521,19 @@ int main(void) {
     uint8_t logMessagePeriod;    // 0
   };
 
+  // this is the extra part for an Announce message
+  struct __attribute__((__packed__)) ptp_announce {
+    uint8_t originTimestamp[10];
+    uint16_t currentUtcOffset;
+    uint8_t reserved1;
+    uint8_t grandmasterPriority1;
+    uint32_t grandmasterClockQuality;
+    uint8_t grandmasterPriority2;
+    uint8_t grandmasterIdentity[8];
+    uint16_t stepsRemoved;
+    uint8_t timeSource;
+  };
+
   // this is the extra part for a Sync or Delay_Req message
   struct __attribute__((__packed__)) ptp_sync {
     uint8_t originTimestamp[10];
@@ -560,6 +573,11 @@ int main(void) {
   struct __attribute__((__packed__)) ptp_delay_resp_message {
     struct ptp_common_message_header header;
     struct ptp_delay_resp delay_resp;
+  };
+
+  struct __attribute__((__packed__)) ptp_announce_message {
+    struct ptp_common_message_header header;
+    struct ptp_announce announce;
   };
 
   pthread_mutexattr_t shared;
@@ -939,6 +957,9 @@ int main(void) {
             //              if ((sender_port == sockets[t].port) && (connection_ip_family ==
             //              AF_INET)) {
             if (sender_port == sockets[t].port) {
+
+              debug_print_buffer(1, buf, recv_len);
+
               char sender_string[256];
               memset(sender_string, 0, sizeof(sender_string));
               inet_ntop(connection_ip_family, sender_addr, sender_string, sizeof(sender_string));
