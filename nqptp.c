@@ -106,7 +106,7 @@ enum messageType {
 
 // 8 samples per second
 
-#define MAX_TIMING_SAMPLES 480
+#define MAX_TIMING_SAMPLES 1
 struct timing_samples {
   uint64_t local, remote, local_to_remote_offset;
 } timing_samples;
@@ -321,12 +321,15 @@ void update_clock_interface(struct ptpSource *the_clock) {
 
   // here, calculate the average offset
 
+ int sample_count = MAX_TIMING_SAMPLES - the_clock->vacant_samples;
+
+ if (sample_count > 1) {
   int e;
   long double offsets = 0;
   int sample_count = MAX_TIMING_SAMPLES - the_clock->vacant_samples;
   for (e = 0; e < sample_count; e++) {
     uint64_t ho = the_clock->samples[e].local_to_remote_offset;
-    ho = ho >> 12;
+    //ho = ho >> 12;
 
     offsets = offsets + 1.0 * ho;
   }
@@ -337,7 +340,8 @@ void update_clock_interface(struct ptpSource *the_clock) {
 
   estimated_offset = (uint64_t)offsets;
 
-  estimated_offset = estimated_offset << 12;
+  //estimated_offset = estimated_offset << 12;
+  }
 
   int64_t variation = 0;
 
@@ -825,7 +829,8 @@ int main(void) {
           // int msgsize = recv(udpsocket_fd, &msg_buffer, 4, 0);
           recv_len = recvmsg(socket_number, &msg, MSG_DONTWAIT);
 
-          debug_print_buffer(2,buf,recv_len);
+          if (recv_len != -1)
+            debug_print_buffer(2,buf,recv_len);
 
           if (recv_len == -1) {
             if (errno == EAGAIN) {
@@ -1162,8 +1167,8 @@ int main(void) {
                     // all devices tested return the same value for t4 and t1. Go figure.
                     if ((the_clock->t4 != the_clock->t1) && (t4_t1_difference_reported == 0)) {
                       inform("Clock \"%" PRIx64
-                             "\" at \"%s\" is providing different t4 and t1 figures!",
-                             the_clock->clock_id, &the_clock->ip);
+                             "\" at \"%s\" is providing different t4 and t1 figures! They differ by % " PRIu64 " ns.",
+                             the_clock->clock_id, &the_clock->ip, the_clock->t4 - the_clock->t1);
                       t4_t1_difference_reported = 1;
                     }
                     the_clock->current_stage = nothing_seen;
