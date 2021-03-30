@@ -72,6 +72,10 @@
 #define SIOCSHWTSTAMP 0x89b0
 #endif
 
+#ifndef FIELD_SIZEOF
+#define FIELD_SIZEOF(t, f) (sizeof(((t*)0)->f))
+#endif
+
 // References from the IEEE Document ISBN 978-0-7381-5400-8 STD95773.
 // "IEEE Standard for a Precision Clock Synchronization Protocol for Networked Measurement and
 // Control Systems" The IEEE Std 1588-2008 (Revision of IEEE Std 1588-2002)
@@ -212,7 +216,7 @@ int create_source(char *sender_string, uint64_t packet_clock_id,
     if (rc != 0)
       warn("Can't acquire mutex to activate a new  clock!");
     memset(&clocks_shared_info[i], 0, sizeof(struct clock_source));
-    strncpy((char *)&clocks_shared_info[i].ip, sender_string, 64 - 1);
+    strncpy((char *)&clocks_shared_info[i].ip, sender_string, FIELD_SIZEOF(struct clock_source,ip) - 1);
     clocks_shared_info[i].clock_id = packet_clock_id;
     rc = pthread_mutex_unlock(&shared_memory->shm_mutex);
     if (rc != 0)
