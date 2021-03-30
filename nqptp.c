@@ -19,7 +19,7 @@
 
 // 0 means no debug messages. 3 means lots!
 
-#define DEBUG_LEVEL 1
+#define DEBUG_LEVEL 0
 
 #include "debug.h"
 #include "nqptp-shm-structures.h"
