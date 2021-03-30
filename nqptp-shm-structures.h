@@ -21,13 +21,12 @@
 #define NQPTP_SHM_STRUCTURES_H
 
 #define STORAGE_ID "/nqptp"
-#define MAX_SHARED_CLOCKS 32
+#define MAX_CLOCKS 32
 #define NQPTP_SHM_STRUCTURES_VERSION 1
 
 #include <inttypes.h>
 #include <netinet/in.h>
 #include <pthread.h>
-
 
 struct clock_source {
   char ip[64]; // 64 is nicely aligned and bigger than INET6_ADDRSTRLEN (46)
@@ -44,7 +43,7 @@ struct shm_structure {
   uint16_t size_of_clock_array; // check this is equal to MAX_SHARED_CLOCKS
   uint16_t version;             // check this is equal to NQPTP_SHM_STRUCTURES_VERSION
   uint32_t flags;
-  struct clock_source clocks[MAX_SHARED_CLOCKS];
+  struct clock_source clocks[MAX_CLOCKS];
 };
 
 #endif
