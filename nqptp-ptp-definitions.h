@@ -20,6 +20,8 @@
 #ifndef NQPTP_PTP_DEFINITIONS_H
 #define NQPTP_PTP_DEFINITIONS_H
 
+#include <inttypes.h>
+
 // This is for definitions and stuff that flows more or less directly
 // from external sources.
 

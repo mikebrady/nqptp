@@ -24,6 +24,7 @@
 #include "nqptp.h"
 #include "nqptp-ptp-definitions.h"
 #include "nqptp-clock-sources.h"
+#include "nqptp-message-handlers.h"
 #include "nqptp-utilities.h"
 #include "general-utilities.h"
 #include "debug.h"
@@ -347,6 +348,9 @@ int main(void) {
               }
               if (the_clock != -1) {
                 switch (buf[0] & 0xF) {
+                case Announce:
+                  handle_announce(buf, recv_len, &shared_memory->clocks[the_clock],&clocks_private[the_clock], reception_time);
+                  break;
                 case Sync: { // if it's a sync
                   struct ptp_sync_message *msg = (struct ptp_sync_message *)buf;
                   // this is just to see if anything interesting comes in the SYNC package

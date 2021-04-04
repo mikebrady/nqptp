@@ -36,7 +36,6 @@ typedef struct {
   uint64_t t2;
   // for Announce Qualification
   uint64_t announce_times[4];  // we'll check qualification and currency using these
-  int announce_times_valid_count;
   int announce_is_valid; // this may mean it's a master clock_source
 } clock_source_private_data;
 
