@@ -22,6 +22,8 @@
 
 #include "nqptp-shm-structures.h"
 
+#define MAX_OPEN_SOCKETS 16
+
 extern struct shm_structure *shared_memory;
 
 #endif

@@ -20,9 +20,58 @@
 #ifndef NQPTP_PTP_DEFINITIONS_H
 #define NQPTP_PTP_DEFINITIONS_H
 
+// This is for definitions and stuff that flows more or less directly
+// from external sources.
+
+// They may not be used. Yet.
+
+// Derived from https://github.com/rroussel/OpenAvnu/blob/ArtAndLogic-aPTP-changes/daemons/gptp/gptp_cfg.ini:
+
+#define aPTPpriority1 248
+#define aPTPpriority2 248
+#define aPTPaccuracy 254
+
+// "Per the Apple Vendor PTP profile"
+// these seem to be log2 of seconds, thus 0 is 2^0 or 1 sec, -3 to 2^-3 or 0.125 sec
+// see 7.7.7.2
+#define aPTPinitialLogAnnounceInterval 0
+
+// see 7.7.2.3
+#define aPTPinitialLogSyncInterval -3
+
+// This doesn't seem to be used in OpenAvnu
+// but see 7.7.3.1, so it looks like they are units of the announceInterval, so seconds here
+#define aPTPannounceReceiptTimeout 120
+
+// "Per the Apple Vendor PTP profile (8*announceReceiptTimeout)"
+// This doesn't seem to be used in OpenAvnu
+// Guess it's the same idea, but based on aPTPinitialLogSyncInterval
+// but it could be based on aPTPinitialLogAnnounceInterval, of course.
+
+#define aPTPsyncReceiptTimeout 960
+
+// "Neighbor propagation delay threshold in nanoseconds"
+#define aPTPneighborPropDelayThresh 800
+
+// "Sync Receipt Threshold
+// This value defines the number of syncs with wrong seqID that will trigger
+// the ptp slave to become master (it will start announcing)
+// Normally sync messages are sent every 125ms, so setting it to 8 will allow
+// up to 1 second of wrong messages before switching"
+
+#define aPTPsyncReceiptThresh 8
+
 // References from the IEEE Document ISBN 978-0-7381-5400-8 STD95773.
 // "IEEE Standard for a Precision Clock Synchronization Protocol for Networked Measurement and
 // Control Systems" The IEEE Std 1588-2008 (Revision of IEEE Std 1588-2002)
+
+
+// See 9.3.2.4.4 FOREIGN_MASTER_TIME_WINDOW and FOREIGN_MASTER_THRESHOLD
+// units are the announceInterval
+#define FOREIGN_MASTER_TIME_WINDOW 4
+#define FOREIGN_MASTER_THRESHOLD 2
+
+// See also 9.3.2.5 Qualification of Announce messages
 
 // Table 19
 enum messageType {

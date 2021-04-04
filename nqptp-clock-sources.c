@@ -19,6 +19,7 @@
 
 #include <string.h>
 #include "nqptp-clock-sources.h"
+#include "nqptp-ptp-definitions.h"
 #include "debug.h"
 
 #ifndef FIELD_SIZEOF
@@ -91,7 +92,14 @@ void manage_clock_sources(uint64_t reception_time, clock_source *clocks_shared_i
   for (i = 0; i < MAX_CLOCKS; i++) {
     if (clocks_private_info[i].in_use != 0) {
       int64_t time_since_last_sync = reception_time - clocks_private_info[i].t2;
-      if (time_since_last_sync > 60000000000) {
+      // the following give the sync receipt time in whole seconds
+      // depending on the aPTPinitialLogSyncInterval and the aPTPsyncReceiptTimeout
+      int64_t syncTimeout = (1 << (32 + aPTPinitialLogSyncInterval));
+      syncTimeout = syncTimeout * aPTPsyncReceiptTimeout;
+      syncTimeout = syncTimeout >> 32;
+      // seconds to nanoseconds
+      syncTimeout = syncTimeout * 1000000000;
+      if (time_since_last_sync > syncTimeout) {
         debug(1, "deactivating source %d with clock_id %" PRIx64 " on ip: %s.", i,
               clocks_shared_info[i].clock_id, &clocks_shared_info[i].ip);
         int rc = pthread_mutex_lock(&shared_memory->shm_mutex);

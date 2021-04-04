@@ -20,9 +20,21 @@
 #ifndef NQPTP_UTILITIES_H
 #define NQPTP_UTILITIES_H
 #include <stddef.h>
+#include "nqptp.h"
 // functions that are specific to NQPTP
 // general stuff should go in the general-utilities
 
+typedef struct  {
+  int number;
+  uint16_t port;
+} socket_info;
+
+typedef struct {
+  unsigned int sockets_open; // also doubles as where to put next one, as sockets are never closed.
+  socket_info sockets[MAX_OPEN_SOCKETS];
+} sockets_open_bundle;
+
+void open_sockets_at_port(uint16_t port, sockets_open_bundle *sockets_open_stuff);
 void debug_print_buffer(int level, char *buf, size_t buf_len);
 
 #endif

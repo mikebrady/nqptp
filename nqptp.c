@@ -62,35 +62,13 @@
 #include <signal.h>
 #include <sys/epoll.h>
 
-#ifndef SO_TIMESTAMPING
-#define SO_TIMESTAMPING 37
-#define SCM_TIMESTAMPING SO_TIMESTAMPING
-#endif
-#ifndef SO_TIMESTAMPNS
-#define SO_TIMESTAMPNS 35
-#endif
-#ifndef SIOCGSTAMPNS
-#define SIOCGSTAMPNS 0x8907
-#endif
-#ifndef SIOCSHWTSTAMP
-#define SIOCSHWTSTAMP 0x89b0
-#endif
-
 // 8 samples per second
 
 #define BUFLEN 4096 // Max length of buffer
-#define MAX_OPEN_SOCKETS 32 // up to 32 sockets open on ports 319 and 320
+#define MAX_EVENTS 128 // For epoll
 
-struct socket_info {
-  int number;
-  uint16_t port;
-};
-
+sockets_open_bundle sockets_open_stuff;
 clock_source_private_data clocks_private[MAX_CLOCKS];
-
-struct socket_info sockets[MAX_OPEN_SOCKETS];
-unsigned int sockets_open =
-    0; // also doubles as where to put next one, as sockets are never closed.
 struct shm_structure *shared_memory = NULL; // this is where public clock info is available
 int epoll_fd;
 
@@ -103,13 +81,11 @@ int epoll_fd;
 #define SAFAMILY sa_family
 #endif
 
-uint64_t time_then = 0;
-
 void goodbye(void) {
   // close any open sockets
   unsigned int i;
-  for (i = 0; i < sockets_open; i++)
-    close(sockets[i].number);
+  for (i = 0; i < sockets_open_stuff.sockets_open; i++)
+    close(sockets_open_stuff.sockets[i].number);
   if (shared_memory != NULL) {
     // mmap cleanup
     if (munmap(shared_memory, sizeof(struct shm_structure)) != 0)
@@ -139,6 +115,8 @@ int main(void) {
   debug(1, "startup");
   atexit(goodbye);
 
+  sockets_open_stuff.sockets_open = 0;
+
   epoll_fd = -1;
   shared_memory = NULL;
   // memset(sources,0,sizeof(sources));
@@ -163,131 +141,10 @@ int main(void) {
   pthread_mutexattr_t shared;
   int err;
 
-  int so_timestamping_flags = SOF_TIMESTAMPING_TX_HARDWARE | SOF_TIMESTAMPING_TX_SOFTWARE |
-                              SOF_TIMESTAMPING_RX_HARDWARE | SOF_TIMESTAMPING_RX_SOFTWARE |
-                              SOF_TIMESTAMPING_SOFTWARE | SOF_TIMESTAMPING_RAW_HARDWARE;
-  // int so_timestamping_flags =  SOF_TIMESTAMPING_RX_SOFTWARE ;
+  // open sockets 319 and 320
 
-  // open up sockets for UDP ports 319 and 320
-
-  struct addrinfo hints, *info, *p;
-  int ret;
-
-  // replicating nearly the same code for 319 and 320. Ugh!
-
-  // 319...
-  memset(&hints, 0, sizeof(hints));
-  hints.ai_family = AF_UNSPEC;
-  hints.ai_socktype = SOCK_DGRAM;
-  hints.ai_flags = AI_PASSIVE;
-
-  ret = getaddrinfo(NULL, "319", &hints, &info);
-  if (ret) {
-    die("getifaddrs: %s", gai_strerror(ret));
-  }
-
-  for (p = info; p; p = p->ai_next) {
-    ret = 0;
-    int fd = socket(p->ai_family, p->ai_socktype, IPPROTO_UDP);
-    int yes = 1;
-
-    // Handle socket open failures if protocol unavailable (or IPV6 not handled)
-    if (fd != -1) {
-#ifdef IPV6_V6ONLY
-      // some systems don't support v4 access on v6 sockets, but some do.
-      // since we need to account for two sockets we might as well
-      // always.
-      if (p->ai_family == AF_INET6) {
-        ret |= setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &yes, sizeof(yes));
-      }
-#endif
-
-      if (!ret)
-        ret = bind(fd, p->ai_addr, p->ai_addrlen);
-
-      if (ret == 0)
-        ret = setsockopt(fd, SOL_SOCKET, SO_TIMESTAMPING, &so_timestamping_flags,
-                         sizeof(so_timestamping_flags));
-
-      int flags = fcntl(fd, F_GETFL);
-      fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-
-      // one of the address families will fail on some systems that
-      // report its availability. do not complain.
-
-      if (ret) {
-        die("unable to listen on %s port %d. The error is: \"%s\". Daemon must run as root. Or is "
-            "a "
-            "separate PTP daemon running?",
-            p->ai_family == AF_INET6 ? "IPv6" : "IPv4", 320, strerror(errno));
-      } else {
-
-        debug(2, "listening on %s port %d.", p->ai_family == AF_INET6 ? "IPv6" : "IPv4", 319);
-        sockets[sockets_open].number = fd;
-        sockets[sockets_open].port = 319;
-        sockets_open++;
-      }
-    }
-  }
-
-  freeaddrinfo(info);
-
-  // 320...
-  memset(&hints, 0, sizeof(hints));
-  hints.ai_family = AF_UNSPEC;
-  hints.ai_socktype = SOCK_DGRAM;
-  hints.ai_flags = AI_PASSIVE;
-
-  ret = getaddrinfo(NULL, "320", &hints, &info);
-  if (ret) {
-    die("getifaddrs: %s", gai_strerror(ret));
-  }
-
-  for (p = info; p; p = p->ai_next) {
-    ret = 0;
-    int fd = socket(p->ai_family, p->ai_socktype, IPPROTO_UDP);
-    int yes = 1;
-
-    // Handle socket open failures if protocol unavailable (or IPV6 not handled)
-    if (fd != -1) {
-#ifdef IPV6_V6ONLY
-      // some systems don't support v4 access on v6 sockets, but some do.
-      // since we need to account for two sockets we might as well
-      // always.
-      if (p->ai_family == AF_INET6) {
-        ret |= setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &yes, sizeof(yes));
-      }
-#endif
-
-      if (!ret)
-        ret = bind(fd, p->ai_addr, p->ai_addrlen);
-
-      if (ret == 0)
-        setsockopt(fd, SOL_SOCKET, SO_TIMESTAMPING, &so_timestamping_flags,
-                   sizeof(so_timestamping_flags));
-
-      int flags = fcntl(fd, F_GETFL);
-      fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-
-      // one of the address families will fail on some systems that
-      // report its availability. do not complain.
-
-      if (ret) {
-        die("unable to listen on %s port %d. The error is: \"%s\". Daemon must run as root. Or is "
-            "a "
-            "separate PTP daemon running?",
-            p->ai_family == AF_INET6 ? "IPv6" : "IPv4", 320, strerror(errno));
-        exit(1);
-      } else {
-        debug(2, "listening on %s port %d.", p->ai_family == AF_INET6 ? "IPv6" : "IPv4", 320);
-        sockets[sockets_open].number = fd;
-        sockets[sockets_open].port = 320;
-        sockets_open++;
-      }
-    }
-  }
-
-  freeaddrinfo(info);
+  open_sockets_at_port(319,&sockets_open_stuff);
+  open_sockets_at_port(320,&sockets_open_stuff);
 
   // open a shared memory interface.
   int shm_fd = -1;
@@ -338,9 +195,9 @@ int main(void) {
     die("mutex initialization failed - %s.", strerror(errno));
   }
 
-  if (sockets_open > 0) {
+  // now, get down to business
+  if (sockets_open_stuff.sockets_open > 0) {
 
-#define MAX_EVENTS 128
     struct epoll_event event;
     int epoll_fd = epoll_create(32);
 
@@ -348,15 +205,15 @@ int main(void) {
       die("Failed to create epoll file descriptor\n");
 
     unsigned int ep;
-    for (ep = 0; ep < sockets_open; ep++) {
+    for (ep = 0; ep < sockets_open_stuff.sockets_open; ep++) {
       // if (sockets[s].number > smax)
       // smax = sockets[s].number;
       event.events = EPOLLIN;
-      event.data.fd = sockets[ep].number;
-      if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, sockets[ep].number, &event) != 0)
-        die("failed to add socket %d to epoll", sockets[ep].number);
+      event.data.fd = sockets_open_stuff.sockets[ep].number;
+      if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, sockets_open_stuff.sockets[ep].number, &event) != 0)
+        die("failed to add socket %d to epoll", sockets_open_stuff.sockets[ep].number);
       else
-        debug(3, "add socket %d to epoll", sockets[ep].number);
+        debug(3, "add socket %d to epoll", sockets_open_stuff.sockets[ep].number);
     }
 
     while (1) {
@@ -463,9 +320,9 @@ int main(void) {
             // find the socket in the socket list
             uint16_t receiver_port = 0;
             unsigned int jp;
-            for (jp = 0; jp < sockets_open; jp++) {
-              if (socket_number == sockets[jp].number)
-                receiver_port = sockets[jp].port;
+            for (jp = 0; jp < sockets_open_stuff.sockets_open; jp++) {
+              if (socket_number == sockets_open_stuff.sockets[jp].number)
+                receiver_port = sockets_open_stuff.sockets[jp].port;
             }
 
             if (sender_port == receiver_port) {
