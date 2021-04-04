@@ -19,10 +19,14 @@
 
 // 0 means no debug messages. 3 means lots!
 
-#define DEBUG_LEVEL 0
+#define DEBUG_LEVEL 1
 
+#include "nqptp.h"
+#include "nqptp-ptp-definitions.h"
+#include "nqptp-clock-sources.h"
+#include "nqptp-utilities.h"
+#include "general-utilities.h"
 #include "debug.h"
-#include "nqptp-shm-structures.h"
 
 #include <arpa/inet.h>
 #include <stdio.h>  //printf
@@ -72,69 +76,22 @@
 #define SIOCSHWTSTAMP 0x89b0
 #endif
 
-#ifndef FIELD_SIZEOF
-#define FIELD_SIZEOF(t, f) (sizeof(((t*)0)->f))
-#endif
-
-// References from the IEEE Document ISBN 978-0-7381-5400-8 STD95773.
-// "IEEE Standard for a Precision Clock Synchronization Protocol for Networked Measurement and
-// Control Systems" The IEEE Std 1588-2008 (Revision of IEEE Std 1588-2002)
-
-// transaction tracking
-enum stage {
-  waiting_for_sync,
-  sync_seen,
-};
-
-// Table 19
-enum messageType {
-  Sync,
-  Delay_Req,
-  Pdelay_Req,
-  Pdelay_Resp,
-  Reserved_4,
-  Reserved_5,
-  Reserved_6,
-  Reserved_7,
-  Follow_Up,
-  Delay_Resp,
-  Pdelay_Resp_Follow_Up,
-  Announce,
-  Signaling,
-  Management,
-  Reserved_E,
-  Reserved_F
-};
-
 // 8 samples per second
 
-#define MAX_TIMING_SAMPLES 1
-struct timing_samples {
-  uint64_t local, remote, local_to_remote_offset;
-} timing_samples;
-
-struct clock_private_info {
-  uint16_t sequence_number;
-  uint16_t in_use;
-  enum stage current_stage;
-  uint64_t t2;
-
-} clock_private_info;
-
 #define BUFLEN 4096 // Max length of buffer
-
 #define MAX_OPEN_SOCKETS 32 // up to 32 sockets open on ports 319 and 320
 
 struct socket_info {
   int number;
   uint16_t port;
 };
-struct clock_private_info clocks_private[MAX_CLOCKS];
+
+clock_source_private_data clocks_private[MAX_CLOCKS];
 
 struct socket_info sockets[MAX_OPEN_SOCKETS];
 unsigned int sockets_open =
     0; // also doubles as where to put next one, as sockets are never closed.
-struct shm_structure *shared_memory = NULL;
+struct shm_structure *shared_memory = NULL; // this is where public clock info is available
 int epoll_fd;
 
 // struct sockaddr_in6 is bigger than struct sockaddr.
@@ -147,161 +104,6 @@ int epoll_fd;
 #endif
 
 uint64_t time_then = 0;
-
-uint32_t nctohl(const uint8_t *p) { // read 4 characters from *p and do ntohl on them
-  // this is to avoid possible aliasing violations
-  uint32_t holder;
-  memcpy(&holder, p, sizeof(holder));
-  return ntohl(holder);
-}
-
-uint16_t nctohs(const uint8_t *p) { // read 2 characters from *p and do ntohs on them
-  // this is to avoid possible aliasing violations
-  uint16_t holder;
-  memcpy(&holder, p, sizeof(holder));
-  return ntohs(holder);
-}
-
-uint64_t timespec_to_ns(struct timespec *tn) {
-  uint64_t tnfpsec = tn->tv_sec;
-  uint64_t tnfpnsec = tn->tv_nsec;
-  tnfpsec = tnfpsec * 1000000000;
-  return tnfpsec + tnfpnsec;
-}
-
-uint64_t get_time_now() {
-  struct timespec tn;
-  clock_gettime(CLOCK_REALTIME, &tn); // this should be optionally CLOCK_MONOTONIC etc.
-  return timespec_to_ns(&tn);
-}
-
-int find_source(char *sender_string, uint64_t packet_clock_id,
-                struct clock_source *clocks_shared_info,
-                struct clock_private_info *clocks_private_info) {
-  // return the index of the clock in the clock information arrays or -1
-  int response = -1;
-  int i = 0;
-  int found = 0;
-  while ((found == 0) && (i < MAX_CLOCKS)) {
-    if ((clocks_private_info[i].in_use != 0) &&
-        (clocks_shared_info[i].clock_id == packet_clock_id) &&
-        (strcasecmp(sender_string, (const char *)&clocks_shared_info[i].ip) == 0))
-      found = 1;
-    else
-      i++;
-  }
-  if (found == 1)
-    response = i;
-  return response;
-}
-
-int create_source(char *sender_string, uint64_t packet_clock_id,
-                  struct clock_source *clocks_shared_info,
-                  struct clock_private_info *clocks_private_info) {
-  // return the index of a clock entry in the clock information arrays or -1 if full
-  // initialise the entries in the shared and private arrays
-  int response = -1;
-  int i = 0;
-  int found = 0;
-  while ((found == 0) && (i < MAX_CLOCKS)) {
-    if (clocks_private_info[i].in_use == 0)
-      found = 1;
-    else
-      i++;
-  }
-
-  if (found == 1) {
-    response = i;
-    int rc = pthread_mutex_lock(&shared_memory->shm_mutex);
-    if (rc != 0)
-      warn("Can't acquire mutex to activate a new  clock!");
-    memset(&clocks_shared_info[i], 0, sizeof(struct clock_source));
-    strncpy((char *)&clocks_shared_info[i].ip, sender_string, FIELD_SIZEOF(struct clock_source,ip) - 1);
-    clocks_shared_info[i].clock_id = packet_clock_id;
-    rc = pthread_mutex_unlock(&shared_memory->shm_mutex);
-    if (rc != 0)
-      warn("Can't release mutex after activating a new clock!");
-
-    memset(&clocks_private_info[i], 0, sizeof(struct clock_private_info));
-    clocks_private_info[i].in_use = 1;
-    clocks_private_info[i].t2 = 0;
-    clocks_private_info[i].current_stage = waiting_for_sync;
-    debug(1, "activated source %d with clock_id %" PRIx64 " on ip: %s.", i,
-          clocks_shared_info[i].clock_id, &clocks_shared_info[i].ip);
-  } else {
-    die("Clock tables full!");
-  }
-  return response;
-}
-
-void deactivate_old_sources(uint64_t reception_time, struct clock_source *clocks_shared_info,
-                            struct clock_private_info *clocks_private_info) {
-  debug(3, "deactivate_old_sources");
-  int i;
-  for (i = 0; i < MAX_CLOCKS; i++) {
-    if (clocks_private_info[i].in_use != 0) {
-      int64_t time_since_last_sync = reception_time - clocks_private_info[i].t2;
-      if (time_since_last_sync > 60000000000) {
-        debug(1, "deactivating source %d with clock_id %" PRIx64 " on ip: %s.", i,
-              clocks_shared_info[i].clock_id, &clocks_shared_info[i].ip);
-        int rc = pthread_mutex_lock(&shared_memory->shm_mutex);
-        if (rc != 0)
-          warn("Can't acquire mutex to deactivate a clock!");
-        memset(&clocks_shared_info[i], 0, sizeof(struct clock_source));
-        rc = pthread_mutex_unlock(&shared_memory->shm_mutex);
-        if (rc != 0)
-          warn("Can't release mutex after deactivating a clock!");
-        memset(&clocks_private_info[i], 0, sizeof(struct clock_private_info));
-      }
-    }
-  }
-}
-
-void debug_print_buffer(int level, char *buf, size_t buf_len) {
-  // printf("Received %u bytes in a packet from %s:%d\n", buf_len, inet_ntoa(si_other.sin_addr),
-  // ntohs(si_other.sin_port));
-  char obf[BUFLEN * 2 + BUFLEN / 4 + 1 + 1];
-  char *obfp = obf;
-  unsigned int obfc;
-  for (obfc = 0; obfc < buf_len; obfc++) {
-    snprintf(obfp, 3, "%02X", buf[obfc]);
-    obfp += 2;
-    if (obfc != buf_len - 1) {
-      if (obfc % 32 == 31) {
-        snprintf(obfp, 5, " || ");
-        obfp += 4;
-      } else if (obfc % 16 == 15) {
-        snprintf(obfp, 4, " | ");
-        obfp += 3;
-      } else if (obfc % 4 == 3) {
-        snprintf(obfp, 2, " ");
-        obfp += 1;
-      }
-    }
-  };
-  *obfp = 0;
-  switch (buf[0]) {
-
-  case 0x10:
-    debug(level, "SYNC: \"%s\".", obf);
-    break;
-  case 0x18:
-    debug(level, "FLUP: \"%s\".", obf);
-    break;
-  case 0x19:
-    debug(level, "DRSP: \"%s\".", obf);
-    break;
-  case 0x1B:
-    debug(level, "ANNC: \"%s\".", obf);
-    break;
-  case 0x1C:
-    debug(level, "SGNL: \"%s\".", obf);
-    break;
-  default:
-    debug(level, "      \"%s\".", obf);
-    break;
-  }
-}
 
 void goodbye(void) {
   // close any open sockets
@@ -357,81 +159,6 @@ int main(void) {
   ssize_t recv_len;
 
   char buf[BUFLEN];
-
-  struct __attribute__((__packed__)) ptp_common_message_header {
-    uint8_t transportSpecificAndMessageID; // 0x11
-    uint8_t reservedAndVersionPTP;         // 0x02
-    uint16_t messageLength;
-    uint8_t domainNumber;        // 0
-    uint8_t reserved_b;          // 0
-    uint16_t flags;              // 0x0608
-    uint64_t correctionField;    // 0
-    uint32_t reserved_l;         // 0
-    uint8_t clockIdentity[8];    // MAC
-    uint16_t sourcePortID;       // 1
-    uint16_t sequenceId;         // increments
-    uint8_t controlOtherMessage; // 5
-    uint8_t logMessagePeriod;    // 0
-  };
-
-  // this is the extra part for an Announce message
-  struct __attribute__((__packed__)) ptp_announce {
-    uint8_t originTimestamp[10];
-    uint16_t currentUtcOffset;
-    uint8_t reserved1;
-    uint8_t grandmasterPriority1;
-    uint32_t grandmasterClockQuality;
-    uint8_t grandmasterPriority2;
-    uint8_t grandmasterIdentity[8];
-    uint16_t stepsRemoved;
-    uint8_t timeSource;
-  };
-
-  // this is the extra part for a Sync or Delay_Req message
-  struct __attribute__((__packed__)) ptp_sync {
-    uint8_t originTimestamp[10];
-  };
-
-  // this is the extra part for a Sync or Delay_Req message
-  struct __attribute__((__packed__)) ptp_delay_req {
-    uint8_t originTimestamp[10];
-  };
-
-  // this is the extra part for a Follow_Up message
-  struct __attribute__((__packed__)) ptp_follow_up {
-    uint8_t preciseOriginTimestamp[10];
-  };
-
-  // this is the extra part for a Delay_Resp message
-  struct __attribute__((__packed__)) ptp_delay_resp {
-    uint8_t receiveTimestamp[10];
-    uint8_t requestingPortIdentity[10];
-  };
-
-  struct __attribute__((__packed__)) ptp_sync_message {
-    struct ptp_common_message_header header;
-    struct ptp_sync sync;
-  };
-
-  struct __attribute__((__packed__)) ptp_delay_req_message {
-    struct ptp_common_message_header header;
-    struct ptp_delay_req delay_req;
-  };
-
-  struct __attribute__((__packed__)) ptp_follow_up_message {
-    struct ptp_common_message_header header;
-    struct ptp_follow_up follow_up;
-  };
-
-  struct __attribute__((__packed__)) ptp_delay_resp_message {
-    struct ptp_common_message_header header;
-    struct ptp_delay_resp delay_resp;
-  };
-
-  struct __attribute__((__packed__)) ptp_announce_message {
-    struct ptp_common_message_header header;
-    struct ptp_announce announce;
-  };
 
   pthread_mutexattr_t shared;
   int err;
@@ -753,13 +480,13 @@ int main(void) {
               packet_clock_id = packet_clock_id << 32;
               packet_clock_id = packet_clock_id + packet_clock_id_low;
 
-              int the_clock = find_source(sender_string, packet_clock_id,
-                                          (struct clock_source *)&shared_memory->clocks,
-                                          (struct clock_private_info *)&clocks_private);
+              int the_clock = find_clock_source_record(sender_string, packet_clock_id,
+                                          (clock_source *)&shared_memory->clocks,
+                                          (clock_source_private_data *)&clocks_private);
               if ((the_clock == -1) && ((buf[0] & 0xF) == Sync)) {
-                the_clock = create_source(sender_string, packet_clock_id,
-                                          (struct clock_source *)&shared_memory->clocks,
-                                          (struct clock_private_info *)&clocks_private);
+                the_clock = create_clock_source_record(sender_string, packet_clock_id,
+                                          (clock_source *)&shared_memory->clocks,
+                                          (clock_source_private_data *)&clocks_private);
               }
               if (the_clock != -1) {
                 switch (buf[0] & 0xF) {
@@ -869,8 +596,8 @@ int main(void) {
           }
         }
       }
-      deactivate_old_sources(reception_time, (struct clock_source *)&shared_memory->clocks,
-                             (struct clock_private_info *)&clocks_private);
+      manage_clock_sources(reception_time, (clock_source *)&shared_memory->clocks,
+                             (clock_source_private_data *)&clocks_private);
     }
   }
 
