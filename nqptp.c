@@ -364,7 +364,7 @@ int main(void) {
                     }
                   }
                   if (non_empty_origin_timestamp != 0)
-                    debug(1, "Sync Origin Timestamp!");
+                    debug(2, "Sync Origin Timestamp!");
                   if (msg->header.correctionField != 0)
                     debug(3, "correctionField: %" PRIx64 ".", msg->header.correctionField);
 
