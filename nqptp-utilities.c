@@ -27,6 +27,8 @@
 #include <errno.h>
 #include <linux/net_tstamp.h>
 #include "nqptp-utilities.h"
+#include "general-utilities.h"
+
 #include "debug.h"
 
 #ifndef SO_TIMESTAMPING

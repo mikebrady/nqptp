@@ -34,9 +34,11 @@ typedef struct {
   uint16_t in_use;
   enum stage current_stage;
   uint64_t t2;
+
   // for Announce Qualification
   uint64_t announce_times[4];  // we'll check qualification and currency using these
   int announce_is_valid; // this may mean it's a master clock_source
+  int is_one_of_ours; // true if it is one of our own clocks
 } clock_source_private_data;
 
 int find_clock_source_record(char *sender_string, uint64_t packet_clock_id,
@@ -46,6 +48,9 @@ int find_clock_source_record(char *sender_string, uint64_t packet_clock_id,
 int create_clock_source_record(char *sender_string, uint64_t packet_clock_id,
                   clock_source *clocks_shared_info,
                   clock_source_private_data *clocks_private_info);
+
+void update_clock_self_identifications(clock_source *clocks_shared_info,
+                            clock_source_private_data *clocks_private_info);
 
 void manage_clock_sources(uint64_t reception_time, clock_source *clocks_shared_info,
                             clock_source_private_data *clocks_private_info);

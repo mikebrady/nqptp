@@ -25,6 +25,8 @@
 #include "debug.h"
 
 void handle_announce(char *buf, ssize_t recv_len, clock_source* clock_info, clock_source_private_data *clock_private_info, uint64_t reception_time) {
+  // reject Announce messages from self
+  if (clock_private_info->is_one_of_ours == 0) {
   // debug_print_buffer(1, buf, (size_t) recv_len);
   // make way for the new time
   if ((size_t)recv_len >= sizeof(struct ptp_announce_message)) {
@@ -73,7 +75,7 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source* clock_info, cloc
       uint16_t offsetScaledLogVariance = clockQuality & 0xffff;
       debug(1, "    grandmasterIdentity:     %" PRIx64 ".", grandmaster_clock_id);
       debug(1, "    grandmasterPriority1:    %u.", msg->announce.grandmasterPriority1);
-      debug(1, "    grandmasterClockQuality,: 0x%x.", msg->announce.grandmasterClockQuality);
+      debug(1, "    grandmasterClockQuality: 0x%x.", msg->announce.grandmasterClockQuality);
       debug(1, "        clockClass:              %u.", clockClass); // See 7.6.2.4 clockClass
       debug(1, "        clockAccuracy:           0x%x.", clockAccuracy); // See 7.6.2.5 clockAccuracy
       debug(1, "        offsetScaledLogVariance: %x.", offsetScaledLogVariance); // See 7.6.3 PTP variance
@@ -85,6 +87,7 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source* clock_info, cloc
       debug(1, "clock_id %" PRIx64 " on ip: %s \"Announce\" message is not Qualified -- See 9.3.2.5.",
           clock_info->clock_id, clock_info->ip);
     clock_private_info->announce_is_valid = 0;
+  }
   }
   }
 }

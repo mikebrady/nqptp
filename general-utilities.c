@@ -17,9 +17,10 @@
  * Commercial licensing is also available.
  */
 
-#include <string.h>
 #include <arpa/inet.h>
+#include <string.h>
 #include "general-utilities.h"
+#include "debug.h"
 
 uint32_t nctohl(const uint8_t *p) { // read 4 characters from *p and do ntohl on them
   // this is to avoid possible aliasing violations

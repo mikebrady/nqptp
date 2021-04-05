@@ -73,15 +73,6 @@ clock_source_private_data clocks_private[MAX_CLOCKS];
 struct shm_structure *shared_memory = NULL; // this is where public clock info is available
 int epoll_fd;
 
-// struct sockaddr_in6 is bigger than struct sockaddr.
-#ifdef AF_INET6
-#define SOCKADDR struct sockaddr_storage
-#define SAFAMILY ss_family
-#else
-#define SOCKADDR struct sockaddr
-#define SAFAMILY sa_family
-#endif
-
 void goodbye(void) {
   // close any open sockets
   unsigned int i;
@@ -220,6 +211,7 @@ int main(void) {
     while (1) {
 
       struct epoll_event events[MAX_EVENTS];
+      // the timeout is in seconds
       int event_count = epoll_wait(epoll_fd, events, MAX_EVENTS, 1000);
       uint64_t reception_time = get_time_now(); // use this if other methods fail
 
@@ -349,6 +341,9 @@ int main(void) {
               if (the_clock != -1) {
                 switch (buf[0] & 0xF) {
                 case Announce:
+                  // needed to reject messages coming from self
+                  update_clock_self_identifications((clock_source *)&shared_memory->clocks,
+                     (clock_source_private_data *)&clocks_private);
                   handle_announce(buf, recv_len, &shared_memory->clocks[the_clock],&clocks_private[the_clock], reception_time);
                   break;
                 case Sync: { // if it's a sync

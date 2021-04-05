@@ -18,6 +18,9 @@
  */
 
 #include <string.h>
+#include <sys/types.h>
+#include <ifaddrs.h>
+#include <arpa/inet.h>
 #include "nqptp-clock-sources.h"
 #include "nqptp-ptp-definitions.h"
 #include "debug.h"
@@ -113,5 +116,50 @@ void manage_clock_sources(uint64_t reception_time, clock_source *clocks_shared_i
       }
     }
   }
+}
+
+// check all the entries in the clock array and mark all those that
+// belong to ourselves
+
+void update_clock_self_identifications(clock_source *clocks_shared_info,
+                            clock_source_private_data *clocks_private_info) {
+  // first, turn off all the self-id flags
+  int i;
+  for (i = 0; i < MAX_CLOCKS ; i++) {
+    clocks_private_info[i].is_one_of_ours = 0;
+  }
+
+  struct ifaddrs *ifap, *ifa;
+  void *addr = NULL;
+  short family;
+  getifaddrs(&ifap);
+  for (ifa = ifap; ifa; ifa = ifa->ifa_next) {
+    family = ifa->ifa_addr->sa_family;
+#ifdef AF_INET6
+      if (ifa->ifa_addr && family==AF_INET6) {
+          struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *) ifa->ifa_addr;
+          addr = &(sa6->sin6_addr);
+      }
+#endif
+      if (ifa->ifa_addr && family==AF_INET) {
+          struct sockaddr_in *sa4 = (struct sockaddr_in *) ifa->ifa_addr;
+          addr = &(sa4->sin_addr);
+       }
+      char ip_string[64];
+      memset(ip_string,0,sizeof(ip_string));
+      if (addr != NULL)
+        inet_ntop(family, addr, ip_string, sizeof(ip_string));
+      if (strlen(ip_string) != 0) {
+        // now set the is_one_of_ours flag of any clock with this ip
+         for (i = 0; i < MAX_CLOCKS ; i++) {
+            if (strcasecmp(ip_string,clocks_shared_info[i].ip) == 0) {
+              debug(2,"found an entry for one of our clocks");
+              clocks_private_info[i].is_one_of_ours = 1;
+            }
+          }
+
+      }
+   }
+  freeifaddrs(ifap);
 }
 

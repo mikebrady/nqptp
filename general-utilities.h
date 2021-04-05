@@ -27,6 +27,15 @@
 #include <inttypes.h>
 #include <time.h>
 
+// struct sockaddr_in6 is bigger than struct sockaddr. derp
+#ifdef AF_INET6
+#define SOCKADDR struct sockaddr_storage
+#define SAFAMILY ss_family
+#else
+#define SOCKADDR struct sockaddr
+#define SAFAMILY sa_family
+#endif
+
 uint32_t nctohl(const uint8_t *p); // read 4 characters from *p and do ntohl on them, avoiding aliasing
 uint16_t nctohs(const uint8_t *p);
 uint64_t timespec_to_ns(struct timespec *tn);
