@@ -17,17 +17,17 @@
  * Commercial licensing is also available.
  */
 
+#include "nqptp-utilities.h"
+#include "general-utilities.h"
+#include <errno.h>
+#include <fcntl.h>
+#include <linux/net_tstamp.h>
+#include <netdb.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/types.h>
 #include <sys/socket.h>
-#include <netdb.h>
-#include <fcntl.h>
-#include <errno.h>
-#include <linux/net_tstamp.h>
-#include "nqptp-utilities.h"
-#include "general-utilities.h"
+#include <sys/types.h>
 
 #include "debug.h"
 
@@ -84,9 +84,9 @@ void open_sockets_at_port(uint16_t port, sockets_open_bundle *sockets_open_stuff
         ret = bind(fd, p->ai_addr, p->ai_addrlen);
 
       int so_timestamping_flags = SOF_TIMESTAMPING_TX_HARDWARE | SOF_TIMESTAMPING_TX_SOFTWARE |
-                            SOF_TIMESTAMPING_RX_HARDWARE | SOF_TIMESTAMPING_RX_SOFTWARE |
-                            SOF_TIMESTAMPING_SOFTWARE | SOF_TIMESTAMPING_RAW_HARDWARE;
-   // int so_timestamping_flags =  SOF_TIMESTAMPING_RX_SOFTWARE ;
+                                  SOF_TIMESTAMPING_RX_HARDWARE | SOF_TIMESTAMPING_RX_SOFTWARE |
+                                  SOF_TIMESTAMPING_SOFTWARE | SOF_TIMESTAMPING_RAW_HARDWARE;
+      // int so_timestamping_flags =  SOF_TIMESTAMPING_RX_SOFTWARE ;
 
       if (ret == 0)
         ret = setsockopt(fd, SOL_SOCKET, SO_TIMESTAMPING, &so_timestamping_flags,
@@ -114,54 +114,54 @@ void open_sockets_at_port(uint16_t port, sockets_open_bundle *sockets_open_stuff
   }
 
   freeaddrinfo(info);
- }
+}
 
 void debug_print_buffer(int level, char *buf, size_t buf_len) {
   // printf("Received %u bytes in a packet from %s:%d\n", buf_len, inet_ntoa(si_other.sin_addr),
   // ntohs(si_other.sin_port));
-  char *obf = malloc(buf_len * 4 + 1); // to be on the safe side -- 4 characters on average for each byte
+  char *obf =
+      malloc(buf_len * 4 + 1); // to be on the safe side -- 4 characters on average for each byte
   if (obf != NULL) {
-  char *obfp = obf;
-  unsigned int obfc;
-  for (obfc = 0; obfc < buf_len; obfc++) {
-    snprintf(obfp, 3, "%02X", buf[obfc]);
-    obfp += 2;
-    if (obfc != buf_len - 1) {
-      if (obfc % 32 == 31) {
-        snprintf(obfp, 5, " || ");
-        obfp += 4;
-      } else if (obfc % 16 == 15) {
-        snprintf(obfp, 4, " | ");
-        obfp += 3;
-      } else if (obfc % 4 == 3) {
-        snprintf(obfp, 2, " ");
-        obfp += 1;
+    char *obfp = obf;
+    unsigned int obfc;
+    for (obfc = 0; obfc < buf_len; obfc++) {
+      snprintf(obfp, 3, "%02X", buf[obfc]);
+      obfp += 2;
+      if (obfc != buf_len - 1) {
+        if (obfc % 32 == 31) {
+          snprintf(obfp, 5, " || ");
+          obfp += 4;
+        } else if (obfc % 16 == 15) {
+          snprintf(obfp, 4, " | ");
+          obfp += 3;
+        } else if (obfc % 4 == 3) {
+          snprintf(obfp, 2, " ");
+          obfp += 1;
+        }
       }
-    }
-  };
-  *obfp = 0;
-  switch (buf[0]) {
+    };
+    *obfp = 0;
+    switch (buf[0]) {
 
-  case 0x10:
-    debug(level, "SYNC: \"%s\".", obf);
-    break;
-  case 0x18:
-    debug(level, "FLUP: \"%s\".", obf);
-    break;
-  case 0x19:
-    debug(level, "DRSP: \"%s\".", obf);
-    break;
-  case 0x1B:
-    debug(level, "ANNC: \"%s\".", obf);
-    break;
-  case 0x1C:
-    debug(level, "SGNL: \"%s\".", obf);
-    break;
-  default:
-    debug(level, "      \"%s\".", obf);
-    break;
-  }
-  free(obf);
+    case 0x10:
+      debug(level, "SYNC: \"%s\".", obf);
+      break;
+    case 0x18:
+      debug(level, "FLUP: \"%s\".", obf);
+      break;
+    case 0x19:
+      debug(level, "DRSP: \"%s\".", obf);
+      break;
+    case 0x1B:
+      debug(level, "ANNC: \"%s\".", obf);
+      break;
+    case 0x1C:
+      debug(level, "SGNL: \"%s\".", obf);
+      break;
+    default:
+      debug(level, "      \"%s\".", obf);
+      break;
+    }
+    free(obf);
   }
 }
-

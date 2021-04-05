@@ -17,15 +17,15 @@
  * Commercial licensing is also available.
  */
 
-#include <stddef.h>
-#include <stdio.h>
-#include <string.h>
+#include "debug.h"
 #include <inttypes.h>
 #include <pthread.h>
-#include <syslog.h>
 #include <stdarg.h>
+#include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
-#include "debug.h"
+#include <string.h>
+#include <syslog.h>
 
 int debuglev = 0;
 int debugger_show_elapsed_time = 0;
@@ -51,12 +51,12 @@ uint64_t get_absolute_time_in_ns() {
 }
 
 void debug_init(int level, int show_elapsed_time, int show_relative_time, int show_file_and_line) {
-	ns_time_at_startup = get_absolute_time_in_ns();
-	ns_time_at_last_debug_message = ns_time_at_startup;
-	debuglev = level;
-	debugger_show_elapsed_time = show_elapsed_time;
-	debugger_show_relative_time = show_relative_time;
-	debugger_show_file_and_line = show_file_and_line;
+  ns_time_at_startup = get_absolute_time_in_ns();
+  ns_time_at_last_debug_message = ns_time_at_startup;
+  debuglev = level;
+  debugger_show_elapsed_time = show_elapsed_time;
+  debugger_show_relative_time = show_relative_time;
+  debugger_show_file_and_line = show_file_and_line;
 }
 
 char *generate_preliminary_string(char *buffer, size_t buffer_length, double tss, double tsl,
@@ -110,7 +110,7 @@ void _die(const char *filename, const int linenumber, const char *format, ...) {
   va_start(args, format);
   vsnprintf(s, sizeof(b) - (s - b), format, args);
   va_end(args);
-  //syslog(LOG_ERR, "%s", b);
+  // syslog(LOG_ERR, "%s", b);
   fprintf(stderr, "%s\n", b);
   pthread_setcancelstate(oldState, NULL);
   exit(EXIT_FAILURE);
@@ -140,7 +140,7 @@ void _warn(const char *filename, const int linenumber, const char *format, ...) 
   va_start(args, format);
   vsnprintf(s, sizeof(b) - (s - b), format, args);
   va_end(args);
-  //syslog(LOG_WARNING, "%s", b);
+  // syslog(LOG_WARNING, "%s", b);
   fprintf(stderr, "%s\n", b);
   pthread_setcancelstate(oldState, NULL);
 }
@@ -165,7 +165,7 @@ void _debug(const char *filename, const int linenumber, int level, const char *f
   va_start(args, format);
   vsnprintf(s, sizeof(b) - (s - b), format, args);
   va_end(args);
-  //syslog(LOG_DEBUG, "%s", b);
+  // syslog(LOG_DEBUG, "%s", b);
   fprintf(stderr, "%s\n", b);
   pthread_setcancelstate(oldState, NULL);
 }
@@ -193,7 +193,7 @@ void _inform(const char *filename, const int linenumber, const char *format, ...
   va_start(args, format);
   vsnprintf(s, sizeof(b) - (s - b), format, args);
   va_end(args);
-  //syslog(LOG_INFO, "%s", b);
+  // syslog(LOG_INFO, "%s", b);
   fprintf(stderr, "%s\n", b);
   pthread_setcancelstate(oldState, NULL);
 }

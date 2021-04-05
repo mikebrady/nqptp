@@ -19,12 +19,12 @@
 
 #ifndef NQPTP_UTILITIES_H
 #define NQPTP_UTILITIES_H
-#include <stddef.h>
 #include "nqptp.h"
+#include <stddef.h>
 // functions that are specific to NQPTP
 // general stuff should go in the general-utilities
 
-typedef struct  {
+typedef struct {
   int number;
   uint16_t port;
 } socket_info;

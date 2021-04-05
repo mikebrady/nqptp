@@ -22,12 +22,12 @@
 #define DEBUG_LEVEL 1
 
 #include "nqptp.h"
-#include "nqptp-ptp-definitions.h"
+#include "debug.h"
+#include "general-utilities.h"
 #include "nqptp-clock-sources.h"
 #include "nqptp-message-handlers.h"
+#include "nqptp-ptp-definitions.h"
 #include "nqptp-utilities.h"
-#include "general-utilities.h"
-#include "debug.h"
 
 #include <arpa/inet.h>
 #include <stdio.h>  //printf
@@ -65,7 +65,7 @@
 
 // 8 samples per second
 
-#define BUFLEN 4096 // Max length of buffer
+#define BUFLEN 4096    // Max length of buffer
 #define MAX_EVENTS 128 // For epoll
 
 sockets_open_bundle sockets_open_stuff;
@@ -135,8 +135,8 @@ int main(void) {
 
   // open sockets 319 and 320
 
-  open_sockets_at_port(319,&sockets_open_stuff);
-  open_sockets_at_port(320,&sockets_open_stuff);
+  open_sockets_at_port(319, &sockets_open_stuff);
+  open_sockets_at_port(320, &sockets_open_stuff);
 
   // open a shared memory interface.
   int shm_fd = -1;
@@ -330,21 +330,22 @@ int main(void) {
               packet_clock_id = packet_clock_id << 32;
               packet_clock_id = packet_clock_id + packet_clock_id_low;
 
-              int the_clock = find_clock_source_record(sender_string, packet_clock_id,
-                                          (clock_source *)&shared_memory->clocks,
-                                          (clock_source_private_data *)&clocks_private);
+              int the_clock = find_clock_source_record(
+                  sender_string, packet_clock_id, (clock_source *)&shared_memory->clocks,
+                  (clock_source_private_data *)&clocks_private);
               if ((the_clock == -1) && ((buf[0] & 0xF) == Sync)) {
-                the_clock = create_clock_source_record(sender_string, packet_clock_id,
-                                          (clock_source *)&shared_memory->clocks,
-                                          (clock_source_private_data *)&clocks_private);
+                the_clock = create_clock_source_record(
+                    sender_string, packet_clock_id, (clock_source *)&shared_memory->clocks,
+                    (clock_source_private_data *)&clocks_private);
               }
               if (the_clock != -1) {
                 switch (buf[0] & 0xF) {
                 case Announce:
                   // needed to reject messages coming from self
                   update_clock_self_identifications((clock_source *)&shared_memory->clocks,
-                     (clock_source_private_data *)&clocks_private);
-                  handle_announce(buf, recv_len, &shared_memory->clocks[the_clock],&clocks_private[the_clock], reception_time);
+                                                    (clock_source_private_data *)&clocks_private);
+                  handle_announce(buf, recv_len, &shared_memory->clocks[the_clock],
+                                  &clocks_private[the_clock], reception_time);
                   break;
                 case Sync: { // if it's a sync
                   struct ptp_sync_message *msg = (struct ptp_sync_message *)buf;
@@ -453,7 +454,7 @@ int main(void) {
         }
       }
       manage_clock_sources(reception_time, (clock_source *)&shared_memory->clocks,
-                             (clock_source_private_data *)&clocks_private);
+                           (clock_source_private_data *)&clocks_private);
     }
   }
 

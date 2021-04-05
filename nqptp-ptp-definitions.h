@@ -27,7 +27,8 @@
 
 // They may not be used. Yet.
 
-// Derived from https://github.com/rroussel/OpenAvnu/blob/ArtAndLogic-aPTP-changes/daemons/gptp/gptp_cfg.ini:
+// Derived from
+// https://github.com/rroussel/OpenAvnu/blob/ArtAndLogic-aPTP-changes/daemons/gptp/gptp_cfg.ini:
 
 #define aPTPpriority1 248
 #define aPTPpriority2 248
@@ -67,7 +68,6 @@
 // "IEEE Standard for a Precision Clock Synchronization Protocol for Networked Measurement and
 // Control Systems" The IEEE Std 1588-2008 (Revision of IEEE Std 1588-2002)
 
-
 // See 9.3.2.4.4 FOREIGN_MASTER_TIME_WINDOW and FOREIGN_MASTER_THRESHOLD
 // units are the announceInterval
 #define FOREIGN_MASTER_TIME_WINDOW 4
@@ -95,80 +95,80 @@ enum messageType {
   Reserved_F
 };
 
- // this is the Common Message Header
-  struct __attribute__((__packed__)) ptp_common_message_header {
-    uint8_t transportSpecificAndMessageID; // 0x11
-    uint8_t reservedAndVersionPTP;         // 0x02
-    uint16_t messageLength;
-    uint8_t domainNumber;        // 0
-    uint8_t reserved_b;          // 0
-    uint16_t flags;              // 0x0608
-    uint64_t correctionField;    // 0
-    uint32_t reserved_l;         // 0
-    uint8_t clockIdentity[8];    // MAC
-    uint16_t sourcePortID;       // 1
-    uint16_t sequenceId;         // increments
-    uint8_t controlOtherMessage; // 5
-    uint8_t logMessagePeriod;    // 0
-  };
+// this is the Common Message Header
+struct __attribute__((__packed__)) ptp_common_message_header {
+  uint8_t transportSpecificAndMessageID; // 0x11
+  uint8_t reservedAndVersionPTP;         // 0x02
+  uint16_t messageLength;
+  uint8_t domainNumber;        // 0
+  uint8_t reserved_b;          // 0
+  uint16_t flags;              // 0x0608
+  uint64_t correctionField;    // 0
+  uint32_t reserved_l;         // 0
+  uint8_t clockIdentity[8];    // MAC
+  uint16_t sourcePortID;       // 1
+  uint16_t sequenceId;         // increments
+  uint8_t controlOtherMessage; // 5
+  uint8_t logMessagePeriod;    // 0
+};
 
-  // this is the extra part for an Announce message
-  struct __attribute__((__packed__)) ptp_announce {
-    uint8_t originTimestamp[10];
-    uint16_t currentUtcOffset;
-    uint8_t reserved1;
-    uint8_t grandmasterPriority1;
-    uint32_t grandmasterClockQuality;
-    uint8_t grandmasterPriority2;
-    uint8_t grandmasterIdentity[8];
-    uint16_t stepsRemoved;
-    uint8_t timeSource;
-  };
+// this is the extra part for an Announce message
+struct __attribute__((__packed__)) ptp_announce {
+  uint8_t originTimestamp[10];
+  uint16_t currentUtcOffset;
+  uint8_t reserved1;
+  uint8_t grandmasterPriority1;
+  uint32_t grandmasterClockQuality;
+  uint8_t grandmasterPriority2;
+  uint8_t grandmasterIdentity[8];
+  uint16_t stepsRemoved;
+  uint8_t timeSource;
+};
 
-  // this is the extra part for a Sync or Delay_Req message
-  struct __attribute__((__packed__)) ptp_sync {
-    uint8_t originTimestamp[10];
-  };
+// this is the extra part for a Sync or Delay_Req message
+struct __attribute__((__packed__)) ptp_sync {
+  uint8_t originTimestamp[10];
+};
 
-  // this is the extra part for a Sync or Delay_Req message
-  struct __attribute__((__packed__)) ptp_delay_req {
-    uint8_t originTimestamp[10];
-  };
+// this is the extra part for a Sync or Delay_Req message
+struct __attribute__((__packed__)) ptp_delay_req {
+  uint8_t originTimestamp[10];
+};
 
-  // this is the extra part for a Follow_Up message
-  struct __attribute__((__packed__)) ptp_follow_up {
-    uint8_t preciseOriginTimestamp[10];
-  };
+// this is the extra part for a Follow_Up message
+struct __attribute__((__packed__)) ptp_follow_up {
+  uint8_t preciseOriginTimestamp[10];
+};
 
-  // this is the extra part for a Delay_Resp message
-  struct __attribute__((__packed__)) ptp_delay_resp {
-    uint8_t receiveTimestamp[10];
-    uint8_t requestingPortIdentity[10];
-  };
+// this is the extra part for a Delay_Resp message
+struct __attribute__((__packed__)) ptp_delay_resp {
+  uint8_t receiveTimestamp[10];
+  uint8_t requestingPortIdentity[10];
+};
 
-  struct __attribute__((__packed__)) ptp_sync_message {
-    struct ptp_common_message_header header;
-    struct ptp_sync sync;
-  };
+struct __attribute__((__packed__)) ptp_sync_message {
+  struct ptp_common_message_header header;
+  struct ptp_sync sync;
+};
 
-  struct __attribute__((__packed__)) ptp_delay_req_message {
-    struct ptp_common_message_header header;
-    struct ptp_delay_req delay_req;
-  };
+struct __attribute__((__packed__)) ptp_delay_req_message {
+  struct ptp_common_message_header header;
+  struct ptp_delay_req delay_req;
+};
 
-  struct __attribute__((__packed__)) ptp_follow_up_message {
-    struct ptp_common_message_header header;
-    struct ptp_follow_up follow_up;
-  };
+struct __attribute__((__packed__)) ptp_follow_up_message {
+  struct ptp_common_message_header header;
+  struct ptp_follow_up follow_up;
+};
 
-  struct __attribute__((__packed__)) ptp_delay_resp_message {
-    struct ptp_common_message_header header;
-    struct ptp_delay_resp delay_resp;
-  };
+struct __attribute__((__packed__)) ptp_delay_resp_message {
+  struct ptp_common_message_header header;
+  struct ptp_delay_resp delay_resp;
+};
 
-  struct __attribute__((__packed__)) ptp_announce_message {
-    struct ptp_common_message_header header;
-    struct ptp_announce announce;
-  };
+struct __attribute__((__packed__)) ptp_announce_message {
+  struct ptp_common_message_header header;
+  struct ptp_announce announce;
+};
 
 #endif

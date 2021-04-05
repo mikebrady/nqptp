@@ -20,9 +20,10 @@
 #ifndef NQPTP_MESSAGE_HANDLERS_H
 #define NQPTP_MESSAGE_HANDLERS_H
 
-#include "nqptp-shm-structures.h"
 #include "nqptp-clock-sources.h"
+#include "nqptp-shm-structures.h"
 
-void handle_announce(char *buf, ssize_t recv_len, clock_source* clock_info, clock_source_private_data *clock_private_info, uint64_t reception_time);
+void handle_announce(char *buf, ssize_t recv_len, clock_source *clock_info,
+                     clock_source_private_data *clock_private_info, uint64_t reception_time);
 
 #endif

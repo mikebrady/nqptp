@@ -17,21 +17,21 @@
  * Commercial licensing is also available.
  */
 
+#include "nqptp-clock-sources.h"
+#include "debug.h"
+#include "nqptp-ptp-definitions.h"
+#include <arpa/inet.h>
+#include <ifaddrs.h>
 #include <string.h>
 #include <sys/types.h>
-#include <ifaddrs.h>
-#include <arpa/inet.h>
-#include "nqptp-clock-sources.h"
-#include "nqptp-ptp-definitions.h"
-#include "debug.h"
 
 #ifndef FIELD_SIZEOF
-#define FIELD_SIZEOF(t, f) (sizeof(((t*)0)->f))
+#define FIELD_SIZEOF(t, f) (sizeof(((t *)0)->f))
 #endif
 
 int find_clock_source_record(char *sender_string, uint64_t packet_clock_id,
-                clock_source *clocks_shared_info,
-                clock_source_private_data *clocks_private_info) {
+                             clock_source *clocks_shared_info,
+                             clock_source_private_data *clocks_private_info) {
   // return the index of the clock in the clock information arrays or -1
   int response = -1;
   int i = 0;
@@ -50,8 +50,8 @@ int find_clock_source_record(char *sender_string, uint64_t packet_clock_id,
 }
 
 int create_clock_source_record(char *sender_string, uint64_t packet_clock_id,
-                  clock_source *clocks_shared_info,
-                  clock_source_private_data *clocks_private_info) {
+                               clock_source *clocks_shared_info,
+                               clock_source_private_data *clocks_private_info) {
   // return the index of a clock entry in the clock information arrays or -1 if full
   // initialise the entries in the shared and private arrays
   int response = -1;
@@ -70,7 +70,7 @@ int create_clock_source_record(char *sender_string, uint64_t packet_clock_id,
     if (rc != 0)
       warn("Can't acquire mutex to activate a new  clock!");
     memset(&clocks_shared_info[i], 0, sizeof(clock_source));
-    strncpy((char *)&clocks_shared_info[i].ip, sender_string, FIELD_SIZEOF(clock_source,ip) - 1);
+    strncpy((char *)&clocks_shared_info[i].ip, sender_string, FIELD_SIZEOF(clock_source, ip) - 1);
     clocks_shared_info[i].clock_id = packet_clock_id;
     rc = pthread_mutex_unlock(&shared_memory->shm_mutex);
     if (rc != 0)
@@ -89,7 +89,7 @@ int create_clock_source_record(char *sender_string, uint64_t packet_clock_id,
 }
 
 void manage_clock_sources(uint64_t reception_time, clock_source *clocks_shared_info,
-                            clock_source_private_data *clocks_private_info) {
+                          clock_source_private_data *clocks_private_info) {
   debug(3, "manage_clock_sources");
   int i;
   for (i = 0; i < MAX_CLOCKS; i++) {
@@ -122,10 +122,10 @@ void manage_clock_sources(uint64_t reception_time, clock_source *clocks_shared_i
 // belong to ourselves
 
 void update_clock_self_identifications(clock_source *clocks_shared_info,
-                            clock_source_private_data *clocks_private_info) {
+                                       clock_source_private_data *clocks_private_info) {
   // first, turn off all the self-id flags
   int i;
-  for (i = 0; i < MAX_CLOCKS ; i++) {
+  for (i = 0; i < MAX_CLOCKS; i++) {
     clocks_private_info[i].is_one_of_ours = 0;
   }
 
@@ -136,30 +136,28 @@ void update_clock_self_identifications(clock_source *clocks_shared_info,
   for (ifa = ifap; ifa; ifa = ifa->ifa_next) {
     family = ifa->ifa_addr->sa_family;
 #ifdef AF_INET6
-      if (ifa->ifa_addr && family==AF_INET6) {
-          struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *) ifa->ifa_addr;
-          addr = &(sa6->sin6_addr);
-      }
+    if (ifa->ifa_addr && family == AF_INET6) {
+      struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *)ifa->ifa_addr;
+      addr = &(sa6->sin6_addr);
+    }
 #endif
-      if (ifa->ifa_addr && family==AF_INET) {
-          struct sockaddr_in *sa4 = (struct sockaddr_in *) ifa->ifa_addr;
-          addr = &(sa4->sin_addr);
-       }
-      char ip_string[64];
-      memset(ip_string,0,sizeof(ip_string));
-      if (addr != NULL)
-        inet_ntop(family, addr, ip_string, sizeof(ip_string));
-      if (strlen(ip_string) != 0) {
-        // now set the is_one_of_ours flag of any clock with this ip
-         for (i = 0; i < MAX_CLOCKS ; i++) {
-            if (strcasecmp(ip_string,clocks_shared_info[i].ip) == 0) {
-              debug(2,"found an entry for one of our clocks");
-              clocks_private_info[i].is_one_of_ours = 1;
-            }
-          }
-
+    if (ifa->ifa_addr && family == AF_INET) {
+      struct sockaddr_in *sa4 = (struct sockaddr_in *)ifa->ifa_addr;
+      addr = &(sa4->sin_addr);
+    }
+    char ip_string[64];
+    memset(ip_string, 0, sizeof(ip_string));
+    if (addr != NULL)
+      inet_ntop(family, addr, ip_string, sizeof(ip_string));
+    if (strlen(ip_string) != 0) {
+      // now set the is_one_of_ours flag of any clock with this ip
+      for (i = 0; i < MAX_CLOCKS; i++) {
+        if (strcasecmp(ip_string, clocks_shared_info[i].ip) == 0) {
+          debug(2, "found an entry for one of our clocks");
+          clocks_private_info[i].is_one_of_ours = 1;
+        }
       }
-   }
+    }
+  }
   freeifaddrs(ifap);
 }
-
