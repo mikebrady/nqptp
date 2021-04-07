@@ -93,7 +93,8 @@ void manage_clock_sources(uint64_t reception_time, clock_source *clocks_shared_i
   // do a garbage collect for clock records no longer in use
   for (i = 0; i < MAX_CLOCKS; i++) {
     // only if its in use and not a timing peer... don't need a mutex to check
-    if ((clocks_private_info[i].in_use != 0) && (clocks_shared_info[i].timing_peer == 0)) {
+    if ((clocks_private_info[i].in_use != 0) &&
+        ((clocks_shared_info[i].flags & (1 << clock_is_a_timing_peer)) == 0)) {
       int64_t time_since_last_use = reception_time - clocks_private_info[i].time_of_last_use;
       // using a sync timeout to determine when to drop the record...
       // the following give the sync receipt time in whole seconds

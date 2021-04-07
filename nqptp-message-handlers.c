@@ -37,7 +37,7 @@ void handle_control_port_messages(char *buf, ssize_t recv_len, clock_source *clo
       // turn off all is_timing_peers
       int i;
       for (i = 0; i < MAX_CLOCKS; i++)
-        clock_info[i].timing_peer = 0;
+        clock_info[i].flags &= ~(1 << clock_is_a_timing_peer); // turn off peer flags
 
       while (ip_list != NULL) {
         char *new_ip = strsep(&ip_list, " ");
@@ -47,7 +47,7 @@ void handle_control_port_messages(char *buf, ssize_t recv_len, clock_source *clo
           t = create_clock_source_record(new_ip, clock_info, clock_private_info,
                                          0); // don't use the mutex
 
-        clock_info[t].timing_peer = 1;
+        clock_info[t].flags |= (1 << clock_is_a_timing_peer);
       }
 
       rc = pthread_mutex_unlock(&shared_memory->shm_mutex);
@@ -55,7 +55,7 @@ void handle_control_port_messages(char *buf, ssize_t recv_len, clock_source *clo
         warn("Can't release mutex after set_timing_peers!");
 
       for (i = 0; i < MAX_CLOCKS; i++) {
-        if (clock_info[i].timing_peer != 0)
+        if ((clock_info[i].flags & (1 << clock_is_a_timing_peer)) != 0)
           debug(3, "%s is in the timing peer group.", &clock_info[i].ip);
       }
     } else {
@@ -106,7 +106,7 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source *clock_info,
         i++;
       }
       if (valid_count >= foreign_master_threshold) {
-        if (clock_info->qualified == 0) {
+        if ((clock_info->flags & (1 << clock_is_qualified)) == 0) {
           uint64_t grandmaster_clock_id = nctohl(&msg->announce.grandmasterIdentity[0]);
           uint64_t grandmaster_clock_id_low = nctohl(&msg->announce.grandmasterIdentity[4]);
           grandmaster_clock_id = grandmaster_clock_id << 32;
@@ -131,18 +131,19 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source *clock_info,
         }
         if (pthread_mutex_lock(&shared_memory->shm_mutex) != 0)
           warn("Can't acquire mutex to set_timing_peers!");
-        clock_info->qualified = 1;
+        clock_info->flags |= (1 << clock_is_qualified);
         if (pthread_mutex_unlock(&shared_memory->shm_mutex) != 0)
           warn("Can't release mutex after set_timing_peers!");
       } else {
-        if (clock_info->qualified != 0)
+        if ((clock_info->flags & (1 << clock_is_qualified)) !=
+            0) // if it was qualified, but now isn't
           debug(1,
                 "clock_id %" PRIx64
                 " on ip: %s \"Announce\" message is not Qualified -- See 9.3.2.5.",
                 clock_info->clock_id, clock_info->ip);
         if (pthread_mutex_lock(&shared_memory->shm_mutex) != 0)
           warn("Can't acquire mutex to set_timing_peers!");
-        clock_info->qualified = 0;
+        clock_info->flags &= ~(1 << clock_is_qualified);
         if (pthread_mutex_unlock(&shared_memory->shm_mutex) != 0)
           warn("Can't release mutex after set_timing_peers!");
       }

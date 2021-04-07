@@ -438,7 +438,7 @@ int main(void) {
                     // update/set the clock_id
 
                     shared_memory->clocks[the_clock].clock_id = packet_clock_id;
-                    shared_memory->clocks[the_clock].valid = 1;
+                    shared_memory->clocks[the_clock].flags |= (1 << clock_is_valid);
                     shared_memory->clocks[the_clock].local_time = clocks_private[the_clock].t2;
                     shared_memory->clocks[the_clock].local_to_source_time_offset = offset;
                     rc = pthread_mutex_unlock(&shared_memory->shm_mutex);

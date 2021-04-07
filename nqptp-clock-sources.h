@@ -28,12 +28,17 @@ enum stage {
   sync_seen,
 };
 
+#define MAX_TIMING_SAMPLES 480
+typedef struct {
+  uint64_t local, local_to_remote_offset;
+} timing_samples;
+
 // private information -- not for putting in shared memory -- about each clock source
 typedef struct {
   uint16_t sequence_number;
   uint16_t in_use;
   enum stage current_stage;
-  uint64_t t2;
+  uint64_t t2, previous_offset, previous_estimated_offset;
   // for garbage collection
   uint64_t time_of_last_use; // will be taken out of use if not used for a while and not in the
                              // timing peer group
@@ -41,6 +46,10 @@ typedef struct {
   // for Announce Qualification
   uint64_t announce_times[4]; // we'll check qualification and currency using these
   int is_one_of_ours;         // true if it is one of our own clocks
+  timing_samples samples[MAX_TIMING_SAMPLES];
+  int vacant_samples; // the number of elements in the timing_samples array that are not yet used
+  int next_sample_goes_here; // point to where in the timing samples array the next entries should
+                             // go
 } clock_source_private_data;
 
 int find_clock_source_record(char *sender_string, clock_source *clocks_shared_info,

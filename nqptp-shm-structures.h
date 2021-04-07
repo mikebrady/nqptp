@@ -34,15 +34,17 @@
 #include <netinet/in.h>
 #include <pthread.h>
 
+// most of this will probably become private when
+// the master clock selection stuff works automatically
+
+typedef enum { clock_is_valid, clock_is_a_timing_peer, clock_is_qualified } clock_flags;
+
 typedef struct {
   char ip[64]; // 64 is nicely aligned and bigger than INET6_ADDRSTRLEN (46)
   uint64_t clock_id;
   uint64_t local_time;                  // the local time when the offset was calculated
   uint64_t local_to_source_time_offset; // add this to the local time to get source time
-  uint8_t flags;                        // not used yet
-  uint8_t valid;                        // this entry is valid
-  uint8_t timing_peer;                  // true if this is in the current timing peer group
-  uint8_t qualified;                    // true if it has valid Announce messages
+  uint32_t flags;
 } clock_source;
 
 struct shm_structure {
