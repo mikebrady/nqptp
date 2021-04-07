@@ -34,20 +34,20 @@ typedef struct {
   uint16_t in_use;
   enum stage current_stage;
   uint64_t t2;
-
+  // for garbage collection
+  uint64_t time_of_last_use; // will be taken out of use if not used for a while and not in the
+                             // timing peer group
+  // (A member of the timing peer group could appear and disappear)
   // for Announce Qualification
   uint64_t announce_times[4]; // we'll check qualification and currency using these
-  int announce_is_valid;      // this may mean it's a master clock_source
   int is_one_of_ours;         // true if it is one of our own clocks
 } clock_source_private_data;
 
-int find_clock_source_record(char *sender_string, uint64_t packet_clock_id,
-                             clock_source *clocks_shared_info,
+int find_clock_source_record(char *sender_string, clock_source *clocks_shared_info,
                              clock_source_private_data *clocks_private_info);
 
-int create_clock_source_record(char *sender_string, uint64_t packet_clock_id,
-                               clock_source *clocks_shared_info,
-                               clock_source_private_data *clocks_private_info);
+int create_clock_source_record(char *sender_string, clock_source *clocks_shared_info,
+                               clock_source_private_data *clocks_private_info, int use_lock);
 
 void update_clock_self_identifications(clock_source *clocks_shared_info,
                                        clock_source_private_data *clocks_private_info);

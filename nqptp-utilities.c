@@ -159,7 +159,7 @@ void debug_print_buffer(int level, char *buf, size_t buf_len) {
       debug(level, "SGNL: \"%s\".", obf);
       break;
     default:
-      debug(level, "      \"%s\".", obf);
+      debug(1, "XXXX  \"%s\".", obf); // output this at level 1
       break;
     }
     free(obf);

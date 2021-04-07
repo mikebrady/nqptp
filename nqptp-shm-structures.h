@@ -23,6 +23,12 @@
 #define STORAGE_ID "/nqptp"
 #define MAX_CLOCKS 32
 #define NQPTP_SHM_STRUCTURES_VERSION 1
+#define NQPTP_CONTROL_PORT 9000
+
+// the control port will accept a packet with the first word being:
+// "set_timing_peers" followed by a space and then a space-delimited
+// list of ip numbers, either IPv4 or IPv6
+// the whole not to exceed 4096 characters in total
 
 #include <inttypes.h>
 #include <netinet/in.h>
@@ -31,11 +37,12 @@
 typedef struct {
   char ip[64]; // 64 is nicely aligned and bigger than INET6_ADDRSTRLEN (46)
   uint64_t clock_id;
-  uint64_t reserved;
   uint64_t local_time;                  // the local time when the offset was calculated
   uint64_t local_to_source_time_offset; // add this to the local time to get source time
-  int flags;                            // not used yet
-  int valid;                            // this entry is valid
+  uint8_t flags;                        // not used yet
+  uint8_t valid;                        // this entry is valid
+  uint8_t timing_peer;                  // true if this is in the current timing peer group
+  uint8_t qualified;                    // true if it has valid Announce messages
 } clock_source;
 
 struct shm_structure {

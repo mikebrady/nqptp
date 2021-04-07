@@ -137,6 +137,8 @@ int main(void) {
 
   open_sockets_at_port(319, &sockets_open_stuff);
   open_sockets_at_port(320, &sockets_open_stuff);
+  open_sockets_at_port(NQPTP_CONTROL_PORT,
+                       &sockets_open_stuff); // this for messages from the client
 
   // open a shared memory interface.
   int shm_fd = -1;
@@ -245,19 +247,30 @@ int main(void) {
           msg.msg_control = &control;
           msg.msg_controllen = sizeof(control);
 
+          uint16_t receiver_port = 0;
           // int msgsize = recv(udpsocket_fd, &msg_buffer, 4, 0);
           recv_len = recvmsg(socket_number, &msg, MSG_DONTWAIT);
 
-          if (recv_len != -1)
-            debug_print_buffer(2, buf, recv_len);
-
+          if (recv_len != -1) {
+            // get the receiver port
+            unsigned int jp;
+            for (jp = 0; jp < sockets_open_stuff.sockets_open; jp++) {
+              if (socket_number == sockets_open_stuff.sockets[jp].number)
+                receiver_port = sockets_open_stuff.sockets[jp].port;
+            }
+          }
           if (recv_len == -1) {
             if (errno == EAGAIN) {
               usleep(1000); // this can happen, it seems...
             } else {
               debug(1, "recvmsg() error %d", errno);
             }
+            // check if it's a control port message before checking for the length of the message.
+          } else if (receiver_port == NQPTP_CONTROL_PORT) {
+            handle_control_port_messages(buf, recv_len, (clock_source *)&shared_memory->clocks,
+                                         (clock_source_private_data *)&clocks_private);
           } else if (recv_len >= (ssize_t)sizeof(struct ptp_common_message_header)) {
+            debug_print_buffer(2, buf, recv_len);
             debug(3, "Received %d bytes control message on reception.", msg.msg_controllen);
             // get the time
             int level, type;
@@ -309,36 +322,24 @@ int main(void) {
               sender_port = ntohs(sa4->sin_port);
             }
 
-            // check here if the sender port and receiver port are the same
-            // find the socket in the socket list
-            uint16_t receiver_port = 0;
-            unsigned int jp;
-            for (jp = 0; jp < sockets_open_stuff.sockets_open; jp++) {
-              if (socket_number == sockets_open_stuff.sockets[jp].number)
-                receiver_port = sockets_open_stuff.sockets[jp].port;
-            }
-
             if (sender_port == receiver_port) {
 
               char sender_string[256];
               memset(sender_string, 0, sizeof(sender_string));
               inet_ntop(connection_ip_family, sender_addr, sender_string, sizeof(sender_string));
-              // now, find or create a record for this ip / clock_id combination
-              struct ptp_common_message_header *mt = (struct ptp_common_message_header *)buf;
-              uint64_t packet_clock_id = nctohl(&mt->clockIdentity[0]);
-              uint64_t packet_clock_id_low = nctohl(&mt->clockIdentity[4]);
-              packet_clock_id = packet_clock_id << 32;
-              packet_clock_id = packet_clock_id + packet_clock_id_low;
-
-              int the_clock = find_clock_source_record(
-                  sender_string, packet_clock_id, (clock_source *)&shared_memory->clocks,
-                  (clock_source_private_data *)&clocks_private);
+              // now, find or create a record for this ip
+              int the_clock =
+                  find_clock_source_record(sender_string, (clock_source *)&shared_memory->clocks,
+                                           (clock_source_private_data *)&clocks_private);
+              // not sure about requiring a Sync before creating it...
               if ((the_clock == -1) && ((buf[0] & 0xF) == Sync)) {
                 the_clock = create_clock_source_record(
-                    sender_string, packet_clock_id, (clock_source *)&shared_memory->clocks,
-                    (clock_source_private_data *)&clocks_private);
+                    sender_string, (clock_source *)&shared_memory->clocks,
+                    (clock_source_private_data *)&clocks_private, 1); // the "1" means use mutexes
               }
               if (the_clock != -1) {
+                clocks_private[the_clock].time_of_last_use =
+                    reception_time; // for garbage collection
                 switch (buf[0] & 0xF) {
                 case Announce:
                   // needed to reject messages coming from self
@@ -404,9 +405,15 @@ int main(void) {
 
                 case Follow_Up: {
                   struct ptp_follow_up_message *msg = (struct ptp_follow_up_message *)buf;
+
                   if ((clocks_private[the_clock].current_stage == sync_seen) &&
                       (clocks_private[the_clock].sequence_number ==
                        ntohs(msg->header.sequenceId))) {
+
+                    uint64_t packet_clock_id = nctohl(&msg->header.clockIdentity[0]);
+                    uint64_t packet_clock_id_low = nctohl(&msg->header.clockIdentity[4]);
+                    packet_clock_id = packet_clock_id << 32;
+                    packet_clock_id = packet_clock_id + packet_clock_id_low;
 
                     uint16_t seconds_hi = nctohs(&msg->follow_up.preciseOriginTimestamp[0]);
                     uint32_t seconds_low = nctohl(&msg->follow_up.preciseOriginTimestamp[2]);
@@ -428,6 +435,9 @@ int main(void) {
                     int rc = pthread_mutex_lock(&shared_memory->shm_mutex);
                     if (rc != 0)
                       warn("Can't acquire mutex to update a clock!");
+                    // update/set the clock_id
+
+                    shared_memory->clocks[the_clock].clock_id = packet_clock_id;
                     shared_memory->clocks[the_clock].valid = 1;
                     shared_memory->clocks[the_clock].local_time = clocks_private[the_clock].t2;
                     shared_memory->clocks[the_clock].local_to_source_time_offset = offset;

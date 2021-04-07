@@ -29,8 +29,7 @@
 #define FIELD_SIZEOF(t, f) (sizeof(((t *)0)->f))
 #endif
 
-int find_clock_source_record(char *sender_string, uint64_t packet_clock_id,
-                             clock_source *clocks_shared_info,
+int find_clock_source_record(char *sender_string, clock_source *clocks_shared_info,
                              clock_source_private_data *clocks_private_info) {
   // return the index of the clock in the clock information arrays or -1
   int response = -1;
@@ -38,7 +37,6 @@ int find_clock_source_record(char *sender_string, uint64_t packet_clock_id,
   int found = 0;
   while ((found == 0) && (i < MAX_CLOCKS)) {
     if ((clocks_private_info[i].in_use != 0) &&
-        (clocks_shared_info[i].clock_id == packet_clock_id) &&
         (strcasecmp(sender_string, (const char *)&clocks_shared_info[i].ip) == 0))
       found = 1;
     else
@@ -49,9 +47,9 @@ int find_clock_source_record(char *sender_string, uint64_t packet_clock_id,
   return response;
 }
 
-int create_clock_source_record(char *sender_string, uint64_t packet_clock_id,
-                               clock_source *clocks_shared_info,
-                               clock_source_private_data *clocks_private_info) {
+int create_clock_source_record(char *sender_string, clock_source *clocks_shared_info,
+                               clock_source_private_data *clocks_private_info, int use_lock) {
+  // sometimes, the mutex will already be locked
   // return the index of a clock entry in the clock information arrays or -1 if full
   // initialise the entries in the shared and private arrays
   int response = -1;
@@ -66,16 +64,16 @@ int create_clock_source_record(char *sender_string, uint64_t packet_clock_id,
 
   if (found == 1) {
     response = i;
-    int rc = pthread_mutex_lock(&shared_memory->shm_mutex);
-    if (rc != 0)
-      warn("Can't acquire mutex to activate a new  clock!");
+    if (use_lock != 0) {
+      if (pthread_mutex_lock(&shared_memory->shm_mutex) != 0)
+        warn("Can't acquire mutex to activate a new  clock!");
+    }
     memset(&clocks_shared_info[i], 0, sizeof(clock_source));
     strncpy((char *)&clocks_shared_info[i].ip, sender_string, FIELD_SIZEOF(clock_source, ip) - 1);
-    clocks_shared_info[i].clock_id = packet_clock_id;
-    rc = pthread_mutex_unlock(&shared_memory->shm_mutex);
-    if (rc != 0)
-      warn("Can't release mutex after activating a new clock!");
-
+    if (use_lock != 0) {
+      if (pthread_mutex_unlock(&shared_memory->shm_mutex) != 0)
+        warn("Can't release mutex after activating a new clock!");
+    }
     memset(&clocks_private_info[i], 0, sizeof(clock_source_private_data));
     clocks_private_info[i].in_use = 1;
     clocks_private_info[i].t2 = 0;
@@ -92,9 +90,12 @@ void manage_clock_sources(uint64_t reception_time, clock_source *clocks_shared_i
                           clock_source_private_data *clocks_private_info) {
   debug(3, "manage_clock_sources");
   int i;
+  // do a garbage collect for clock records no longer in use
   for (i = 0; i < MAX_CLOCKS; i++) {
-    if (clocks_private_info[i].in_use != 0) {
-      int64_t time_since_last_sync = reception_time - clocks_private_info[i].t2;
+    // only if its in use and not a timing peer... don't need a mutex to check
+    if ((clocks_private_info[i].in_use != 0) && (clocks_shared_info[i].timing_peer == 0)) {
+      int64_t time_since_last_use = reception_time - clocks_private_info[i].time_of_last_use;
+      // using a sync timeout to determine when to drop the record...
       // the following give the sync receipt time in whole seconds
       // depending on the aPTPinitialLogSyncInterval and the aPTPsyncReceiptTimeout
       int64_t syncTimeout = (1 << (32 + aPTPinitialLogSyncInterval));
@@ -102,7 +103,7 @@ void manage_clock_sources(uint64_t reception_time, clock_source *clocks_shared_i
       syncTimeout = syncTimeout >> 32;
       // seconds to nanoseconds
       syncTimeout = syncTimeout * 1000000000;
-      if (time_since_last_sync > syncTimeout) {
+      if (time_since_last_use > syncTimeout) {
         debug(2, "deactivated source %d with clock_id %" PRIx64 " on ip: %s.", i,
               clocks_shared_info[i].clock_id, &clocks_shared_info[i].ip);
         int rc = pthread_mutex_lock(&shared_memory->shm_mutex);
