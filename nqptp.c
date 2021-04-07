@@ -404,56 +404,8 @@ int main(void) {
                 } break;
 
                 case Follow_Up: {
-                  struct ptp_follow_up_message *msg = (struct ptp_follow_up_message *)buf;
-
-                  if ((clocks_private[the_clock].current_stage == sync_seen) &&
-                      (clocks_private[the_clock].sequence_number ==
-                       ntohs(msg->header.sequenceId))) {
-
-                    uint64_t packet_clock_id = nctohl(&msg->header.clockIdentity[0]);
-                    uint64_t packet_clock_id_low = nctohl(&msg->header.clockIdentity[4]);
-                    packet_clock_id = packet_clock_id << 32;
-                    packet_clock_id = packet_clock_id + packet_clock_id_low;
-
-                    uint16_t seconds_hi = nctohs(&msg->follow_up.preciseOriginTimestamp[0]);
-                    uint32_t seconds_low = nctohl(&msg->follow_up.preciseOriginTimestamp[2]);
-                    uint32_t nanoseconds = nctohl(&msg->follow_up.preciseOriginTimestamp[6]);
-                    uint64_t preciseOriginTimestamp = seconds_hi;
-                    preciseOriginTimestamp = preciseOriginTimestamp << 32;
-                    preciseOriginTimestamp = preciseOriginTimestamp + seconds_low;
-                    preciseOriginTimestamp = preciseOriginTimestamp * 1000000000L;
-                    preciseOriginTimestamp = preciseOriginTimestamp + nanoseconds;
-                    // this result is called "t1" in the IEEE spec.
-                    // we already have "t2" and it seems as if we can't generate "t3"
-                    // and "t4", so use t1 - t2 as the clock-to-local offsets
-
-                    clocks_private[the_clock].current_stage = waiting_for_sync;
-
-                    // update the shared clock information
-                    uint64_t offset = preciseOriginTimestamp - clocks_private[the_clock].t2;
-
-                    int rc = pthread_mutex_lock(&shared_memory->shm_mutex);
-                    if (rc != 0)
-                      warn("Can't acquire mutex to update a clock!");
-                    // update/set the clock_id
-
-                    shared_memory->clocks[the_clock].clock_id = packet_clock_id;
-                    shared_memory->clocks[the_clock].flags |= (1 << clock_is_valid);
-                    shared_memory->clocks[the_clock].local_time = clocks_private[the_clock].t2;
-                    shared_memory->clocks[the_clock].local_to_source_time_offset = offset;
-                    rc = pthread_mutex_unlock(&shared_memory->shm_mutex);
-                    if (rc != 0)
-                      warn("Can't release mutex after updating a clock!");
-
-                  } else {
-                    debug(3,
-                          "Follow_Up %u expecting to be in state sync_seen (%u). Stage error -- "
-                          "current state is %u, sequence %u. Ignoring it. %s",
-                          ntohs(msg->header.sequenceId), sync_seen,
-                          clocks_private[the_clock].current_stage,
-                          clocks_private[the_clock].sequence_number,
-                          &shared_memory->clocks[the_clock].ip);
-                  }
+                  handle_follow_up(buf, recv_len, &shared_memory->clocks[the_clock],
+                    &clocks_private[the_clock], reception_time, &shared_memory->shm_mutex);
                 } break;
                 default:
                   break;

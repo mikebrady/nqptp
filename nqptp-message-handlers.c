@@ -150,3 +150,57 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source *clock_info,
     }
   }
 }
+
+void handle_follow_up(char *buf, ssize_t recv_len, clock_source *clock_info,
+                     clock_source_private_data *clock_private_info, uint64_t reception_time, pthread_mutex_t *shm_mutex) {
+  struct ptp_follow_up_message *msg = (struct ptp_follow_up_message *)buf;
+
+                  if ((clock_private_info->current_stage == sync_seen) &&
+                      (clock_private_info->sequence_number ==
+                       ntohs(msg->header.sequenceId))) {
+
+                    uint64_t packet_clock_id = nctohl(&msg->header.clockIdentity[0]);
+                    uint64_t packet_clock_id_low = nctohl(&msg->header.clockIdentity[4]);
+                    packet_clock_id = packet_clock_id << 32;
+                    packet_clock_id = packet_clock_id + packet_clock_id_low;
+
+                    uint16_t seconds_hi = nctohs(&msg->follow_up.preciseOriginTimestamp[0]);
+                    uint32_t seconds_low = nctohl(&msg->follow_up.preciseOriginTimestamp[2]);
+                    uint32_t nanoseconds = nctohl(&msg->follow_up.preciseOriginTimestamp[6]);
+                    uint64_t preciseOriginTimestamp = seconds_hi;
+                    preciseOriginTimestamp = preciseOriginTimestamp << 32;
+                    preciseOriginTimestamp = preciseOriginTimestamp + seconds_low;
+                    preciseOriginTimestamp = preciseOriginTimestamp * 1000000000L;
+                    preciseOriginTimestamp = preciseOriginTimestamp + nanoseconds;
+                    // this result is called "t1" in the IEEE spec.
+                    // we already have "t2" and it seems as if we can't generate "t3"
+                    // and "t4", so use t1 - t2 as the clock-to-local offsets
+
+                    clock_private_info->current_stage = waiting_for_sync;
+
+                    // update the shared clock information
+                    uint64_t offset = preciseOriginTimestamp - clock_private_info->t2;
+
+                    int rc = pthread_mutex_lock(shm_mutex);
+                    if (rc != 0)
+                      warn("Can't acquire mutex to update a clock!");
+                    // update/set the clock_id
+
+                    clock_info->clock_id = packet_clock_id;
+                    clock_info->flags |= (1<<clock_is_valid);
+                    clock_info->local_time = clock_private_info->t2;
+                    clock_info->local_to_source_time_offset = offset;
+                    rc = pthread_mutex_unlock(shm_mutex);
+                    if (rc != 0)
+                      warn("Can't release mutex after updating a clock!");
+
+                  } else {
+                    debug(3,
+                          "Follow_Up %u expecting to be in state sync_seen (%u). Stage error -- "
+                          "current state is %u, sequence %u. Ignoring it. %s",
+                          ntohs(msg->header.sequenceId), sync_seen,
+                          clock_private_info->current_stage,
+                          clock_private_info->sequence_number,
+                          clock_info->ip);
+                  }
+}
