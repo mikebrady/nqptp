@@ -405,7 +405,8 @@ int main(void) {
 
                 case Follow_Up: {
                   handle_follow_up(buf, recv_len, &shared_memory->clocks[the_clock],
-                    &clocks_private[the_clock], reception_time, &shared_memory->shm_mutex);
+                                   &clocks_private[the_clock], reception_time,
+                                   &shared_memory->shm_mutex);
                 } break;
                 default:
                   break;

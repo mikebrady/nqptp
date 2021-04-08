@@ -78,6 +78,7 @@ int create_clock_source_record(char *sender_string, clock_source *clocks_shared_
     clocks_private_info[i].in_use = 1;
     clocks_private_info[i].t2 = 0;
     clocks_private_info[i].current_stage = waiting_for_sync;
+    clocks_private_info[i].vacant_samples = MAX_TIMING_SAMPLES;
     debug(2, "activated source %d with clock_id %" PRIx64 " on ip: %s.", i,
           clocks_shared_info[i].clock_id, &clocks_shared_info[i].ip);
   } else {

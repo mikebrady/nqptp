@@ -28,7 +28,7 @@ enum stage {
   sync_seen,
 };
 
-#define MAX_TIMING_SAMPLES 480
+#define MAX_TIMING_SAMPLES 19
 typedef struct {
   uint64_t local, local_to_remote_offset;
 } timing_samples;
