@@ -21,6 +21,8 @@
 #include "general-utilities.h"
 #include <errno.h>
 #include <fcntl.h>
+#include <ifaddrs.h>
+#include <linux/if_packet.h>
 #include <linux/net_tstamp.h>
 #include <netdb.h>
 #include <stdio.h>
@@ -164,4 +166,42 @@ void debug_print_buffer(int level, char *buf, size_t buf_len) {
     }
     free(obf);
   }
+}
+
+uint64_t get_self_clock_id() {
+  // make up a clock ID based on an interfaces' MAC
+  char local_clock_id[8];
+  int len = 0;
+  struct ifaddrs *ifaddr = NULL;
+  struct ifaddrs *ifa = NULL;
+  int status;
+  if ((status = getifaddrs(&ifaddr) == -1)) {
+    die("getifaddrs: %s", gai_strerror(status));
+  } else {
+    int found = 0;
+    for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
+      if ((ifa->ifa_addr) && (ifa->ifa_addr->sa_family == AF_PACKET)) {
+        struct sockaddr_ll *s = (struct sockaddr_ll *)ifa->ifa_addr;
+        if ((strcmp(ifa->ifa_name, "lo") != 0) && (found == 0)) {
+          len = s->sll_halen;
+          memcpy(local_clock_id, &s->sll_addr, len);
+          found = 1;
+        }
+      }
+    }
+    freeifaddrs(ifaddr);
+  }
+  // if the length of the MAC address is 6 we need to doctor it a little
+  // See Section 7.5.2.2.2 IEEE EUI-64 clockIdentity values, NOTE 2
+
+  if (len == 6) { // i.e. an EUI-48 MAC Address
+    local_clock_id[7] = local_clock_id[5];
+    local_clock_id[6] = local_clock_id[4];
+    local_clock_id[5] = local_clock_id[3];
+    local_clock_id[3] = 0xFF;
+    local_clock_id[4] = 0xFE;
+  }
+  uint64_t result;
+  memcpy(&result, local_clock_id, sizeof(result));
+  return result;
 }

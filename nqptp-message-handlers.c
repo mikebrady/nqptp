@@ -50,6 +50,7 @@ void handle_control_port_messages(char *buf, ssize_t recv_len, clock_source *clo
           // if it is just about to become a timing peer, reset its sample count
           clock_private_info[t].vacant_samples = MAX_TIMING_SAMPLES;
           clock_private_info[t].next_sample_goes_here = 0;
+          clock_private_info[t].sample_number = 0;
           clock_info[t].flags |= (1 << clock_is_a_timing_peer);
         }
       }
@@ -190,7 +191,8 @@ void handle_follow_up(char *buf, ssize_t recv_len, clock_source *clock_info,
     // now, if there was a valid offset previously,
     // check if the offset should be clamped
 
-    if ((clock_info->flags & (1 << clock_is_valid)) &&
+    // don't clamp for the first two seconds?
+    if ((clock_info->flags & (1 << clock_is_valid)) && (clock_private_info->sample_number > 17) &&
         (clock_private_info->vacant_samples != MAX_TIMING_SAMPLES)) {
 
       const int64_t clamp = 1 * 1000 * 1000;
@@ -212,6 +214,7 @@ void handle_follow_up(char *buf, ssize_t recv_len, clock_source *clock_info,
     clock_private_info->samples[clock_private_info->next_sample_goes_here].local_to_remote_offset =
         offset;
     clock_private_info->next_sample_goes_here++;
+    clock_private_info->sample_number++;
     if (clock_private_info->next_sample_goes_here == MAX_TIMING_SAMPLES)
       clock_private_info->next_sample_goes_here = 0;
     if (clock_private_info->vacant_samples == MAX_TIMING_SAMPLES) {
@@ -268,5 +271,62 @@ void handle_follow_up(char *buf, ssize_t recv_len, clock_source *clock_info,
           "current state is %u, sequence %u. Ignoring it. %s",
           ntohs(msg->header.sequenceId), sync_seen, clock_private_info->current_stage,
           clock_private_info->sequence_number, clock_info->ip);
+  }
+}
+
+void handle_sync(char *buf, ssize_t recv_len, clock_source *clock_info,
+                 clock_source_private_data *clock_private_info, uint64_t reception_time) {
+
+  struct ptp_sync_message *msg = (struct ptp_sync_message *)buf;
+  // this is just to see if anything interesting comes in the SYNC package
+  // a non-zero origin timestamp
+  // or correction field would be interesting....
+  int ck;
+  int non_empty_origin_timestamp = 0;
+  for (ck = 0; ck < 10; ck++) {
+    if (msg->sync.originTimestamp[ck] != 0) {
+      non_empty_origin_timestamp = (non_empty_origin_timestamp | 1);
+    }
+  }
+  if (non_empty_origin_timestamp != 0)
+    debug(2, "Sync Origin Timestamp!");
+  if (msg->header.correctionField != 0)
+    debug(3, "correctionField: %" PRIx64 ".", msg->header.correctionField);
+
+  int discard_sync = 0;
+
+  // check if we should discard this SYNC
+  if (clock_private_info->current_stage != waiting_for_sync) {
+
+    // here, we have an unexpected SYNC. It could be because the
+    // previous transaction sequence failed for some reason
+    // But, if that is so, the SYNC will have a newer sequence number
+    // so, ignore it if it's a little older.
+
+    // If it seems a lot older in sequence number terms, then it might
+    // be the start of a completely new sequence, so if the
+    // difference is more than 40 (WAG), accept it
+
+    uint16_t new_sync_sequence_number = ntohs(msg->header.sequenceId);
+    int16_t sequence_number_difference =
+        (clock_private_info->sequence_number - new_sync_sequence_number);
+
+    if ((sequence_number_difference > 0) && (sequence_number_difference < 40))
+      discard_sync = 1;
+  }
+
+  if (discard_sync == 0) {
+
+    clock_private_info->sequence_number = ntohs(msg->header.sequenceId);
+    clock_private_info->t2 = reception_time;
+
+    // it turns out that we don't really need to send a Delay_Req
+    // as a Follow_Up message always comes through
+
+    // If we had hardware assisted network timing, then maybe
+    // Even then, AP2 devices don't seem to send an accurate
+    // Delay_Resp time -- it contains the same information as the Follow_Up
+
+    clock_private_info->current_stage = sync_seen;
   }
 }

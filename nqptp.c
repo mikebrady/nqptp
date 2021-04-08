@@ -349,58 +349,8 @@ int main(void) {
                                   &clocks_private[the_clock], reception_time);
                   break;
                 case Sync: { // if it's a sync
-                  struct ptp_sync_message *msg = (struct ptp_sync_message *)buf;
-                  // this is just to see if anything interesting comes in the SYNC package
-                  // a non-zero origin timestamp
-                  // or correction field would be interesting....
-                  int ck;
-                  int non_empty_origin_timestamp = 0;
-                  for (ck = 0; ck < 10; ck++) {
-                    if (msg->sync.originTimestamp[ck] != 0) {
-                      non_empty_origin_timestamp = (non_empty_origin_timestamp | 1);
-                    }
-                  }
-                  if (non_empty_origin_timestamp != 0)
-                    debug(2, "Sync Origin Timestamp!");
-                  if (msg->header.correctionField != 0)
-                    debug(3, "correctionField: %" PRIx64 ".", msg->header.correctionField);
-
-                  int discard_sync = 0;
-
-                  // check if we should discard this SYNC
-                  if (clocks_private[the_clock].current_stage != waiting_for_sync) {
-
-                    // here, we have an unexpected SYNC. It could be because the
-                    // previous transaction sequence failed for some reason
-                    // But, if that is so, the SYNC will have a newer sequence number
-                    // so, ignore it if it's a little older.
-
-                    // If it seems a lot older in sequence number terms, then it might
-                    // be the start of a completely new sequence, so if the
-                    // difference is more than 40 (WAG), accept it
-
-                    uint16_t new_sync_sequence_number = ntohs(msg->header.sequenceId);
-                    int16_t sequence_number_difference =
-                        (clocks_private[the_clock].sequence_number - new_sync_sequence_number);
-
-                    if ((sequence_number_difference > 0) && (sequence_number_difference < 40))
-                      discard_sync = 1;
-                  }
-
-                  if (discard_sync == 0) {
-
-                    clocks_private[the_clock].sequence_number = ntohs(msg->header.sequenceId);
-                    clocks_private[the_clock].t2 = reception_time;
-
-                    // it turns out that we don't really need to send a Delay_Req
-                    // as a Follow_Up message always comes through
-
-                    // If we had hardware assisted network timing, then maybe
-                    // Even then, AP2 devices don't seem to send an accurate
-                    // Delay_Resp time -- it contains the same information is the Follow_Up
-
-                    clocks_private[the_clock].current_stage = sync_seen;
-                  }
+                  handle_sync(buf, recv_len, &shared_memory->clocks[the_clock],
+                              &clocks_private[the_clock], reception_time);
                 } break;
 
                 case Follow_Up: {
