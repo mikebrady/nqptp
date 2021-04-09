@@ -28,8 +28,9 @@ enum stage {
   sync_seen,
 };
 
-#define MAX_TIMING_SAMPLES 3
+#define MAX_TIMING_SAMPLES 11
 typedef struct {
+  uint16_t sequence_number;
   uint64_t local, local_to_remote_offset;
 } timing_samples;
 
@@ -50,7 +51,6 @@ typedef struct {
   int vacant_samples; // the number of elements in the timing_samples array that are not yet used
   int next_sample_goes_here; // point to where in the timing samples array the next entries should
                              // go
-  uint32_t sample_number;
 } clock_source_private_data;
 
 int find_clock_source_record(char *sender_string, clock_source *clocks_shared_info,
