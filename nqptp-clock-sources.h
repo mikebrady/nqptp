@@ -51,6 +51,19 @@ typedef struct {
   int vacant_samples; // the number of elements in the timing_samples array that are not yet used
   int next_sample_goes_here; // point to where in the timing samples array the next entries should
                              // go
+
+  // these are for finding the best clock to use
+  // See Figure 27 and 27 pp 89 -- 90 for the Data set comparison algorithm
+
+  uint8_t grandmasterPriority1;
+  uint32_t grandmasterQuality; // class/accuracy/variance -- lower is better
+  uint8_t grandmasterClass;
+  uint8_t grandmasterAccuracy;
+  uint16_t grandmasterVariance;
+  uint8_t grandmasterPriority2;
+  uint64_t grandmasterIdentity;
+  uint16_t stepsRemoved;
+
 } clock_source_private_data;
 
 int find_clock_source_record(char *sender_string, clock_source *clocks_shared_info,

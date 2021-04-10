@@ -322,7 +322,8 @@ int main(void) {
               sender_port = ntohs(sa4->sin_port);
             }
 
-            if ((sender_port == receiver_port) && (connection_ip_family == AF_INET)) {
+            //            if ((sender_port == receiver_port) && (connection_ip_family == AF_INET)) {
+            if (sender_port == receiver_port) {
 
               char sender_string[256];
               memset(sender_string, 0, sizeof(sender_string));

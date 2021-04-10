@@ -37,7 +37,12 @@
 // most of this will probably become private when
 // the master clock selection stuff works automatically
 
-typedef enum { clock_is_valid, clock_is_a_timing_peer, clock_is_qualified } clock_flags;
+typedef enum {
+  clock_is_valid,
+  clock_is_a_timing_peer,
+  clock_is_qualified,
+  clock_is_best
+} clock_flags;
 
 typedef struct {
   char ip[64]; // 64 is nicely aligned and bigger than INET6_ADDRSTRLEN (46)

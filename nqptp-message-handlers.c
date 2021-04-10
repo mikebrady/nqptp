@@ -24,10 +24,65 @@
 #include "debug.h"
 #include "general-utilities.h"
 
+void mark_best_clock(clock_source *clock_info, clock_source_private_data *clock_private_info) {
+  int best_so_far = -1;
+  int timing_peer_count = 0;
+  int i = 0;
+
+  uint32_t acceptance_mask =
+      (1 << clock_is_valid) | (1 << clock_is_qualified) | (1 << clock_is_a_timing_peer);
+  for (i = 0; i < MAX_CLOCKS; i++) {
+    if ((clock_info[i].flags & acceptance_mask) == acceptance_mask) {
+      // found a possible clock candidate
+      timing_peer_count++;
+      if (best_so_far == -1) {
+        best_so_far = i;
+      } else {
+        // do the data set comparison detailed in Figure 27 and Figure 28 on pp89-90
+        if (clock_private_info[i].grandmasterIdentity ==
+            clock_private_info[best_so_far].grandmasterIdentity) {
+          // should implement Figure 28 here
+        } else if (clock_private_info[i].grandmasterPriority1 <
+                   clock_private_info[best_so_far].grandmasterPriority1) {
+          best_so_far = i;
+        } else if (clock_private_info[i].grandmasterClass <
+                   clock_private_info[best_so_far].grandmasterClass) {
+          best_so_far = i;
+        } else if (clock_private_info[i].grandmasterAccuracy <
+                   clock_private_info[best_so_far].grandmasterAccuracy) {
+          best_so_far = i;
+        } else if (clock_private_info[i].grandmasterVariance <
+                   clock_private_info[best_so_far].grandmasterVariance) {
+          best_so_far = i;
+        } else if (clock_private_info[i].grandmasterPriority2 <
+                   clock_private_info[best_so_far].grandmasterPriority2) {
+          best_so_far = i;
+        } else if (clock_private_info[i].grandmasterIdentity <
+                   clock_private_info[best_so_far].grandmasterIdentity) {
+          best_so_far = i;
+        }
+      }
+    }
+  }
+  if (best_so_far != -1) {
+    debug(1, "best clock is %" PRIx64 ".", clock_info[best_so_far].clock_id);
+    for (i = 0; i < MAX_CLOCKS; i++) {
+      if (i == best_so_far)
+        clock_info[i].flags |= (1 << clock_is_best);
+      else
+        clock_info[i].flags &= ~(1 << clock_is_best);
+    }
+  } else {
+    if (timing_peer_count != 0)
+      debug(1, "best clock not found!");
+  }
+}
+
 void handle_control_port_messages(char *buf, ssize_t recv_len, clock_source *clock_info,
                                   clock_source_private_data *clock_private_info) {
   if (recv_len != -1) {
     buf[recv_len - 1] = 0; // make sure there's a null in it!
+    debug(1, buf);
     if (strstr(buf, "set_timing_peers ") == buf) {
       char *ip_list = buf + strlen("set_timing_peers ");
 
@@ -56,6 +111,8 @@ void handle_control_port_messages(char *buf, ssize_t recv_len, clock_source *clo
         }
       }
 
+      // now go and mark the best clock in the timing peer list
+      mark_best_clock(clock_info, clock_private_info);
       rc = pthread_mutex_unlock(&shared_memory->shm_mutex);
       if (rc != 0)
         warn("Can't release mutex after set_timing_peers!");
@@ -114,19 +171,71 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source *clock_info,
         i++;
       }
       if (valid_count >= foreign_master_threshold) {
-        if ((clock_info->flags & (1 << clock_is_qualified)) == 0) {
-          uint64_t grandmaster_clock_id = nctohl(&msg->announce.grandmasterIdentity[0]);
-          uint64_t grandmaster_clock_id_low = nctohl(&msg->announce.grandmasterIdentity[4]);
-          grandmaster_clock_id = grandmaster_clock_id << 32;
-          grandmaster_clock_id = grandmaster_clock_id + grandmaster_clock_id_low;
+        uint64_t grandmaster_clock_id = nctohl(&msg->announce.grandmasterIdentity[0]);
+        uint64_t grandmaster_clock_id_low = nctohl(&msg->announce.grandmasterIdentity[4]);
+        grandmaster_clock_id = grandmaster_clock_id << 32;
+        grandmaster_clock_id = grandmaster_clock_id + grandmaster_clock_id_low;
+        uint32_t clockQuality = msg->announce.grandmasterClockQuality;
+        uint8_t clockClass = (clockQuality >> 24) & 0xff;
+        uint8_t clockAccuracy = (clockQuality >> 16) & 0xff;
+        uint16_t offsetScaledLogVariance = clockQuality & 0xffff;
+        int best_clock_update_needed = 0;
+        if (((clock_info->flags & (1 << clock_is_qualified)) == 0) &&
+            (msg->announce.stepsRemoved < 255)) {
+          // if it's just becoming qualified
+          clock_private_info->grandmasterIdentity = grandmaster_clock_id;
+          clock_private_info->grandmasterPriority1 = msg->announce.grandmasterPriority1;
+          clock_private_info->grandmasterQuality = clockQuality; // class/accuracy/variance
+          clock_private_info->grandmasterClass = clockClass;
+          clock_private_info->grandmasterAccuracy = clockAccuracy;
+          clock_private_info->grandmasterVariance = offsetScaledLogVariance;
+          clock_private_info->grandmasterPriority2 = msg->announce.grandmasterPriority2;
+          clock_private_info->stepsRemoved = msg->announce.stepsRemoved;
+          best_clock_update_needed = 1;
+        } else {
+          // otherwise, something in it might have changed, I guess, that
+          // affects its status as a possible master clock.
+          if (clock_private_info->grandmasterIdentity != grandmaster_clock_id) {
+            clock_private_info->grandmasterIdentity = grandmaster_clock_id;
+            best_clock_update_needed = 1;
+          }
+          if (clock_private_info->grandmasterPriority1 != msg->announce.grandmasterPriority1) {
+            clock_private_info->grandmasterPriority1 = msg->announce.grandmasterPriority1;
+            best_clock_update_needed = 1;
+          }
+          if (clock_private_info->grandmasterQuality != clockQuality) {
+            clock_private_info->grandmasterQuality = clockQuality;
+            best_clock_update_needed = 1;
+          }
+          if (clock_private_info->grandmasterClass != clockClass) {
+            clock_private_info->grandmasterClass = clockClass;
+            best_clock_update_needed = 1;
+          }
+          if (clock_private_info->grandmasterAccuracy != clockAccuracy) {
+            clock_private_info->grandmasterAccuracy = clockAccuracy;
+            best_clock_update_needed = 1;
+          }
+          if (clock_private_info->grandmasterVariance != offsetScaledLogVariance) {
+            clock_private_info->grandmasterVariance = offsetScaledLogVariance;
+            best_clock_update_needed = 1;
+          }
+          if (clock_private_info->grandmasterPriority2 != msg->announce.grandmasterPriority2) {
+            clock_private_info->grandmasterPriority2 = msg->announce.grandmasterPriority2;
+            best_clock_update_needed = 1;
+          }
+          if (clock_private_info->stepsRemoved != msg->announce.stepsRemoved) {
+            clock_private_info->stepsRemoved = msg->announce.stepsRemoved;
+            best_clock_update_needed = 1;
+          }
+        }
 
+        if (best_clock_update_needed) {
+          debug(1, "best clock update needed");
           debug(1,
-                "clock_id %" PRIx64 " at:    %s, \"Announce\" message is Qualified -- See 9.3.2.5.",
-                clock_info->clock_id, clock_info->ip);
-          uint32_t clockQuality = msg->announce.grandmasterClockQuality;
-          uint8_t clockClass = (clockQuality >> 24) & 0xff;
-          uint8_t clockAccuracy = (clockQuality >> 16) & 0xff;
-          uint16_t offsetScaledLogVariance = clockQuality & 0xffff;
+                "clock_id %" PRIx64
+                " at:    %s, \"Announce\" message is %sQualified -- See 9.3.2.5.",
+                clock_info->clock_id, clock_info->ip,
+                clock_private_info->stepsRemoved < 255 ? "" : "not ");
           debug(1, "    grandmasterIdentity:         %" PRIx64 ".", grandmaster_clock_id);
           debug(1, "    grandmasterPriority1:        %u.", msg->announce.grandmasterPriority1);
           debug(1, "    grandmasterClockQuality:     0x%x.", msg->announce.grandmasterClockQuality);
@@ -136,12 +245,19 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source *clock_info,
           debug(1, "        offsetScaledLogVariance: 0x%x.",
                 offsetScaledLogVariance); // See 7.6.3 PTP variance
           debug(1, "    grandmasterPriority2:        %u.", msg->announce.grandmasterPriority2);
+          debug(1, "    stepsRemoved:                %u.", msg->announce.stepsRemoved);
+
+          if (pthread_mutex_lock(&shared_memory->shm_mutex) != 0)
+            warn("Can't acquire mutex to mark best clock!");
+          // now go and re-mark the best clock in the timing peer list
+          if (clock_private_info->stepsRemoved >= 255) // 9.3.2.5 (d)
+            clock_info->flags &= ~(1 << clock_is_qualified);
+          else
+            clock_info->flags |= (1 << clock_is_qualified);
+          mark_best_clock(clock_info, clock_private_info);
+          if (pthread_mutex_unlock(&shared_memory->shm_mutex) != 0)
+            warn("Can't release mutex after marking best clock!");
         }
-        if (pthread_mutex_lock(&shared_memory->shm_mutex) != 0)
-          warn("Can't acquire mutex to set_timing_peers!");
-        clock_info->flags |= (1 << clock_is_qualified);
-        if (pthread_mutex_unlock(&shared_memory->shm_mutex) != 0)
-          warn("Can't release mutex after set_timing_peers!");
       } else {
         if ((clock_info->flags & (1 << clock_is_qualified)) !=
             0) // if it was qualified, but now isn't
