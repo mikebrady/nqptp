@@ -65,7 +65,7 @@ void mark_best_clock(clock_source *clock_info, clock_source_private_data *clock_
     }
   }
   if (best_so_far != -1) {
-    debug(1, "best clock is %" PRIx64 ".", clock_info[best_so_far].clock_id);
+    debug(2, "best clock is %" PRIx64 ".", clock_info[best_so_far].clock_id);
     for (i = 0; i < MAX_CLOCKS; i++) {
       if (i == best_so_far)
         clock_info[i].flags |= (1 << clock_is_best);
@@ -82,7 +82,6 @@ void handle_control_port_messages(char *buf, ssize_t recv_len, clock_source *clo
                                   clock_source_private_data *clock_private_info) {
   if (recv_len != -1) {
     buf[recv_len - 1] = 0; // make sure there's a null in it!
-    debug(1, buf);
     if (strstr(buf, "set_timing_peers ") == buf) {
       char *ip_list = buf + strlen("set_timing_peers ");
 
@@ -116,12 +115,12 @@ void handle_control_port_messages(char *buf, ssize_t recv_len, clock_source *clo
       rc = pthread_mutex_unlock(&shared_memory->shm_mutex);
       if (rc != 0)
         warn("Can't release mutex after set_timing_peers!");
-      debug(1, "Timing group start");
+      debug(2, "Timing group start");
       for (i = 0; i < MAX_CLOCKS; i++) {
         if ((clock_info[i].flags & (1 << clock_is_a_timing_peer)) != 0)
-          debug(1, "%s.", &clock_info[i].ip);
+          debug(2, "%s.", &clock_info[i].ip);
       }
-      debug(1, "Timing group end");
+      debug(2, "Timing group end");
 
     } else {
       warn("Unrecognised string on the control port.");
@@ -230,22 +229,22 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source *clock_info,
         }
 
         if (best_clock_update_needed) {
-          debug(1, "best clock update needed");
-          debug(1,
+          debug(2, "best clock update needed");
+          debug(2,
                 "clock_id %" PRIx64
                 " at:    %s, \"Announce\" message is %sQualified -- See 9.3.2.5.",
                 clock_info->clock_id, clock_info->ip,
                 clock_private_info->stepsRemoved < 255 ? "" : "not ");
-          debug(1, "    grandmasterIdentity:         %" PRIx64 ".", grandmaster_clock_id);
-          debug(1, "    grandmasterPriority1:        %u.", msg->announce.grandmasterPriority1);
-          debug(1, "    grandmasterClockQuality:     0x%x.", msg->announce.grandmasterClockQuality);
-          debug(1, "        clockClass:              %u.", clockClass); // See 7.6.2.4 clockClass
-          debug(1, "        clockAccuracy:           0x%x.",
+          debug(2, "    grandmasterIdentity:         %" PRIx64 ".", grandmaster_clock_id);
+          debug(2, "    grandmasterPriority1:        %u.", msg->announce.grandmasterPriority1);
+          debug(2, "    grandmasterClockQuality:     0x%x.", msg->announce.grandmasterClockQuality);
+          debug(2, "        clockClass:              %u.", clockClass); // See 7.6.2.4 clockClass
+          debug(2, "        clockAccuracy:           0x%x.",
                 clockAccuracy); // See 7.6.2.5 clockAccuracy
-          debug(1, "        offsetScaledLogVariance: 0x%x.",
+          debug(2, "        offsetScaledLogVariance: 0x%x.",
                 offsetScaledLogVariance); // See 7.6.3 PTP variance
-          debug(1, "    grandmasterPriority2:        %u.", msg->announce.grandmasterPriority2);
-          debug(1, "    stepsRemoved:                %u.", msg->announce.stepsRemoved);
+          debug(2, "    grandmasterPriority2:        %u.", msg->announce.grandmasterPriority2);
+          debug(2, "    stepsRemoved:                %u.", msg->announce.stepsRemoved);
 
           if (pthread_mutex_lock(&shared_memory->shm_mutex) != 0)
             warn("Can't acquire mutex to mark best clock!");
@@ -261,7 +260,7 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source *clock_info,
       } else {
         if ((clock_info->flags & (1 << clock_is_qualified)) !=
             0) // if it was qualified, but now isn't
-          debug(1,
+          debug(2,
                 "clock_id %" PRIx64
                 " on ip: %s \"Announce\" message is not Qualified -- See 9.3.2.5.",
                 clock_info->clock_id, clock_info->ip);
