@@ -22,11 +22,11 @@
 
 #define STORAGE_ID "/nqptp"
 #define MAX_CLOCKS 32
-#define NQPTP_SHM_STRUCTURES_VERSION 1
+#define NQPTP_SHM_STRUCTURES_VERSION 2
 #define NQPTP_CONTROL_PORT 9000
 
-// the control port will accept a packet with the first word being:
-// "set_timing_peers" followed by a space and then a space-delimited
+// the control port will accept a packet with the first letter being:
+// "N" or "U" followed by a space and then a space-delimited
 // list of ip numbers, either IPv4 or IPv6
 // the whole not to exceed 4096 characters in total
 
@@ -41,8 +41,13 @@ typedef enum {
   clock_is_valid,
   clock_is_a_timing_peer,
   clock_is_qualified,
-  clock_is_best
+  clock_is_master
 } clock_flags;
+
+typedef enum {
+  new_timing_peer_list = 'N', // followed by a (possibly empty) space-separated list of IPs
+  update_timing_peer_list = 'U'
+} control_port_command;
 
 typedef struct {
   char ip[64]; // 64 is nicely aligned and bigger than INET6_ADDRSTRLEN (46)
@@ -54,10 +59,13 @@ typedef struct {
 
 struct shm_structure {
   pthread_mutex_t shm_mutex;    // for safely accessing the structure
-  uint16_t size_of_clock_array; // check this is equal to MAX_SHARED_CLOCKS
-  uint16_t version;             // check this is equal to NQPTP_SHM_STRUCTURES_VERSION
-  uint32_t flags;
-  clock_source clocks[MAX_CLOCKS];
+  uint16_t size_of_clock_array; // deprecated -- check this is equal to MAX_SHARED_CLOCKS
+  uint16_t version;             // deprecated -- check this is equal to NQPTP_SHM_STRUCTURES_VERSION
+  uint32_t flags;               // unused
+  uint64_t local_time;          // the time when the offset was calculated
+  uint64_t local_to_ptp_time_offset; // add this to the local time to get PTP time
+  uint64_t clock_id;    // for information only
+  clock_source clocks[MAX_CLOCKS]; // deprecated
 };
 
 #endif

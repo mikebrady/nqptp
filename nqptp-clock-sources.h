@@ -78,4 +78,6 @@ void update_clock_self_identifications(clock_source *clocks_shared_info,
 void manage_clock_sources(uint64_t reception_time, clock_source *clocks_shared_info,
                           clock_source_private_data *clocks_private_info);
 
+extern clock_source_private_data clocks_private[MAX_CLOCKS];
+
 #endif

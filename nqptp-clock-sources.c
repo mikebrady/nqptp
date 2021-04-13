@@ -29,6 +29,8 @@
 #define FIELD_SIZEOF(t, f) (sizeof(((t *)0)->f))
 #endif
 
+clock_source_private_data clocks_private[MAX_CLOCKS];
+
 int find_clock_source_record(char *sender_string, clock_source *clocks_shared_info,
                              clock_source_private_data *clocks_private_info) {
   // return the index of the clock in the clock information arrays or -1

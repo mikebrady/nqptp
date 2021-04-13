@@ -69,7 +69,10 @@
 #define MAX_EVENTS 128 // For epoll
 
 sockets_open_bundle sockets_open_stuff;
-clock_source_private_data clocks_private[MAX_CLOCKS];
+
+int master_clock_index = -1;
+uint64_t master_clock_to_ptp_offset;
+
 struct shm_structure *shared_memory = NULL; // this is where public clock info is available
 int epoll_fd;
 
