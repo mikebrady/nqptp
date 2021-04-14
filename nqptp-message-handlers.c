@@ -121,8 +121,8 @@ void handle_control_port_messages(char *buf, ssize_t recv_len, clock_source *clo
                                   clock_source_private_data *clock_private_info) {
   if (recv_len != -1) {
     buf[recv_len - 1] = 0; // make sure there's a null in it!
+    debug(1,"Received a new timing peer list message: \"%s\".", buf);
     if ((buf[0] == new_timing_peer_list) || (buf[0] == update_timing_peer_list)){
-      debug(1,"Received a new timing peer list message: \"%s\".", buf);
 
       char *ip_list = buf + 1;
       if (*ip_list == ' ')
@@ -566,12 +566,12 @@ void handle_follow_up(char *buf, ssize_t recv_len, clock_source *clock_info,
     clock_info->local_to_source_time_offset = estimated_offset;
 
     if ((clock_info->flags & (1 << clock_is_master)) != 0) {
-      shared_memory->master_clock_id = clock_info->clock_id;
+      shared_memory->clock_id = clock_info->clock_id;
       shared_memory->local_time = clock_info->local_time;
       uint64_t new_ptp_offset = clock_info->local_to_source_time_offset;
       new_ptp_offset += master_clock_to_ptp_offset;
       shared_memory->local_to_ptp_time_offset = new_ptp_offset;
-      debug(1,"clock: %" PRIx64 ", local_to_ptp_time_offset: %" PRIx64 ", master_clock_to_ptp_offset: % " PRIx64 ".", shared_memory->master_clock_id, new_ptp_offset, master_clock_to_ptp_offset);
+      debug(1,"clock: %" PRIx64 ", local_to_ptp_time_offset: %" PRIx64 ", master_clock_to_ptp_offset: % " PRIx64 ".", shared_memory->clock_id, new_ptp_offset, master_clock_to_ptp_offset);
     }
     rc = pthread_mutex_unlock(shm_mutex);
     if (rc != 0)
