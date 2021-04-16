@@ -27,7 +27,7 @@
 void update_master_old(int do_reset, clock_source *clock_info, clock_source_private_data *clock_private_info) {
   debug(2,"set new master with do_reset of: %s.", do_reset == 0 ? "false" : "true");
   // do_reset is true if you want to discard existing PTP timing
-
+  do_reset = 1;
   int old_master = -1;
 
   int i;
@@ -568,10 +568,11 @@ void handle_follow_up(char *buf, ssize_t recv_len, clock_source *clock_info,
     if ((clock_info->flags & (1 << clock_is_master)) != 0) {
       shared_memory->clock_id = clock_info->clock_id;
       shared_memory->local_time = clock_info->local_time;
-      uint64_t new_ptp_offset = clock_info->local_to_source_time_offset;
-      new_ptp_offset += master_clock_to_ptp_offset;
-      shared_memory->local_to_ptp_time_offset = new_ptp_offset;
-      debug(1,"clock: %" PRIx64 ", local_to_ptp_time_offset: %" PRIx64 ", master_clock_to_ptp_offset: % " PRIx64 ".", shared_memory->clock_id, new_ptp_offset, master_clock_to_ptp_offset);
+      //uint64_t new_ptp_offset = clock_info->local_to_source_time_offset;
+      //new_ptp_offset += master_clock_to_ptp_offset;
+      //shared_memory->local_to_ptp_time_offset = new_ptp_offset;
+      shared_memory->local_to_ptp_time_offset = clock_info->local_to_source_time_offset;
+      debug(1,"clock: %" PRIx64 ", local_to_ptp_time_offset: %" PRIx64 ".", shared_memory->clock_id, shared_memory->local_to_ptp_time_offset);
     }
     rc = pthread_mutex_unlock(shm_mutex);
     if (rc != 0)
