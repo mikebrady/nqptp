@@ -23,17 +23,16 @@
 #include "nqptp-clock-sources.h"
 #include "nqptp-shm-structures.h"
 
-void handle_announce(char *buf, ssize_t recv_len, clock_source *clock_info,
+void handle_announce(char *buf, ssize_t recv_len,
                      clock_source_private_data *clock_private_info, uint64_t reception_time);
 
-void handle_sync(char *buf, ssize_t recv_len, clock_source *clock_info,
+void handle_sync(char *buf, ssize_t recv_len,
                  clock_source_private_data *clock_private_info, uint64_t reception_time);
 
-void handle_follow_up(char *buf, ssize_t recv_len, clock_source *clock_info,
-                      clock_source_private_data *clock_private_info, uint64_t reception_time,
-                      pthread_mutex_t *shm_mutex);
+void handle_follow_up(char *buf, ssize_t recv_len,
+                      clock_source_private_data *clock_private_info, uint64_t reception_time);
 
-void handle_control_port_messages(char *buf, ssize_t recv_len, clock_source *clock_info,
+void handle_control_port_messages(char *buf, ssize_t recv_len,
                                   clock_source_private_data *clock_private_info);
 
 #endif

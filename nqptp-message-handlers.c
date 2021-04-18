@@ -24,15 +24,15 @@
 #include "debug.h"
 #include "general-utilities.h"
 
-void update_master_old(clock_source *clock_info, clock_source_private_data *clock_private_info) {
+void update_master_old(clock_source_private_data *clock_private_info) {
   int old_master = -1;
   // find the current master clock if there is one and turn off all mastership
   int i;
   for (i = 0; i < MAX_CLOCKS; i++) {
-    if ((clock_info[i].flags & (1 << clock_is_master)) != 0)
+    if ((clock_private_info[i].flags & (1 << clock_is_master)) != 0)
       if (old_master == -1)
         old_master = i; // find old master
-    clock_info[i].flags &= ~(1 << clock_is_master); // turn them all off
+    clock_private_info[i].flags &= ~(1 << clock_is_master); // turn them all off
   }
 
   int best_so_far = -1;
@@ -40,7 +40,7 @@ void update_master_old(clock_source *clock_info, clock_source_private_data *cloc
   uint32_t acceptance_mask =
       (1 << clock_is_valid) | (1 << clock_is_qualified) | (1 << clock_is_a_timing_peer);
   for (i = 0; i < MAX_CLOCKS; i++) {
-    if ((clock_info[i].flags & acceptance_mask) == acceptance_mask) {
+    if ((clock_private_info[i].flags & acceptance_mask) == acceptance_mask) {
       // found a possible clock candidate
       timing_peer_count++;
       if (best_so_far == -1) {
@@ -74,11 +74,12 @@ void update_master_old(clock_source *clock_info, clock_source_private_data *cloc
   }
   if (best_so_far != -1) {
   // we found a master clock
-    clock_info[best_so_far].flags |= (1 << clock_is_master);
+    clock_private_info[best_so_far].flags |= (1 << clock_is_master);
     // master_clock_index = best_so_far;
-    if (old_master != best_so_far)
-      debug(1, "Master clock is now: %" PRIx64 " at: %s, index: %d.", clock_info[best_so_far].clock_id, &clock_info[best_so_far].ip, best_so_far);
-    } else {
+    if (old_master != best_so_far) {
+      update_master_clock_info(clock_private_info[best_so_far].clock_id, clock_private_info[best_so_far].local_time, clock_private_info[best_so_far].local_to_source_time_offset);
+    }
+  } else {
     if (timing_peer_count == 0)
       debug(1, "No timing peer list found");
     else
@@ -87,64 +88,56 @@ void update_master_old(clock_source *clock_info, clock_source_private_data *cloc
 
   // check
   for (i = 0; i < MAX_CLOCKS; i++) {
-    if ((clock_info[i].flags & (1 << clock_is_master)) != 0)
+    if ((clock_private_info[i].flags & (1 << clock_is_master)) != 0)
       debug(2,"leaving with %d as master", i);
   }
 
 }
 
 void update_master() {
-  update_master_old((clock_source *) &shared_memory->clocks, clocks_private);
+  update_master_old(clocks_private);
 }
 
-void handle_control_port_messages(char *buf, ssize_t recv_len, clock_source *clock_info,
+void handle_control_port_messages(char *buf, ssize_t recv_len,
                                   clock_source_private_data *clock_private_info) {
   if (recv_len != -1) {
     buf[recv_len - 1] = 0; // make sure there's a null in it!
     debug(1,"Received a new timing peer list message: \"%s\".", buf);
-    if ((buf[0] == new_timing_peer_list) || (buf[0] == update_timing_peer_list)){
+    if (buf[0] == 'T') {
 
       char *ip_list = buf + 1;
       if (*ip_list == ' ')
         ip_list++;
 
-      int rc = pthread_mutex_lock(&shared_memory->shm_mutex);
-      if (rc != 0)
-        warn("Can't acquire mutex to set timing peers!");
-      // turn off all is_timing_peer
+      // turn off all is_timing_peer flags
       int i;
       for (i = 0; i < MAX_CLOCKS; i++) {
-        clock_info[i].flags &= ~(1 << clock_is_a_timing_peer); // turn off peer flag (but not the master flag!)
+        clock_private_info[i].flags &= ~(1 << clock_is_a_timing_peer); // turn off peer flag (but not the master flag!)
       }
 
       while (ip_list != NULL) {
         char *new_ip = strsep(&ip_list, " ");
         // look for the IP in the list of clocks, and create an inert entry if not there
         if ((new_ip != NULL) && (new_ip[0] != 0)) {
-          int t = find_clock_source_record(new_ip, clock_info, clock_private_info);
+          int t = find_clock_source_record(new_ip, clock_private_info);
           if (t == -1)
-            t = create_clock_source_record(new_ip, clock_info, clock_private_info,
-                                           0); // don't use the mutex
+            t = create_clock_source_record(new_ip, clock_private_info);
 
           // if it is just about to become a timing peer, reset its sample count
           clock_private_info[t].vacant_samples = MAX_TIMING_SAMPLES;
           clock_private_info[t].next_sample_goes_here = 0;
 
-          clock_info[t].flags |= (1 << clock_is_a_timing_peer);
+          clock_private_info[t].flags |= (1 << clock_is_a_timing_peer);
         }
       }
 
       // now find and mark the best clock in the timing peer list as the master
       update_master();
-      rc = pthread_mutex_unlock(&shared_memory->shm_mutex);
 
-
-      if (rc != 0)
-        warn("Can't release mutex after set timing peers!");
       debug(2, "Timing group start");
       for (i = 0; i < MAX_CLOCKS; i++) {
-        if ((clock_info[i].flags & (1 << clock_is_a_timing_peer)) != 0)
-          debug(2, "%s.", &clock_info[i].ip);
+        if ((clock_private_info[i].flags & (1 << clock_is_a_timing_peer)) != 0)
+          debug(2, "%s.", &clock_private_info[i].ip);
       }
       debug(2, "Timing group end");
 
@@ -156,7 +149,7 @@ void handle_control_port_messages(char *buf, ssize_t recv_len, clock_source *clo
   }
 }
 
-void handle_announce(char *buf, ssize_t recv_len, clock_source *clock_info,
+void handle_announce(char *buf, ssize_t recv_len,
                      clock_source_private_data *clock_private_info, uint64_t reception_time) {
   // reject Announce messages from self
   if (clock_private_info->is_one_of_ours == 0) {
@@ -205,7 +198,7 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source *clock_info,
         uint8_t clockAccuracy = (clockQuality >> 16) & 0xff;
         uint16_t offsetScaledLogVariance = clockQuality & 0xffff;
         int best_clock_update_needed = 0;
-        if (((clock_info->flags & (1 << clock_is_qualified)) == 0) &&
+        if (((clock_private_info->flags & (1 << clock_is_qualified)) == 0) &&
             (msg->announce.stepsRemoved < 255)) {
           // if it's just becoming qualified
           clock_private_info->grandmasterIdentity = grandmaster_clock_id;
@@ -259,7 +252,7 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source *clock_info,
           debug(2,
                 "clock_id %" PRIx64
                 " at:    %s, \"Announce\" message is %sQualified -- See 9.3.2.5.",
-                clock_info->clock_id, clock_info->ip,
+                clock_private_info->clock_id, clock_private_info->ip,
                 clock_private_info->stepsRemoved < 255 ? "" : "not ");
           debug(2, "    grandmasterIdentity:         %" PRIx64 ".", grandmaster_clock_id);
           debug(2, "    grandmasterPriority1:        %u.", msg->announce.grandmasterPriority1);
@@ -272,35 +265,27 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source *clock_info,
           debug(2, "    grandmasterPriority2:        %u.", msg->announce.grandmasterPriority2);
           debug(2, "    stepsRemoved:                %u.", msg->announce.stepsRemoved);
 
-          if (pthread_mutex_lock(&shared_memory->shm_mutex) != 0)
-            warn("Can't acquire mutex to mark best clock!");
           // now go and re-mark the best clock in the timing peer list
           if (clock_private_info->stepsRemoved >= 255) // 9.3.2.5 (d)
-            clock_info->flags &= ~(1 << clock_is_qualified);
+            clock_private_info->flags &= ~(1 << clock_is_qualified);
           else
-            clock_info->flags |= (1 << clock_is_qualified);
+            clock_private_info->flags |= (1 << clock_is_qualified);
           update_master();
-          if (pthread_mutex_unlock(&shared_memory->shm_mutex) != 0)
-            warn("Can't release mutex after marking best clock!");
         }
       } else {
-        if ((clock_info->flags & (1 << clock_is_qualified)) !=
+        if ((clock_private_info->flags & (1 << clock_is_qualified)) !=
             0) // if it was qualified, but now isn't
           debug(2,
                 "clock_id %" PRIx64
                 " on ip: %s \"Announce\" message is not Qualified -- See 9.3.2.5.",
-                clock_info->clock_id, clock_info->ip);
-        if (pthread_mutex_lock(&shared_memory->shm_mutex) != 0)
-          warn("Can't acquire mutex to mark unqualified clock!");
-        clock_info->flags &= ~(1 << clock_is_qualified);
-        if (pthread_mutex_unlock(&shared_memory->shm_mutex) != 0)
-          warn("Can't release mutex after marking unqualified clock!");
+                clock_private_info->clock_id, clock_private_info->ip);
+        clock_private_info->flags &= ~(1 << clock_is_qualified);
       }
     }
   }
 }
 
-void handle_sync(char *buf, __attribute__((unused)) ssize_t recv_len, __attribute__((unused)) clock_source *clock_info,
+void handle_sync(char *buf, __attribute__((unused)) ssize_t recv_len,
                  clock_source_private_data *clock_private_info, uint64_t reception_time) {
 
   struct ptp_sync_message *msg = (struct ptp_sync_message *)buf;
@@ -369,9 +354,8 @@ void handle_sync(char *buf, __attribute__((unused)) ssize_t recv_len, __attribut
   }
 }
 
-void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len, clock_source *clock_info,
-                      clock_source_private_data *clock_private_info, __attribute__((unused)) uint64_t reception_time,
-                      pthread_mutex_t *shm_mutex) {
+void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
+                      clock_source_private_data *clock_private_info, __attribute__((unused)) uint64_t reception_time) {
   struct ptp_follow_up_message *msg = (struct ptp_follow_up_message *)buf;
 
   if ((clock_private_info->current_stage == sync_seen) &&
@@ -402,7 +386,7 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len, clock
     // now, if there was a valid offset previously,
     // check if the offset should be clamped
 
-    if ((clock_info->flags & (1 << clock_is_valid)) &&
+    if ((clock_private_info->flags & (1 << clock_is_valid)) &&
         (clock_private_info->vacant_samples != MAX_TIMING_SAMPLES)) {
 
       /*
@@ -531,28 +515,15 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len, clock
 
     clock_private_info->previous_estimated_offset = estimated_offset;
 
-    int rc = pthread_mutex_lock(shm_mutex);
-    if (rc != 0)
-      warn("Can't acquire mutex to update a clock!");
-    // update/set the clock_id
 
-    clock_info->clock_id = packet_clock_id;
-    clock_info->flags |= (1 << clock_is_valid);
-    clock_info->local_time = clock_private_info->t2;
-    clock_info->local_to_source_time_offset = estimated_offset;
+    clock_private_info->clock_id = packet_clock_id;
+    clock_private_info->flags |= (1 << clock_is_valid);
+    clock_private_info->local_time = clock_private_info->t2;
+    clock_private_info->local_to_source_time_offset = estimated_offset;
 
-    if ((clock_info->flags & (1 << clock_is_master)) != 0) {
-      shared_memory->clock_id = clock_info->clock_id;
-      shared_memory->local_time = clock_info->local_time;
-      //uint64_t new_ptp_offset = clock_info->local_to_source_time_offset;
-      //new_ptp_offset += master_clock_to_ptp_offset;
-      //shared_memory->local_to_ptp_time_offset = new_ptp_offset;
-      shared_memory->local_to_ptp_time_offset = clock_info->local_to_source_time_offset;
-      debug(1,"clock: %" PRIx64 ", local_to_ptp_time_offset: %" PRIx64 ".", shared_memory->clock_id, shared_memory->local_to_ptp_time_offset);
+    if ((clock_private_info->flags & (1 << clock_is_master)) != 0) {
+      update_master_clock_info(clock_private_info->clock_id, clock_private_info->local_time, clock_private_info->local_to_source_time_offset);
     }
-    rc = pthread_mutex_unlock(shm_mutex);
-    if (rc != 0)
-      warn("Can't release mutex after updating a clock!");
 
     clock_private_info->next_sample_goes_here++;
 
@@ -565,6 +536,6 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len, clock
           "Follow_Up %u expecting to be in state sync_seen (%u). Stage error -- "
           "current state is %u, sequence %u. Ignoring it. %s",
           ntohs(msg->header.sequenceId), sync_seen, clock_private_info->current_stage,
-          clock_private_info->sequence_number, clock_info->ip);
+          clock_private_info->sequence_number, clock_private_info->ip);
   }
 }

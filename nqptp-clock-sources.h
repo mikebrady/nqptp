@@ -28,14 +28,26 @@ enum stage {
   sync_seen,
 };
 
+typedef enum {
+  clock_is_valid,
+  clock_is_a_timing_peer,
+  clock_is_qualified,
+  clock_is_master
+} clock_flags;
+
 #define MAX_TIMING_SAMPLES 11
 typedef struct {
   uint16_t sequence_number;
   uint64_t local, local_to_remote_offset;
 } timing_samples;
 
-// private information -- not for putting in shared memory -- about each clock source
+// information about each clock source
 typedef struct {
+  char ip[64]; // 64 is nicely aligned and bigger than INET6_ADDRSTRLEN (46)
+  uint64_t clock_id;
+  uint64_t local_time;                  // the local time when the offset was calculated
+  uint64_t local_to_source_time_offset; // add this to the local time to get source time
+  uint32_t flags;
   uint16_t sequence_number;
   uint16_t in_use;
   enum stage current_stage;
@@ -66,16 +78,15 @@ typedef struct {
 
 } clock_source_private_data;
 
-int find_clock_source_record(char *sender_string, clock_source *clocks_shared_info,
+int find_clock_source_record(char *sender_string,
                              clock_source_private_data *clocks_private_info);
 
-int create_clock_source_record(char *sender_string, clock_source *clocks_shared_info,
-                               clock_source_private_data *clocks_private_info, int use_lock);
+int create_clock_source_record(char *sender_string,
+                               clock_source_private_data *clocks_private_info);
 
-void update_clock_self_identifications(clock_source *clocks_shared_info,
-                                       clock_source_private_data *clocks_private_info);
+void update_clock_self_identifications(clock_source_private_data *clocks_private_info);
 
-void manage_clock_sources(uint64_t reception_time, clock_source *clocks_shared_info,
+void manage_clock_sources(uint64_t reception_time,
                           clock_source_private_data *clocks_private_info);
 
 extern clock_source_private_data clocks_private[MAX_CLOCKS];

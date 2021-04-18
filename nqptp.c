@@ -71,6 +71,20 @@ int master_clock_index = -1;
 struct shm_structure *shared_memory = NULL; // this is where public clock info is available
 int epoll_fd;
 
+void update_master_clock_info(uint64_t master_clock_id, uint64_t local_time, uint64_t local_to_master_offset) {
+  if (shared_memory->master_clock_id != master_clock_id)
+      debug(1,"Master clock is: %" PRIx64 ", local_to_ptp_time_offset: %" PRIx64 ".", shared_memory->master_clock_id, shared_memory->local_to_master_time_offset);
+  int rc = pthread_mutex_lock(&shared_memory->shm_mutex);
+  if (rc != 0)
+    warn("Can't acquire mutex to update master clock!");
+  shared_memory->master_clock_id = master_clock_id;
+  shared_memory->local_time = local_time;
+  shared_memory->local_to_master_time_offset = local_to_master_offset;
+  rc = pthread_mutex_unlock(&shared_memory->shm_mutex);
+  if (rc != 0)
+    warn("Can't release mutex after updating master clock!");
+}
+
 void goodbye(void) {
   // close any open sockets
   unsigned int i;
@@ -172,7 +186,6 @@ int main(void) {
 
   // zero it
   memset(shared_memory, 0, sizeof(struct shm_structure));
-  shared_memory->size_of_clock_array = MAX_CLOCKS;
   shared_memory->version = NQPTP_SHM_STRUCTURES_VERSION;
 
   /*create mutex attr */
@@ -265,7 +278,7 @@ int main(void) {
             }
             // check if it's a control port message before checking for the length of the message.
           } else if (receiver_port == NQPTP_CONTROL_PORT) {
-            handle_control_port_messages(buf, recv_len, (clock_source *)&shared_memory->clocks,
+            handle_control_port_messages(buf, recv_len,
                                          (clock_source_private_data *)&clocks_private);
           } else if (recv_len >= (ssize_t)sizeof(struct ptp_common_message_header)) {
             debug_print_buffer(2, buf, recv_len);
@@ -328,13 +341,13 @@ int main(void) {
               inet_ntop(connection_ip_family, sender_addr, sender_string, sizeof(sender_string));
               // now, find or create a record for this ip
               int the_clock =
-                  find_clock_source_record(sender_string, (clock_source *)&shared_memory->clocks,
+                  find_clock_source_record(sender_string,
                                            (clock_source_private_data *)&clocks_private);
               // not sure about requiring a Sync before creating it...
               if ((the_clock == -1) && ((buf[0] & 0xF) == Sync)) {
                 the_clock = create_clock_source_record(
-                    sender_string, (clock_source *)&shared_memory->clocks,
-                    (clock_source_private_data *)&clocks_private, 1); // the "1" means use mutexes
+                    sender_string,
+                    (clock_source_private_data *)&clocks_private);
               }
               if (the_clock != -1) {
                 clocks_private[the_clock].time_of_last_use =
@@ -342,20 +355,19 @@ int main(void) {
                 switch (buf[0] & 0xF) {
                 case Announce:
                   // needed to reject messages coming from self
-                  update_clock_self_identifications((clock_source *)&shared_memory->clocks,
+                  update_clock_self_identifications(
                                                     (clock_source_private_data *)&clocks_private);
-                  handle_announce(buf, recv_len, &shared_memory->clocks[the_clock],
+                  handle_announce(buf, recv_len,
                                   &clocks_private[the_clock], reception_time);
                   break;
                 case Sync: { // if it's a sync
-                  handle_sync(buf, recv_len, &shared_memory->clocks[the_clock],
+                  handle_sync(buf, recv_len,
                               &clocks_private[the_clock], reception_time);
                 } break;
 
                 case Follow_Up: {
-                  handle_follow_up(buf, recv_len, &shared_memory->clocks[the_clock],
-                                   &clocks_private[the_clock], reception_time,
-                                   &shared_memory->shm_mutex);
+                  handle_follow_up(buf, recv_len,
+                                   &clocks_private[the_clock], reception_time);
                 } break;
                 default:
                   break;
@@ -365,7 +377,7 @@ int main(void) {
           }
         }
       }
-      manage_clock_sources(reception_time, (clock_source *)&shared_memory->clocks,
+      manage_clock_sources(reception_time,
                            (clock_source_private_data *)&clocks_private);
     }
   }
