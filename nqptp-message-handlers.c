@@ -450,7 +450,7 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
     // skewing the offset calculation.
 
     int sample_count = MAX_TIMING_SAMPLES - clock_private_info->vacant_samples;
-    int64_t divergence;
+    int64_t divergence = 0;
     if (sample_count > 1) {
       int f;
       uint64_t ts = 0;
