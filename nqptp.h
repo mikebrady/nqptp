@@ -21,12 +21,11 @@
 #define NQPTP_H
 
 // 0 means no debug messages. 3 means lots!
-#define DEBUG_LEVEL 0
+#define DEBUG_LEVEL 1
 
 #include "nqptp-shm-structures.h"
 
 #define MAX_OPEN_SOCKETS 16
-
 
 // When a new timing peer group is created, one of the clocks in the
 // group becomes the master and its native time becomes the "master time".
@@ -35,6 +34,7 @@
 extern int master_clock_index;
 extern struct shm_structure *shared_memory;
 
-void update_master_clock_info(uint64_t master_clock_id, uint64_t local_time, uint64_t local_to_master_offset);
+void update_master_clock_info(uint64_t master_clock_id, uint64_t local_time,
+                              uint64_t local_to_master_offset);
 
 #endif

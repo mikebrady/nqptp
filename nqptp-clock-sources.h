@@ -78,16 +78,13 @@ typedef struct {
 
 } clock_source_private_data;
 
-int find_clock_source_record(char *sender_string,
-                             clock_source_private_data *clocks_private_info);
+int find_clock_source_record(char *sender_string, clock_source_private_data *clocks_private_info);
 
-int create_clock_source_record(char *sender_string,
-                               clock_source_private_data *clocks_private_info);
+int create_clock_source_record(char *sender_string, clock_source_private_data *clocks_private_info);
 
 void update_clock_self_identifications(clock_source_private_data *clocks_private_info);
 
-void manage_clock_sources(uint64_t reception_time,
-                          clock_source_private_data *clocks_private_info);
+void manage_clock_sources(uint64_t reception_time, clock_source_private_data *clocks_private_info);
 
 extern clock_source_private_data clocks_private[MAX_CLOCKS];
 

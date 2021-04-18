@@ -36,11 +36,11 @@
 #include <pthread.h>
 
 struct shm_structure {
-  pthread_mutex_t shm_mutex;    // for safely accessing the structure
-  uint16_t version;             // deprecated -- check this is equal to NQPTP_SHM_STRUCTURES_VERSION
-  uint32_t flags;               // unused
-  uint64_t master_clock_id;     // the current master clock
-  uint64_t local_time;          // the time when the offset was calculated
+  pthread_mutex_t shm_mutex; // for safely accessing the structure
+  uint16_t version;          // deprecated -- check this is equal to NQPTP_SHM_STRUCTURES_VERSION
+  uint32_t flags;            // unused
+  uint64_t master_clock_id;  // the current master clock
+  uint64_t local_time;       // the time when the offset was calculated
   uint64_t local_to_master_time_offset; // add this to the local time to get master clock time
 };
 

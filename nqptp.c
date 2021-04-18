@@ -71,9 +71,10 @@ int master_clock_index = -1;
 struct shm_structure *shared_memory = NULL; // this is where public clock info is available
 int epoll_fd;
 
-void update_master_clock_info(uint64_t master_clock_id, uint64_t local_time, uint64_t local_to_master_offset) {
+void update_master_clock_info(uint64_t master_clock_id, uint64_t local_time,
+                              uint64_t local_to_master_offset) {
   if (shared_memory->master_clock_id != master_clock_id)
-      debug(1,"Master clock is: %" PRIx64 ", local_to_ptp_time_offset: %" PRIx64 ".", shared_memory->master_clock_id, shared_memory->local_to_master_time_offset);
+    debug(1, "Master clock is: %" PRIx64".", master_clock_id);
   int rc = pthread_mutex_lock(&shared_memory->shm_mutex);
   if (rc != 0)
     warn("Can't acquire mutex to update master clock!");
@@ -340,14 +341,12 @@ int main(void) {
               memset(sender_string, 0, sizeof(sender_string));
               inet_ntop(connection_ip_family, sender_addr, sender_string, sizeof(sender_string));
               // now, find or create a record for this ip
-              int the_clock =
-                  find_clock_source_record(sender_string,
-                                           (clock_source_private_data *)&clocks_private);
+              int the_clock = find_clock_source_record(
+                  sender_string, (clock_source_private_data *)&clocks_private);
               // not sure about requiring a Sync before creating it...
               if ((the_clock == -1) && ((buf[0] & 0xF) == Sync)) {
                 the_clock = create_clock_source_record(
-                    sender_string,
-                    (clock_source_private_data *)&clocks_private);
+                    sender_string, (clock_source_private_data *)&clocks_private);
               }
               if (the_clock != -1) {
                 clocks_private[the_clock].time_of_last_use =
@@ -355,19 +354,15 @@ int main(void) {
                 switch (buf[0] & 0xF) {
                 case Announce:
                   // needed to reject messages coming from self
-                  update_clock_self_identifications(
-                                                    (clock_source_private_data *)&clocks_private);
-                  handle_announce(buf, recv_len,
-                                  &clocks_private[the_clock], reception_time);
+                  update_clock_self_identifications((clock_source_private_data *)&clocks_private);
+                  handle_announce(buf, recv_len, &clocks_private[the_clock], reception_time);
                   break;
                 case Sync: { // if it's a sync
-                  handle_sync(buf, recv_len,
-                              &clocks_private[the_clock], reception_time);
+                  handle_sync(buf, recv_len, &clocks_private[the_clock], reception_time);
                 } break;
 
                 case Follow_Up: {
-                  handle_follow_up(buf, recv_len,
-                                   &clocks_private[the_clock], reception_time);
+                  handle_follow_up(buf, recv_len, &clocks_private[the_clock], reception_time);
                 } break;
                 default:
                   break;
@@ -377,8 +372,7 @@ int main(void) {
           }
         }
       }
-      manage_clock_sources(reception_time,
-                           (clock_source_private_data *)&clocks_private);
+      manage_clock_sources(reception_time, (clock_source_private_data *)&clocks_private);
     }
   }
 

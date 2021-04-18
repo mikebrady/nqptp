@@ -31,8 +31,7 @@
 
 clock_source_private_data clocks_private[MAX_CLOCKS];
 
-int find_clock_source_record(char *sender_string,
-                             clock_source_private_data *clocks_private_info) {
+int find_clock_source_record(char *sender_string, clock_source_private_data *clocks_private_info) {
   // return the index of the clock in the clock information arrays or -1
   int response = -1;
   int i = 0;
@@ -67,7 +66,8 @@ int create_clock_source_record(char *sender_string,
   if (found == 1) {
     response = i;
     memset(&clocks_private_info[i], 0, sizeof(clock_source_private_data));
-    strncpy((char *)&clocks_private_info[i].ip, sender_string, FIELD_SIZEOF(clock_source_private_data, ip) - 1);
+    strncpy((char *)&clocks_private_info[i].ip, sender_string,
+            FIELD_SIZEOF(clock_source_private_data, ip) - 1);
     clocks_private_info[i].in_use = 1;
     clocks_private_info[i].t2 = 0;
     clocks_private_info[i].current_stage = waiting_for_sync;
@@ -80,8 +80,7 @@ int create_clock_source_record(char *sender_string,
   return response;
 }
 
-void manage_clock_sources(uint64_t reception_time,
-                          clock_source_private_data *clocks_private_info) {
+void manage_clock_sources(uint64_t reception_time, clock_source_private_data *clocks_private_info) {
   debug(3, "manage_clock_sources");
   int i;
   // do a garbage collect for clock records no longer in use

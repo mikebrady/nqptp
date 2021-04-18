@@ -31,7 +31,7 @@ void update_master_old(clock_source_private_data *clock_private_info) {
   for (i = 0; i < MAX_CLOCKS; i++) {
     if ((clock_private_info[i].flags & (1 << clock_is_master)) != 0)
       if (old_master == -1)
-        old_master = i; // find old master
+        old_master = i;                                     // find old master
     clock_private_info[i].flags &= ~(1 << clock_is_master); // turn them all off
   }
 
@@ -73,15 +73,17 @@ void update_master_old(clock_source_private_data *clock_private_info) {
     }
   }
   if (best_so_far != -1) {
-  // we found a master clock
+    // we found a master clock
     clock_private_info[best_so_far].flags |= (1 << clock_is_master);
     // master_clock_index = best_so_far;
     if (old_master != best_so_far) {
-      update_master_clock_info(clock_private_info[best_so_far].clock_id, clock_private_info[best_so_far].local_time, clock_private_info[best_so_far].local_to_source_time_offset);
+      update_master_clock_info(clock_private_info[best_so_far].clock_id,
+                               clock_private_info[best_so_far].local_time,
+                               clock_private_info[best_so_far].local_to_source_time_offset);
     }
   } else {
     if (timing_peer_count == 0)
-      debug(1, "No timing peer list found");
+      debug(2, "No timing peer list found");
     else
       debug(1, "No master clock not found!");
   }
@@ -89,20 +91,17 @@ void update_master_old(clock_source_private_data *clock_private_info) {
   // check
   for (i = 0; i < MAX_CLOCKS; i++) {
     if ((clock_private_info[i].flags & (1 << clock_is_master)) != 0)
-      debug(2,"leaving with %d as master", i);
+      debug(2, "leaving with %d as master", i);
   }
-
 }
 
-void update_master() {
-  update_master_old(clocks_private);
-}
+void update_master() { update_master_old(clocks_private); }
 
 void handle_control_port_messages(char *buf, ssize_t recv_len,
                                   clock_source_private_data *clock_private_info) {
   if (recv_len != -1) {
     buf[recv_len - 1] = 0; // make sure there's a null in it!
-    debug(1,"Received a new timing peer list message: \"%s\".", buf);
+    debug(2, "Received a new timing peer list message: \"%s\".", buf);
     if (buf[0] == 'T') {
 
       char *ip_list = buf + 1;
@@ -112,7 +111,8 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
       // turn off all is_timing_peer flags
       int i;
       for (i = 0; i < MAX_CLOCKS; i++) {
-        clock_private_info[i].flags &= ~(1 << clock_is_a_timing_peer); // turn off peer flag (but not the master flag!)
+        clock_private_info[i].flags &=
+            ~(1 << clock_is_a_timing_peer); // turn off peer flag (but not the master flag!)
       }
 
       while (ip_list != NULL) {
@@ -149,8 +149,8 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
   }
 }
 
-void handle_announce(char *buf, ssize_t recv_len,
-                     clock_source_private_data *clock_private_info, uint64_t reception_time) {
+void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clock_private_info,
+                     uint64_t reception_time) {
   // reject Announce messages from self
   if (clock_private_info->is_one_of_ours == 0) {
     // debug_print_buffer(1, buf, (size_t) recv_len);
@@ -355,7 +355,8 @@ void handle_sync(char *buf, __attribute__((unused)) ssize_t recv_len,
 }
 
 void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
-                      clock_source_private_data *clock_private_info, __attribute__((unused)) uint64_t reception_time) {
+                      clock_source_private_data *clock_private_info,
+                      __attribute__((unused)) uint64_t reception_time) {
   struct ptp_follow_up_message *msg = (struct ptp_follow_up_message *)buf;
 
   if ((clock_private_info->current_stage == sync_seen) &&
@@ -508,13 +509,12 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
         }
     */
 
-    // int64_t estimated_variation = estimated_offset - clock_private_info->previous_estimated_offset;
-    // debug(1, "clock: %" PRIx64 ", estimated_jitter: %+f ms, divergence: %+f.",
-    // clock_info->clock_id,
+    // int64_t estimated_variation = estimated_offset -
+    // clock_private_info->previous_estimated_offset; debug(1, "clock: %" PRIx64 ",
+    // estimated_jitter: %+f ms, divergence: %+f.", clock_info->clock_id,
     //      estimated_variation * 0.000001, divergence * 0.000001);
 
     clock_private_info->previous_estimated_offset = estimated_offset;
-
 
     clock_private_info->clock_id = packet_clock_id;
     clock_private_info->flags |= (1 << clock_is_valid);
@@ -522,7 +522,8 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
     clock_private_info->local_to_source_time_offset = estimated_offset;
 
     if ((clock_private_info->flags & (1 << clock_is_master)) != 0) {
-      update_master_clock_info(clock_private_info->clock_id, clock_private_info->local_time, clock_private_info->local_to_source_time_offset);
+      update_master_clock_info(clock_private_info->clock_id, clock_private_info->local_time,
+                               clock_private_info->local_to_source_time_offset);
     }
 
     clock_private_info->next_sample_goes_here++;
