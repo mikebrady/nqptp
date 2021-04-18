@@ -47,7 +47,6 @@
 // when the clock master changes.
 
 extern int master_clock_index;
-extern uint64_t master_clock_to_ptp_offset;
 extern struct shm_structure *shared_memory;
 
 #endif

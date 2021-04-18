@@ -24,12 +24,9 @@
 #include "debug.h"
 #include "general-utilities.h"
 
-void update_master_old(int do_reset, clock_source *clock_info, clock_source_private_data *clock_private_info) {
-  debug(2,"set new master with do_reset of: %s.", do_reset == 0 ? "false" : "true");
-  // do_reset is true if you want to discard existing PTP timing
-  do_reset = 1;
+void update_master_old(clock_source *clock_info, clock_source_private_data *clock_private_info) {
   int old_master = -1;
-
+  // find the current master clock if there is one and turn off all mastership
   int i;
   for (i = 0; i < MAX_CLOCKS; i++) {
     if ((clock_info[i].flags & (1 << clock_is_master)) != 0)
@@ -37,9 +34,6 @@ void update_master_old(int do_reset, clock_source *clock_info, clock_source_priv
         old_master = i; // find old master
     clock_info[i].flags &= ~(1 << clock_is_master); // turn them all off
   }
-
-  if ((do_reset == 0) && (old_master == -1))
-    debug(1,"can't find previous master during update");
 
   int best_so_far = -1;
   int timing_peer_count = 0;
@@ -82,30 +76,16 @@ void update_master_old(int do_reset, clock_source *clock_info, clock_source_priv
   // we found a master clock
     clock_info[best_so_far].flags |= (1 << clock_is_master);
     // master_clock_index = best_so_far;
-    if (do_reset) {
-      master_clock_to_ptp_offset = 0;
-    } else if (old_master != best_so_far) {
-      // we need to calculate new offset for the new clock
-      //debug(1,"old master %d, new master: %d", old_master, best_so_far);
-      //debug(1,"existing clock offset: %" PRIx64 ".", clock_info[old_master].local_to_source_time_offset);
-      //debug(1,"existing ptp offset: %" PRIx64 ".", master_clock_to_ptp_offset);
-      //debug(1,"new clock offset: %" PRIx64 ".", clock_info[best_so_far].local_to_source_time_offset);
-
-      uint64_t existing_total_offset = clock_info[old_master].local_to_source_time_offset + master_clock_to_ptp_offset;
-      master_clock_to_ptp_offset = existing_total_offset - clock_info[best_so_far].local_to_source_time_offset;
-    }
-    if ((do_reset) || (old_master != best_so_far)) {
-      debug(1, "master clock index is: %d, local_to_master_clock_to_ptp_offset is %" PRIx64 " ID is: %" PRIx64 ".", best_so_far, master_clock_to_ptp_offset, clock_info[best_so_far].clock_id);
+    if (old_master != best_so_far)
+      debug(1, "Master clock is now: %" PRIx64 " at: %s, index: %d.", clock_info[best_so_far].clock_id, &clock_info[best_so_far].ip, best_so_far);
     } else {
-      debug(2, "master clock index is unchanged: %d, master_clock_to_ptp_offset is %" PRIx64 " ID is: %" PRIx64 ".", best_so_far,  master_clock_to_ptp_offset, clock_info[best_so_far].clock_id);
-    }
-  } else {
     if (timing_peer_count == 0)
-      debug(1, "no timing peer list");
+      debug(1, "No timing peer list found");
     else
-      debug(1, "master clock not found!");
+      debug(1, "No master clock not found!");
   }
 
+  // check
   for (i = 0; i < MAX_CLOCKS; i++) {
     if ((clock_info[i].flags & (1 << clock_is_master)) != 0)
       debug(2,"leaving with %d as master", i);
@@ -113,8 +93,8 @@ void update_master_old(int do_reset, clock_source *clock_info, clock_source_priv
 
 }
 
-void update_master(int do_reset) {
-  update_master_old(do_reset, &shared_memory->clocks, clocks_private);
+void update_master() {
+  update_master_old((clock_source *) &shared_memory->clocks, clocks_private);
 }
 
 void handle_control_port_messages(char *buf, ssize_t recv_len, clock_source *clock_info,
@@ -127,10 +107,6 @@ void handle_control_port_messages(char *buf, ssize_t recv_len, clock_source *clo
       char *ip_list = buf + 1;
       if (*ip_list == ' ')
         ip_list++;
-
-      int do_reset = 0;
-      if (buf[0] == 'N')
-        do_reset = 1;
 
       int rc = pthread_mutex_lock(&shared_memory->shm_mutex);
       if (rc != 0)
@@ -159,7 +135,7 @@ void handle_control_port_messages(char *buf, ssize_t recv_len, clock_source *clo
       }
 
       // now find and mark the best clock in the timing peer list as the master
-      update_master(do_reset);
+      update_master();
       rc = pthread_mutex_unlock(&shared_memory->shm_mutex);
 
 
@@ -303,7 +279,7 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source *clock_info,
             clock_info->flags &= ~(1 << clock_is_qualified);
           else
             clock_info->flags |= (1 << clock_is_qualified);
-          update_master(0); // 0 means do update, not reset
+          update_master();
           if (pthread_mutex_unlock(&shared_memory->shm_mutex) != 0)
             warn("Can't release mutex after marking best clock!");
         }
@@ -324,7 +300,7 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source *clock_info,
   }
 }
 
-void handle_sync(char *buf, ssize_t recv_len, clock_source *clock_info,
+void handle_sync(char *buf, __attribute__((unused)) ssize_t recv_len, __attribute__((unused)) clock_source *clock_info,
                  clock_source_private_data *clock_private_info, uint64_t reception_time) {
 
   struct ptp_sync_message *msg = (struct ptp_sync_message *)buf;
@@ -393,8 +369,8 @@ void handle_sync(char *buf, ssize_t recv_len, clock_source *clock_info,
   }
 }
 
-void handle_follow_up(char *buf, ssize_t recv_len, clock_source *clock_info,
-                      clock_source_private_data *clock_private_info, uint64_t reception_time,
+void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len, clock_source *clock_info,
+                      clock_source_private_data *clock_private_info, __attribute__((unused)) uint64_t reception_time,
                       pthread_mutex_t *shm_mutex) {
   struct ptp_follow_up_message *msg = (struct ptp_follow_up_message *)buf;
 
@@ -548,7 +524,7 @@ void handle_follow_up(char *buf, ssize_t recv_len, clock_source *clock_info,
         }
     */
 
-    int64_t estimated_variation = estimated_offset - clock_private_info->previous_estimated_offset;
+    // int64_t estimated_variation = estimated_offset - clock_private_info->previous_estimated_offset;
     // debug(1, "clock: %" PRIx64 ", estimated_jitter: %+f ms, divergence: %+f.",
     // clock_info->clock_id,
     //      estimated_variation * 0.000001, divergence * 0.000001);

@@ -67,7 +67,6 @@
 sockets_open_bundle sockets_open_stuff;
 
 int master_clock_index = -1;
-uint64_t master_clock_to_ptp_offset;
 
 struct shm_structure *shared_memory = NULL; // this is where public clock info is available
 int epoll_fd;
