@@ -74,7 +74,7 @@ int epoll_fd;
 void update_master_clock_info(uint64_t master_clock_id, uint64_t local_time,
                               uint64_t local_to_master_offset) {
   if (shared_memory->master_clock_id != master_clock_id)
-    debug(1, "Master clock is: %" PRIx64".", master_clock_id);
+    debug(1, "Master clock is: %" PRIx64 ".", master_clock_id);
   int rc = pthread_mutex_lock(&shared_memory->shm_mutex);
   if (rc != 0)
     warn("Can't acquire mutex to update master clock!");
@@ -358,7 +358,8 @@ int main(void) {
                   handle_announce(buf, recv_len, &clocks_private[the_clock], reception_time);
                   break;
                 case Sync: { // if it's a sync
-                  handle_sync(buf, recv_len, &clocks_private[the_clock], reception_time, &from_sock_addr, socket_number);
+                  handle_sync(buf, recv_len, &clocks_private[the_clock], reception_time,
+                              &from_sock_addr, socket_number);
                 } break;
                 case Follow_Up: {
                   handle_follow_up(buf, recv_len, &clocks_private[the_clock], reception_time);

@@ -23,11 +23,7 @@
 #include "nqptp.h"
 
 // transaction tracking
-enum stage {
-  waiting_for_sync,
-  sync_seen,
-  follow_up_seen
-};
+enum stage { waiting_for_sync, sync_seen, follow_up_seen };
 
 typedef enum {
   clock_is_valid,

@@ -27,11 +27,11 @@ void hcton64(uint64_t num, uint8_t *p) {
   numc = numc >> 32;
   uint32_t num_32 = numc;
   uint32_t rev = htonl(num_32);
-  memcpy(p,&rev,sizeof(uint32_t));
+  memcpy(p, &rev, sizeof(uint32_t));
   num_32 = num & 0xffffffff;
   p = p + 4;
   rev = htonl(num_32);
-  memcpy(p,&rev,sizeof(uint32_t));
+  memcpy(p, &rev, sizeof(uint32_t));
 }
 
 uint32_t nctohl(const uint8_t *p) { // read 4 characters from *p and do ntohl on them

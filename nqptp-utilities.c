@@ -18,8 +18,8 @@
  */
 
 #include "nqptp-utilities.h"
-#include "nqptp-ptp-definitions.h"
 #include "general-utilities.h"
+#include "nqptp-ptp-definitions.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <ifaddrs.h>
@@ -209,12 +209,11 @@ uint64_t get_self_clock_id() {
   return result;
 }
 
-
 void send_delay_req_message(int socket_number, SOCKADDR *from_sock_addr, uint16_t seqno) {
   struct ptp_delay_req_message m;
   memset(&m, 0, sizeof(m));
   m.header.transportSpecificAndMessageID = 0x11; // Table 19, pp 125, 1 byte field
-  m.header.reservedAndVersionPTP = 0x02; // 1 byte field
+  m.header.reservedAndVersionPTP = 0x02;         // 1 byte field
   m.header.messageLength = htons(44);
   m.header.flags = htons(0x608);
   m.header.sourcePortID = htons(1);
@@ -222,7 +221,7 @@ void send_delay_req_message(int socket_number, SOCKADDR *from_sock_addr, uint16_
   m.header.sequenceId = htons(seqno);
   m.header.logMessagePeriod = 0x7f; // Table 24, pp 128
   uint64_t sid = get_self_clock_id();
-  memcpy(&m.header.clockIdentity,&sid,sizeof(uint64_t));
+  memcpy(&m.header.clockIdentity, &sid, sizeof(uint64_t));
   struct msghdr header;
   struct iovec io;
   memset(&header, 0, sizeof(header));
@@ -237,7 +236,6 @@ void send_delay_req_message(int socket_number, SOCKADDR *from_sock_addr, uint16_
   if ((sendmsg(socket_number, &header, 0)) == -1) {
     debug(1, "Error in sendmsg [errno = %d]", errno);
   } else {
-    debug_print_buffer(1,&m, sizeof(m));
+    debug_print_buffer(1, &m, sizeof(m));
   }
 }
-
