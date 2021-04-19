@@ -47,6 +47,8 @@ typedef struct {
   uint32_t flags;
   uint16_t sequence_number;
   uint16_t in_use;
+  uint64_t mm_count; // mickey mouse averaging
+  uint64_t mm_average; // the mickey mouse average
   enum stage current_stage;
   uint64_t t1, t2, t3, previous_offset, previous_estimated_offset;
   // for garbage collection
