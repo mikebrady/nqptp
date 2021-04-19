@@ -225,7 +225,7 @@ int main(void) {
     while (1) {
 
       struct epoll_event events[MAX_EVENTS];
-      // the timeout is in seconds
+      // the timeout is in milliseconds
       int event_count = epoll_wait(epoll_fd, events, MAX_EVENTS, 1000);
       uint64_t reception_time = get_time_now(); // use this if other methods fail
 
@@ -358,13 +358,16 @@ int main(void) {
                   handle_announce(buf, recv_len, &clocks_private[the_clock], reception_time);
                   break;
                 case Sync: { // if it's a sync
-                  handle_sync(buf, recv_len, &clocks_private[the_clock], reception_time);
+                  handle_sync(buf, recv_len, &clocks_private[the_clock], reception_time, &from_sock_addr, socket_number);
                 } break;
-
                 case Follow_Up: {
                   handle_follow_up(buf, recv_len, &clocks_private[the_clock], reception_time);
                 } break;
+                case Delay_Resp: {
+                  handle_delay_resp(buf, recv_len, &clocks_private[the_clock], reception_time);
+                } break;
                 default:
+                  debug_print_buffer(2, buf, recv_len); // unusual messages will have debug level 1.
                   break;
                 }
               }

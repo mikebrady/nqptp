@@ -18,6 +18,7 @@
  */
 
 #include "nqptp-utilities.h"
+#include "nqptp-ptp-definitions.h"
 #include "general-utilities.h"
 #include <errno.h>
 #include <fcntl.h>
@@ -201,7 +202,42 @@ uint64_t get_self_clock_id() {
     local_clock_id[3] = 0xFF;
     local_clock_id[4] = 0xFE;
   }
+  // it's in Network Byte Order!
   uint64_t result;
   memcpy(&result, local_clock_id, sizeof(result));
+  // debug(1,"local_clock_id: %" PRIx64 ".", result);
   return result;
 }
+
+
+void send_delay_req_message(int socket_number, SOCKADDR *from_sock_addr, uint16_t seqno) {
+  struct ptp_delay_req_message m;
+  memset(&m, 0, sizeof(m));
+  m.header.transportSpecificAndMessageID = 0x11; // Table 19, pp 125, 1 byte field
+  m.header.reservedAndVersionPTP = 0x02; // 1 byte field
+  m.header.messageLength = htons(44);
+  m.header.flags = htons(0x608);
+  m.header.sourcePortID = htons(1);
+  m.header.controlOtherMessage = 5; // 1 byte field
+  m.header.sequenceId = htons(seqno);
+  m.header.logMessagePeriod = 0x7f; // Table 24, pp 128
+  uint64_t sid = get_self_clock_id();
+  memcpy(&m.header.clockIdentity,&sid,sizeof(uint64_t));
+  struct msghdr header;
+  struct iovec io;
+  memset(&header, 0, sizeof(header));
+  memset(&io, 0, sizeof(io));
+  header.msg_name = from_sock_addr;
+  header.msg_namelen = sizeof(SOCKADDR);
+  header.msg_iov = &io;
+  header.msg_iov->iov_base = &m;
+  header.msg_iov->iov_len = sizeof(m);
+  header.msg_iovlen = 1;
+  uint64_t transmission_time = get_time_now(); // in case nothing better works
+  if ((sendmsg(socket_number, &header, 0)) == -1) {
+    debug(1, "Error in sendmsg [errno = %d]", errno);
+  } else {
+    debug_print_buffer(1,&m, sizeof(m));
+  }
+}
+

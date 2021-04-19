@@ -35,8 +35,8 @@
 #define SAFAMILY sa_family
 #endif
 
-uint32_t
-nctohl(const uint8_t *p); // read 4 characters from *p and do ntohl on them, avoiding aliasing
+void hcton64(uint64_t num, uint8_t *p);
+uint32_t nctohl(const uint8_t *p); // read 4 characters from *p and do ntohl on them, avoiding aliasing
 uint16_t nctohs(const uint8_t *p);
 uint64_t timespec_to_ns(struct timespec *tn);
 uint64_t get_time_now();

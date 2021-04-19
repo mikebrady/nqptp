@@ -146,6 +146,28 @@ struct __attribute__((__packed__)) ptp_delay_resp {
   uint8_t requestingPortIdentity[10];
 };
 
+// this is the extra part for a Pdelay_Req message (13.9, pp 131)
+struct __attribute__((__packed__)) ptp_pdelay_req {
+  uint8_t originTimestamp[10];
+  uint8_t reserved[10]; // to make it the same length as a Pdelay_Resp message
+};
+
+// this is the extra part for a Pdelay_Resp message (13.10, pp 131)
+struct __attribute__((__packed__)) ptp_pdelay_resp {
+  uint8_t requestReceiptTimestamp[10];
+  uint8_t requestingPortIdentity[10];
+};
+
+struct __attribute__((__packed__)) ptp_pdelay_req_message {
+  struct ptp_common_message_header header;
+  struct ptp_pdelay_req pdelay_req;
+};
+
+struct __attribute__((__packed__)) ptp_pdelay_resp_message {
+  struct ptp_common_message_header header;
+  struct ptp_pdelay_resp pdelay_resp;
+};
+
 struct __attribute__((__packed__)) ptp_sync_message {
   struct ptp_common_message_header header;
   struct ptp_sync sync;

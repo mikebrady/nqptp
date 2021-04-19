@@ -20,6 +20,7 @@
 #ifndef NQPTP_MESSAGE_HANDLERS_H
 #define NQPTP_MESSAGE_HANDLERS_H
 
+#include "general-utilities.h"
 #include "nqptp-clock-sources.h"
 #include "nqptp-shm-structures.h"
 
@@ -27,9 +28,12 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clo
                      uint64_t reception_time);
 
 void handle_sync(char *buf, ssize_t recv_len, clock_source_private_data *clock_private_info,
-                 uint64_t reception_time);
+                 uint64_t reception_time, SOCKADDR *from_sock_addr, int socket_number);
 
 void handle_follow_up(char *buf, ssize_t recv_len, clock_source_private_data *clock_private_info,
+                      uint64_t reception_time);
+
+void handle_delay_resp(char *buf, ssize_t recv_len, clock_source_private_data *clock_private_info,
                       uint64_t reception_time);
 
 void handle_control_port_messages(char *buf, ssize_t recv_len,

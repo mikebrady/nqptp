@@ -37,5 +37,4 @@ typedef struct {
 void open_sockets_at_port(uint16_t port, sockets_open_bundle *sockets_open_stuff);
 void debug_print_buffer(int level, char *buf, size_t buf_len);
 uint64_t get_self_clock_id(); // a clock ID based on a MAC address
-
 #endif

@@ -26,6 +26,7 @@
 enum stage {
   waiting_for_sync,
   sync_seen,
+  follow_up_seen
 };
 
 typedef enum {
@@ -35,7 +36,7 @@ typedef enum {
   clock_is_master
 } clock_flags;
 
-#define MAX_TIMING_SAMPLES 11
+#define MAX_TIMING_SAMPLES 481
 typedef struct {
   uint16_t sequence_number;
   uint64_t local, local_to_remote_offset;
@@ -51,7 +52,7 @@ typedef struct {
   uint16_t sequence_number;
   uint16_t in_use;
   enum stage current_stage;
-  uint64_t t2, previous_offset, previous_estimated_offset;
+  uint64_t t1, t2, t3, previous_offset, previous_estimated_offset;
   // for garbage collection
   uint64_t time_of_last_use; // will be taken out of use if not used for a while and not in the
                              // timing peer group

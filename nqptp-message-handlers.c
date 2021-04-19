@@ -16,11 +16,13 @@
  *
  * Commercial licensing is also available.
  */
+#include <string.h>
+#include <errno.h>
+#include <unistd.h>
+
 #include "nqptp-message-handlers.h"
 #include "nqptp-ptp-definitions.h"
 #include "nqptp-utilities.h"
-#include <string.h>
-
 #include "debug.h"
 #include "general-utilities.h"
 
@@ -286,8 +288,7 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clo
 }
 
 void handle_sync(char *buf, __attribute__((unused)) ssize_t recv_len,
-                 clock_source_private_data *clock_private_info, uint64_t reception_time) {
-
+                 clock_source_private_data *clock_private_info, uint64_t reception_time, SOCKADDR *from_sock_addr, int socket_number) {
   struct ptp_sync_message *msg = (struct ptp_sync_message *)buf;
   // this is just to see if anything interesting comes in the SYNC package
   // a non-zero origin timestamp
@@ -342,7 +343,6 @@ void handle_sync(char *buf, __attribute__((unused)) ssize_t recv_len,
         */
     clock_private_info->sequence_number = ntohs(msg->header.sequenceId);
     clock_private_info->t2 = reception_time;
-
     // it turns out that we don't really need to send a Delay_Req
     // as a Follow_Up message always comes through
 
@@ -351,6 +351,38 @@ void handle_sync(char *buf, __attribute__((unused)) ssize_t recv_len,
     // Delay_Resp time -- it contains the same information as the Follow_Up
 
     clock_private_info->current_stage = sync_seen;
+
+    // send a delay request message
+    {
+      struct ptp_delay_req_message m;
+      memset(&m, 0, sizeof(m));
+      m.header.transportSpecificAndMessageID = 0x11; // Table 19, pp 125, 1 byte field
+      m.header.reservedAndVersionPTP = 0x02; // 1 byte field
+      m.header.messageLength = htons(44);
+      m.header.flags = htons(0x608);
+      m.header.sourcePortID = htons(1);
+      m.header.controlOtherMessage = 5; // 1 byte field
+      m.header.sequenceId = htons(clock_private_info->sequence_number);
+      uint64_t sid = get_self_clock_id();
+      memcpy(&m.header.clockIdentity,&sid,sizeof(uint64_t));
+      struct msghdr header;
+      struct iovec io;
+      memset(&header, 0, sizeof(header));
+      memset(&io, 0, sizeof(io));
+      header.msg_name = from_sock_addr;
+      header.msg_namelen = sizeof(SOCKADDR);
+      header.msg_iov = &io;
+      header.msg_iov->iov_base = &m;
+      header.msg_iov->iov_len = sizeof(m);
+      header.msg_iovlen = 1;
+      clock_private_info->t3 = get_time_now(); // in case nothing better works
+      if ((sendmsg(socket_number, &header, 0)) == -1) {
+        //debug(1, "Error in sendmsg [errno = %d] to socket %d.", errno, socket_number);
+        //debug_print_buffer(1,(char *)&m, sizeof(m));
+      } else {
+        //debug(1, "Success in sendmsg to socket %d.", socket_number);
+      }
+    }
   }
 }
 
@@ -375,55 +407,61 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
     preciseOriginTimestamp = preciseOriginTimestamp + seconds_low;
     preciseOriginTimestamp = preciseOriginTimestamp * 1000000000L;
     preciseOriginTimestamp = preciseOriginTimestamp + nanoseconds;
+
+
     // this result is called "t1" in the IEEE spec.
+
+    clock_private_info->t1 = preciseOriginTimestamp;
+
     // we already have "t2" and it seems as if we can't generate "t3"
     // and "t4", so use t1 - t2 as the clock-to-local offsets
 
-    clock_private_info->current_stage = waiting_for_sync;
+    clock_private_info->current_stage = follow_up_seen;
 
-    // update the shared clock information
-    uint64_t offset = preciseOriginTimestamp - clock_private_info->t2;
 
-    // now, if there was a valid offset previously,
-    // check if the offset should be clamped
+  } else {
+    debug(3,
+          "Follow_Up %u expecting to be in state sync_seen (%u). Stage error -- "
+          "current state is %u, sequence %u. Ignoring it. %s",
+          ntohs(msg->header.sequenceId), sync_seen, clock_private_info->current_stage,
+          clock_private_info->sequence_number, clock_private_info->ip);
+  }
+}
 
-    if ((clock_private_info->flags & (1 << clock_is_valid)) &&
-        (clock_private_info->vacant_samples != MAX_TIMING_SAMPLES)) {
+void handle_delay_resp(char *buf, __attribute__((unused)) ssize_t recv_len,
+                      clock_source_private_data *clock_private_info,
+                      uint64_t reception_time) {
+  struct ptp_delay_resp_message *msg = (struct ptp_delay_resp_message *)buf;
 
-      /*
-      if (clock_private_info->previous_estimated_offset != 0) {
-          int64_t jitter = offset - clock_private_info->previous_estimated_offset;
-          int64_t skew = 0;
-              debug(1," reception interval is: %f", clock_private_info->reception_interval *
-      0.000001); if (clock_private_info->reception_interval != 0) { uint64_t nominal_interval =
-      125000000; // 125 ms skew = clock_private_info->reception_interval - nominal_interval; skew =
-      skew / 2; offset = offset + skew; // try to compensate is a packet arrives too early or too
-      late
-          }
+  if ((clock_private_info->current_stage == follow_up_seen) &&
+      (clock_private_info->sequence_number == ntohs(msg->header.sequenceId))) {
 
-          int64_t compensated_jitter = offset - clock_private_info->previous_estimated_offset;
-          debug(1," jitter: %f, skew: %f, compensated_jitter: %f.", jitter * 0.000001, skew *
-      0.000001, compensated_jitter * 0.000001);
-      }
-      */
+    uint64_t packet_clock_id = nctohl(&msg->header.clockIdentity[0]);
+    uint64_t packet_clock_id_low = nctohl(&msg->header.clockIdentity[4]);
+    packet_clock_id = packet_clock_id << 32;
+    packet_clock_id = packet_clock_id + packet_clock_id_low;
 
-      /*
-      // only clamp if in the timing peer list
-        if ((clock_info->flags & (1 << clock_is_a_timing_peer)) != 0) {
-            const int64_t clamp = 1 * 1000 * 1000; //
-            int64_t jitter = offset - clock_private_info->previous_estimated_offset;
-            if (jitter > clamp)
-              offset = clock_private_info->previous_estimated_offset + clamp;
-            else if (jitter < (-clamp))
-              offset = clock_private_info->previous_estimated_offset - clamp;
-            int64_t clamped_jitter = offset - clock_private_info->previous_estimated_offset;
-            debug(1, "clock: %" PRIx64 ", jitter: %+f ms, clamped_jitter: %+f ms.",
-      clock_info->clock_id, jitter * 0.000001, clamped_jitter * 0.000001);
-        }
-          // okay, so the offset may now have been clamped to be close to the estimated previous
-      offset
-      */
-    }
+    uint16_t seconds_hi = nctohs(&msg->delay_resp.receiveTimestamp[0]);
+    uint32_t seconds_low = nctohl(&msg->delay_resp.receiveTimestamp[2]);
+    uint32_t nanoseconds = nctohl(&msg->delay_resp.receiveTimestamp[6]);
+    uint64_t receiveTimestamp = seconds_hi;
+    receiveTimestamp = receiveTimestamp << 32;
+    receiveTimestamp = receiveTimestamp + seconds_low;
+    receiveTimestamp = receiveTimestamp * 1000000000L;
+    receiveTimestamp = receiveTimestamp + nanoseconds;
+
+    // this is t4 in the IEEE doc and should be close to t1
+    // on some systems, it is identical to t1.
+
+    //uint64_t delay_req_turnaround_time = reception_time - clock_private_info->t3;
+    uint64_t t4t1diff = receiveTimestamp - clock_private_info->t1;
+    //uint64_t t3t2diff = clock_private_info->t3 - clock_private_info->t2;
+    //debug(1,"t4t1diff: %f, delay_req_turnaround_time: %f, t3t2diff: %f.", t4t1diff * 0.000000001, delay_req_turnaround_time * 0.000000001, t3t2diff * 0.000000001);
+
+
+    if (t4t1diff < 20000000) {
+        // update the shared clock information
+    uint64_t offset = clock_private_info->t1 - clock_private_info->t2;
 
     // update our sample information
 
@@ -443,76 +481,23 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
     if (clock_private_info->vacant_samples > 0)
       clock_private_info->vacant_samples--;
 
-    // okay, so now we have our samples, including the current one.
-
-    // let's try to estimate when this Sync message _should_ have arrived.
-    // this might allow us to detect a sample that is anomalously late or early
-    // skewing the offset calculation.
-
     int sample_count = MAX_TIMING_SAMPLES - clock_private_info->vacant_samples;
     int64_t divergence = 0;
-    if (sample_count > 1) {
-      int f;
-      uint64_t ts = 0;
-      for (f = 0; f < sample_count; f++) {
-        uint64_t ti = clock_private_info->samples[f].local >> 8;
-        uint16_t sequence_gap =
-            clock_private_info->sequence_number - clock_private_info->samples[f].sequence_number;
-        ti += (125000000 * (sequence_gap)) >> 8;
-        // debug(1, "ti: %f, sequence_gap: %u, sample count: %u", ti, sequence_gap, sample_count);
-        ts += ti;
-      }
-      ts = ts / sample_count;
-      ts = ts << 8;
-      // uint64_t estimated_t2 = (uint64_t)ts;
-      divergence = clock_private_info->t2 - ts;
-      // debug(1, "divergence is: %f ms. %d samples", divergence * 0.000001, sample_count);
-    }
-
-    // calculate averages
-
-    // here we will correct the offset by adding the divergence to it
-
-    offset = offset + divergence;
-
-    const int64_t clamp = 1000 * 1000; // WAG
-    int64_t jitter = offset - clock_private_info->previous_estimated_offset;
-    if (jitter > clamp)
-      offset = clock_private_info->previous_estimated_offset + clamp;
-    else if (jitter < (-clamp))
-      offset = clock_private_info->previous_estimated_offset - clamp;
-    //    int64_t clamped_jitter = offset - clock_private_info->previous_estimated_offset;
-    //     debug(1, "clock: %" PRIx64 ", jitter: %+f ms, clamped_jitter: %+f ms.",
-    //     clock_info->clock_id,
-    //           jitter * 0.000001, clamped_jitter * 0.000001);
-
-    // okay, so the offset may now have been clamped to be close to the estimated previous offset
-
     uint64_t estimated_offset = offset;
 
-    /*
-        // here, calculate the average offset
 
-        // int sample_count = MAX_TIMING_SAMPLES - clock_private_info->vacant_samples;
+    if (sample_count > 1) {
+      int e;
+      long double offsets = 0;
+      for (e = 0; e < sample_count; e++) {
+        uint64_t ho = clock_private_info->samples[e].local_to_remote_offset;
 
-        if (sample_count > 1) {
-          int e;
-          long double offsets = 0;
-          for (e = 0; e < sample_count; e++) {
-            uint64_t ho = clock_private_info->samples[e].local_to_remote_offset;
+        offsets = offsets + 1.0 * ho;
+      }
 
-            offsets = offsets + 1.0 * ho;
-          }
-
-          offsets = offsets / sample_count;
-          estimated_offset = (uint64_t)offsets;
-        }
-    */
-
-    // int64_t estimated_variation = estimated_offset -
-    // clock_private_info->previous_estimated_offset; debug(1, "clock: %" PRIx64 ",
-    // estimated_jitter: %+f ms, divergence: %+f.", clock_info->clock_id,
-    //      estimated_variation * 0.000001, divergence * 0.000001);
+      offsets = offsets / sample_count;
+      estimated_offset = (uint64_t)offsets;
+    }
 
     clock_private_info->previous_estimated_offset = estimated_offset;
 
@@ -531,12 +516,15 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
     // if we have need to wrap.
     if (clock_private_info->next_sample_goes_here == MAX_TIMING_SAMPLES)
       clock_private_info->next_sample_goes_here = 0;
+    } else {
+      debug(2,"Dropping an apparently slow timing exchange with a disparity of %f milliseconds on clock: %" PRIx64 ".", t4t1diff * 0.000001, clock_private_info->clock_id);
+    }
 
-  } else {
+   } else {
     debug(3,
-          "Follow_Up %u expecting to be in state sync_seen (%u). Stage error -- "
+          "Delay_Resp %u expecting to be in state follow_up_seen (%u). Stage error -- "
           "current state is %u, sequence %u. Ignoring it. %s",
-          ntohs(msg->header.sequenceId), sync_seen, clock_private_info->current_stage,
+          ntohs(msg->header.sequenceId), follow_up_seen, clock_private_info->current_stage,
           clock_private_info->sequence_number, clock_private_info->ip);
   }
 }
