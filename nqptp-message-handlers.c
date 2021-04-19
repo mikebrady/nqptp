@@ -430,7 +430,8 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
 }
 
 void handle_delay_resp(char *buf, __attribute__((unused)) ssize_t recv_len,
-                       clock_source_private_data *clock_private_info, __attribute__ ((unused)) uint64_t reception_time) {
+                       clock_source_private_data *clock_private_info,
+                       __attribute__((unused)) uint64_t reception_time) {
   struct ptp_delay_resp_message *msg = (struct ptp_delay_resp_message *)buf;
 
   if ((clock_private_info->current_stage == follow_up_seen) &&
@@ -481,7 +482,6 @@ void handle_delay_resp(char *buf, __attribute__((unused)) ssize_t recv_len,
       if (clock_private_info->vacant_samples > 0)
         clock_private_info->vacant_samples--;
 
-
       // do the mickey mouse averaging
       if (clock_private_info->mm_count == 0) {
         clock_private_info->mm_average = offset;
@@ -489,31 +489,34 @@ void handle_delay_resp(char *buf, __attribute__((unused)) ssize_t recv_len,
       } else {
         if (clock_private_info->mm_count < 5000)
           clock_private_info->mm_count++;
-        clock_private_info->mm_average = (clock_private_info->mm_count - 1) * (clock_private_info->mm_average / clock_private_info->mm_count) ;
-        clock_private_info->mm_average = clock_private_info->mm_average + (1.0 * offset) / clock_private_info->mm_count;
+        clock_private_info->mm_average =
+            (clock_private_info->mm_count - 1) *
+            (clock_private_info->mm_average / clock_private_info->mm_count);
+        clock_private_info->mm_average =
+            clock_private_info->mm_average + (1.0 * offset) / clock_private_info->mm_count;
       }
       uint64_t estimated_offset = (uint64_t)clock_private_info->mm_average;
 
-/*
-      // do real averaging
+      /*
+            // do real averaging
 
-      int sample_count = MAX_TIMING_SAMPLES - clock_private_info->vacant_samples;
-      int64_t divergence = 0;
-      uint64_t estimated_offset = offset;
+            int sample_count = MAX_TIMING_SAMPLES - clock_private_info->vacant_samples;
+            int64_t divergence = 0;
+            uint64_t estimated_offset = offset;
 
-      if (sample_count > 1) {
-        int e;
-        long double offsets = 0;
-        for (e = 0; e < sample_count; e++) {
-          uint64_t ho = clock_private_info->samples[e].local_to_remote_offset;
+            if (sample_count > 1) {
+              int e;
+              long double offsets = 0;
+              for (e = 0; e < sample_count; e++) {
+                uint64_t ho = clock_private_info->samples[e].local_to_remote_offset;
 
-          offsets = offsets + 1.0 * ho;
-        }
+                offsets = offsets + 1.0 * ho;
+              }
 
-        offsets = offsets / sample_count;
-        estimated_offset = (uint64_t)offsets;
-      }
-*/
+              offsets = offsets / sample_count;
+              estimated_offset = (uint64_t)offsets;
+            }
+      */
 
       clock_private_info->previous_estimated_offset = estimated_offset;
 
@@ -522,7 +525,8 @@ void handle_delay_resp(char *buf, __attribute__((unused)) ssize_t recv_len,
       clock_private_info->local_time = clock_private_info->t2;
       clock_private_info->local_to_source_time_offset = estimated_offset;
 
-      // debug(1,"mm_average: %" PRIx64 ", estimated_offset: %" PRIx64 ".", mm_average_int, estimated_offset);
+      // debug(1,"mm_average: %" PRIx64 ", estimated_offset: %" PRIx64 ".", mm_average_int,
+      // estimated_offset);
       if ((clock_private_info->flags & (1 << clock_is_master)) != 0) {
         update_master_clock_info(clock_private_info->clock_id, clock_private_info->local_time,
                                  clock_private_info->local_to_source_time_offset);
