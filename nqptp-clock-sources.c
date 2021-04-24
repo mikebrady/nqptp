@@ -72,8 +72,7 @@ int create_clock_source_record(char *sender_string,
     clocks_private_info[i].t2 = 0;
     clocks_private_info[i].current_stage = waiting_for_sync;
     clocks_private_info[i].vacant_samples = MAX_TIMING_SAMPLES;
-    debug(2, "activated source %d with clock_id %" PRIx64 " on ip: %s.", i,
-          clocks_private_info[i].clock_id, &clocks_private_info[i].ip);
+    debug(2, "create record for ip: %s.", &clocks_private_info[i].ip);
   } else {
     die("Clock tables full!");
   }
@@ -83,6 +82,7 @@ int create_clock_source_record(char *sender_string,
 void manage_clock_sources(uint64_t reception_time, clock_source_private_data *clocks_private_info) {
   debug(3, "manage_clock_sources");
   int i;
+
   // do a garbage collect for clock records no longer in use
   for (i = 0; i < MAX_CLOCKS; i++) {
     // only if its in use and not a timing peer... don't need a mutex to check
@@ -98,12 +98,12 @@ void manage_clock_sources(uint64_t reception_time, clock_source_private_data *cl
       // seconds to nanoseconds
       syncTimeout = syncTimeout * 1000000000;
       if (time_since_last_use > syncTimeout) {
-        debug(2, "deactivated source %d with clock_id %" PRIx64 " on ip: %s.", i,
-              clocks_private_info[i].clock_id, &clocks_private_info[i].ip);
+        debug(2, "delete record for: %s.", &clocks_private_info[i].ip);
         memset(&clocks_private_info[i], 0, sizeof(clock_source_private_data));
       }
     }
   }
+
 }
 
 // check all the entries in the clock array and mark all those that
