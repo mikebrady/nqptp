@@ -122,7 +122,7 @@ int main(int argc, char **argv) {
   for (i = 1; i < argc; ++i) {
     if (argv[i][0] == '-') {
       if (strcmp(argv[i] + 1, "V") == 0) {
-        fprintf(stdout, "%s\n", PACKAGE_STRING);
+        fprintf(stdout, "Version: %s. Shared Memory Interface Version: %u.\n", VERSION, NQPTP_SHM_STRUCTURES_VERSION);
         exit(EXIT_SUCCESS);
       } else if (strcmp(argv[i] + 1, "vvv") == 0) {
         debug_level = 3;

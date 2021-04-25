@@ -37,7 +37,7 @@
 
 struct shm_structure {
   pthread_mutex_t shm_mutex; // for safely accessing the structure
-  uint16_t version;          // deprecated -- check this is equal to NQPTP_SHM_STRUCTURES_VERSION
+  uint16_t version;          // check this is equal to NQPTP_SHM_STRUCTURES_VERSION
   uint32_t flags;            // unused
   uint64_t master_clock_id;  // the current master clock
   uint64_t local_time;       // the time when the offset was calculated
