@@ -16,8 +16,8 @@
  *
  * Commercial licensing is also available.
  */
-#include "config.h"
 #include "nqptp.h"
+#include "config.h"
 #include "debug.h"
 #include "general-utilities.h"
 #include "nqptp-clock-sources.h"
@@ -119,24 +119,23 @@ int main(int argc, char **argv) {
 
   int debug_level = 0;
   int i;
-  for( i = 1; i < argc; ++i ) {
-    if( argv[i][0] == '-' ) {
-      if(strcmp(argv[i] + 1,  "V") == 0) {
-        fprintf(stdout, "%s\n",PACKAGE_STRING);
+  for (i = 1; i < argc; ++i) {
+    if (argv[i][0] == '-') {
+      if (strcmp(argv[i] + 1, "V") == 0) {
+        fprintf(stdout, "%s\n", PACKAGE_STRING);
         exit(EXIT_SUCCESS);
-      } else if(strcmp(argv[i] + 1,  "vvv") == 0 ) {
+      } else if (strcmp(argv[i] + 1, "vvv") == 0) {
         debug_level = 3;
-      } else if( strcmp(argv[i] + 1,  "vv" ) == 0 ) {
+      } else if (strcmp(argv[i] + 1, "vv") == 0) {
         debug_level = 2;
-      } else if( strcmp(argv[i] + 1,  "v" ) == 0 ) {
+      } else if (strcmp(argv[i] + 1, "v") == 0) {
         debug_level = 1;
-      } else if( strcmp(argv[i] + 1,  "h" ) == 0 ) {
-        fprintf(stdout,
-          "    -V     print version,\n"
-          "    -v     verbose log,\n"
-          "    -vv    more verbose log,\n"
-          "    -vvv   very verbose log,\n"
-          "    -h     this help text.\n");
+      } else if (strcmp(argv[i] + 1, "h") == 0) {
+        fprintf(stdout, "    -V     print version,\n"
+                        "    -v     verbose log,\n"
+                        "    -vv    more verbose log,\n"
+                        "    -vvv   very verbose log,\n"
+                        "    -h     this help text.\n");
         exit(EXIT_SUCCESS);
       } else {
         fprintf(stdout, "%s -- unknown option. Program terminated.\n", argv[0]);
