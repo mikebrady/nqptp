@@ -20,9 +20,6 @@
 #ifndef NQPTP_H
 #define NQPTP_H
 
-// 0 means no debug messages. 3 means lots!
-#define DEBUG_LEVEL 1
-
 #include "nqptp-shm-structures.h"
 
 #define MAX_OPEN_SOCKETS 16
