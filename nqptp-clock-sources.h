@@ -87,4 +87,6 @@ void manage_clock_sources(uint64_t reception_time, clock_source_private_data *cl
 
 extern clock_source_private_data clocks_private[MAX_CLOCKS];
 
+void update_master();
+
 #endif

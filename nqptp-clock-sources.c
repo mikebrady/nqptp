@@ -98,8 +98,11 @@ void manage_clock_sources(uint64_t reception_time, clock_source_private_data *cl
       // seconds to nanoseconds
       syncTimeout = syncTimeout * 1000000000;
       if (time_since_last_use > syncTimeout) {
+        uint32_t old_flags = clocks_private_info[i].flags;
         debug(2, "delete record for: %s.", &clocks_private_info[i].ip);
         memset(&clocks_private_info[i], 0, sizeof(clock_source_private_data));
+        if (old_flags != 0)
+          update_master();
       }
     }
   }
@@ -147,4 +150,106 @@ void update_clock_self_identifications(clock_source_private_data *clocks_private
     }
   }
   freeifaddrs(ifap);
+}
+
+void update_master() {
+  int old_master = -1;
+  // find the current master clock if there is one and turn off all mastership
+  int i;
+  for (i = 0; i < MAX_CLOCKS; i++) {
+    if ((clocks_private[i].flags & (1 << clock_is_master)) != 0)
+      if (old_master == -1)
+        old_master = i;                                     // find old master
+    clocks_private[i].flags &= ~(1 << clock_is_master); // turn them all off
+  }
+
+  int best_so_far = -1;
+  int timing_peer_count = 0;
+  uint32_t acceptance_mask =
+      (1 << clock_is_valid) | (1 << clock_is_qualified) | (1 << clock_is_a_timing_peer);
+  for (i = 0; i < MAX_CLOCKS; i++) {
+    if ((clocks_private[i].flags & acceptance_mask) == acceptance_mask) {
+      // found a possible clock candidate
+      timing_peer_count++;
+      if (best_so_far == -1) {
+        best_so_far = i;
+      } else {
+        // do the data set comparison detailed in Figure 27 and Figure 28 on pp89-90
+        if (clocks_private[i].grandmasterIdentity ==
+            clocks_private[best_so_far].grandmasterIdentity) {
+          // should implement Figure 28 here
+        } else if (clocks_private[i].grandmasterPriority1 <
+                   clocks_private[best_so_far].grandmasterPriority1) {
+          best_so_far = i;
+        } else if (clocks_private[i].grandmasterClass <
+                   clocks_private[best_so_far].grandmasterClass) {
+          best_so_far = i;
+        } else if (clocks_private[i].grandmasterAccuracy <
+                   clocks_private[best_so_far].grandmasterAccuracy) {
+          best_so_far = i;
+        } else if (clocks_private[i].grandmasterVariance <
+                   clocks_private[best_so_far].grandmasterVariance) {
+          best_so_far = i;
+        } else if (clocks_private[i].grandmasterPriority2 <
+                   clocks_private[best_so_far].grandmasterPriority2) {
+          best_so_far = i;
+        } else if (clocks_private[i].grandmasterIdentity <
+                   clocks_private[best_so_far].grandmasterIdentity) {
+          best_so_far = i;
+        }
+      }
+    }
+  }
+  if (best_so_far == -1) {
+    // no master clock
+    if (old_master != -1) {
+      // but there was a master clock, so remove it
+      debug(1,"shm interface -- remove master clock designation");
+      update_master_clock_info(0, 0, 0);
+    }
+    if (timing_peer_count == 0)
+      debug(2, "No timing peer list found");
+    else
+      debug(1, "No master clock not found!");
+  } else {
+    // we found a master clock
+    clocks_private[best_so_far].flags |= (1 << clock_is_master);
+    // master_clock_index = best_so_far;
+    if (old_master != best_so_far) {
+      update_master_clock_info(clocks_private[best_so_far].clock_id,
+                               clocks_private[best_so_far].local_time,
+                               clocks_private[best_so_far].local_to_source_time_offset);
+    }
+  }
+
+  int records_in_use = 0;
+  for (i = 0; i < MAX_CLOCKS; i++)
+   if (clocks_private[i].in_use != 0)
+     records_in_use++;
+  if (records_in_use > 0) {
+    debug(1,"");
+    debug(1,"Current NQPTP Status:");
+    uint32_t peer_mask = (1 << clock_is_a_timing_peer);
+    uint32_t peer_clock_mask =  peer_mask | (1 << clock_is_valid);
+    uint32_t peer_master_mask = peer_clock_mask | (1 << clock_is_master);
+    uint32_t non_peer_clock_mask =  (1 << clock_is_valid);
+    uint32_t non_peer_master_mask = non_peer_clock_mask | (1 << clock_is_master);
+    for (i = 0; i < MAX_CLOCKS; i++) {
+      if (clocks_private[i].in_use != 0) {
+        if ((clocks_private[i].flags & peer_master_mask) == peer_master_mask) {
+          debug(1,"  Peer Master:     %" PRIx64 "  %s.", clocks_private[i].clock_id, clocks_private[i].ip);
+        } else if ((clocks_private[i].flags & peer_clock_mask) == peer_clock_mask) {
+          debug(1,"  Peer Clock:      %" PRIx64 "  %s.", clocks_private[i].clock_id, clocks_private[i].ip);
+        } else if ((clocks_private[i].flags & peer_mask) == peer_mask) {
+          debug(1,"  Peer:                              %s.",clocks_private[i].ip);
+        } else if ((clocks_private[i].flags & non_peer_master_mask) == non_peer_master_mask) {
+          debug(1,"  Non Peer Master: %" PRIx64 "  %s.", clocks_private[i].clock_id, clocks_private[i].ip);
+        } else if ((clocks_private[i].flags & non_peer_clock_mask) == non_peer_clock_mask) {
+          debug(1,"  Non Peer Clock:  %" PRIx64 "  %s.", clocks_private[i].clock_id, clocks_private[i].ip);
+        } else {
+          debug(1,"  Non Peer Record:                   %s.",clocks_private[i].ip);
+        }
+      }
+    }
+  }
 }
