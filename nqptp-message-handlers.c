@@ -75,7 +75,18 @@ void update_master_old(clock_source_private_data *clock_private_info) {
       }
     }
   }
-  if (best_so_far != -1) {
+  if (best_so_far == -1) {
+    // no master clock
+    if (old_master != -1) {
+      // but there was a master clock, so remove it
+      debug(1,"remove master clock designation");
+      update_master_clock_info(0, 0, 0);
+    }
+    if (timing_peer_count == 0)
+      debug(2, "No timing peer list found");
+    else
+      debug(1, "No master clock not found!");
+  } else {
     // we found a master clock
     clock_private_info[best_so_far].flags |= (1 << clock_is_master);
     // master_clock_index = best_so_far;
@@ -84,11 +95,6 @@ void update_master_old(clock_source_private_data *clock_private_info) {
                                clock_private_info[best_so_far].local_time,
                                clock_private_info[best_so_far].local_to_source_time_offset);
     }
-  } else {
-    if (timing_peer_count == 0)
-      debug(2, "No timing peer list found");
-    else
-      debug(1, "No master clock not found!");
   }
 
   int records_in_use = 0;
@@ -577,6 +583,8 @@ void handle_delay_resp(char *buf, __attribute__((unused)) ssize_t recv_len,
 
       clock_private_info->previous_estimated_offset = estimated_offset;
 
+      uint32_t old_flags = clock_private_info->flags;
+
       if ((clock_private_info->flags & (1 << clock_is_valid)) == 0) {
         debug(1,"clock %" PRIx64 " is now valid at: %s", packet_clock_id, clock_private_info->ip);
       }
@@ -587,7 +595,9 @@ void handle_delay_resp(char *buf, __attribute__((unused)) ssize_t recv_len,
 
       // debug(1,"mm_average: %" PRIx64 ", estimated_offset: %" PRIx64 ".", mm_average_int,
       // estimated_offset);
-      if ((clock_private_info->flags & (1 << clock_is_master)) != 0) {
+      if (old_flags != clock_private_info->flags) {
+        update_master();
+      } else if ((clock_private_info->flags & (1 << clock_is_master)) != 0) {
         update_master_clock_info(clock_private_info->clock_id, clock_private_info->local_time,
                                  clock_private_info->local_to_source_time_offset);
       }
