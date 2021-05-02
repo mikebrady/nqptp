@@ -1,22 +1,14 @@
 # NQPTP – Not Quite PTP
-The `nqptp` daemon monitors PTP traffic. Briefly, `nqptp` monitors the times of any [PTP](https://en.wikipedia.org/wiki/Precision_Time_Protocol) clocks – up to 32 – it sees on ports 319 and 320. It maintains a record for each clock, identified by its Clock ID and IP. This information is provided via a [POSIX shared memory](https://pubs.opengroup.org/onlinepubs/007908799/xsh/shm_open.html) interface at `/nqptp`. Here are details of the interface:
+The `nqptp` daemon monitors PTP traffic. Briefly, `nqptp` monitors the times of any [PTP](https://en.wikipedia.org/wiki/Precision_Time_Protocol) clocks – up to 32 – it sees on ports 319 and 320. It maintains records for each clock, identified by its Clock ID and IP. Information about the *master clock* is provided in a [POSIX shared memory](https://pubs.opengroup.org/onlinepubs/007908799/xsh/shm_open.html) interface at `/nqptp`. Here are details of the interface:
 ```c
-struct clock_source {
-  char ip[64];                           // the IP the clock information is coming from
-  uint64_t clock_id;
-  uint64_t reserved;
-  uint64_t local_time;                  // the local time at which a measurement was done
-  uint64_t local_to_source_time_offset; // add this to the local time to get source time
-  int flags;                            // not used yet
-  int valid;                            // true if this entry is valid
-};
-
 struct shm_structure {
-  pthread_mutex_t shm_mutex;    // for safely accessing the structure
-  uint16_t size_of_clock_array; // should contain the value MAX_SHARED_CLOCKS
-  uint16_t version;
-  uint32_t flags;
-  struct clock_source clocks[MAX_SHARED_CLOCKS];
+  pthread_mutex_t shm_mutex; // for safely accessing the structure
+  uint16_t version;          // check this is equal to NQPTP_SHM_STRUCTURES_VERSION
+  uint32_t flags;            // unused
+  uint64_t master_clock_id;  // the current master clock
+  char master_clock_ip[64];  // the IP of the current master clock
+  uint64_t local_time;       // the time when the offset was calculated
+  uint64_t local_to_master_time_offset; // add this to the local time to get master clock time
 };
 ```
 
@@ -47,4 +39,4 @@ Since `nqptp` uses ports 319 and 320, it can not coexist with any other user of 
 The `nqptp` daemon is under active development and, consequently, everything here can change, possibly very radically.
 
 # NQPTP is not PTP!
-`nqptp` uses just a part of the IEEE Std 1588-2008 protocol. It is not a PTP clock of any kind.
+`nqptp` uses just a part of the [IEEE 1588-2008](https://standards.ieee.org/standard/1588-2008.html) protocol. It is not a PTP clock of any kind.
