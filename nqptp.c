@@ -84,7 +84,8 @@ void update_master_clock_info(uint64_t master_clock_id, const char *ip, uint64_t
     warn("Can't acquire mutex to update master clock!");
   shared_memory->master_clock_id = master_clock_id;
   if (ip != NULL)
-    strncpy((char *)&shared_memory->master_clock_ip, ip, FIELD_SIZEOF(struct shm_structure, master_clock_ip) - 1);
+    strncpy((char *)&shared_memory->master_clock_ip, ip,
+            FIELD_SIZEOF(struct shm_structure, master_clock_ip) - 1);
   else
     shared_memory->master_clock_ip[0] = '\0';
   shared_memory->local_time = local_time;
@@ -130,7 +131,8 @@ int main(int argc, char **argv) {
   for (i = 1; i < argc; ++i) {
     if (argv[i][0] == '-') {
       if (strcmp(argv[i] + 1, "V") == 0) {
-        fprintf(stdout, "Version: %s. Shared Memory Interface Version: %u.\n", VERSION, NQPTP_SHM_STRUCTURES_VERSION);
+        fprintf(stdout, "Version: %s. Shared Memory Interface Version: %u.\n", VERSION,
+                NQPTP_SHM_STRUCTURES_VERSION);
         exit(EXIT_SUCCESS);
       } else if (strcmp(argv[i] + 1, "vvv") == 0) {
         debug_level = 3;

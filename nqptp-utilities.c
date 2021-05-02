@@ -209,6 +209,7 @@ uint64_t get_self_clock_id() {
   return result;
 }
 
+/*
 void send_delay_req_message(int socket_number, SOCKADDR *from_sock_addr, uint16_t seqno) {
   struct ptp_delay_req_message m;
   memset(&m, 0, sizeof(m));
@@ -236,6 +237,7 @@ void send_delay_req_message(int socket_number, SOCKADDR *from_sock_addr, uint16_
   if ((sendmsg(socket_number, &header, 0)) == -1) {
     debug(1, "Error in sendmsg [errno = %d]", errno);
   } else {
-    debug_print_buffer(1, &m, sizeof(m));
+    debug_print_buffer(1, (char *)&m, sizeof(m));
   }
 }
+*/

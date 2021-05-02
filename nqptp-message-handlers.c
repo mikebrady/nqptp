@@ -16,10 +16,10 @@
  *
  * Commercial licensing is also available.
  */
+#include <arpa/inet.h>
 #include <errno.h>
 #include <string.h>
 #include <unistd.h>
- #include <arpa/inet.h>
 
 #include "debug.h"
 #include "general-utilities.h"
@@ -238,7 +238,6 @@ void handle_sync(char *buf, __attribute__((unused)) ssize_t recv_len,
   if (msg->header.correctionField != 0)
     debug(3, "correctionField: %" PRIx64 ".", msg->header.correctionField);
 
-
   int discard_sync = 0;
 
   // check if we should discard this SYNC
@@ -311,31 +310,32 @@ void handle_sync(char *buf, __attribute__((unused)) ssize_t recv_len,
       header.msg_iov->iov_len = sizeof(m);
       header.msg_iovlen = 1;
 
-/*
-      void *destination_addr = NULL;
-      uint16_t destination_port = 0;
+      /*
+            void *destination_addr = NULL;
+            uint16_t destination_port = 0;
 
-      sa_family_t connection_ip_family = to_sock_addr->SAFAMILY;
+            sa_family_t connection_ip_family = to_sock_addr->SAFAMILY;
 
-#ifdef AF_INET6
-      if (connection_ip_family == AF_INET6) {
-        struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *)to_sock_addr;
-        destination_addr = &(sa6->sin6_addr);
-        destination_port = ntohs(sa6->sin6_port);
-      }
-#endif
-      if (connection_ip_family == AF_INET) {
-        struct sockaddr_in *sa4 = (struct sockaddr_in *)to_sock_addr;
-        destination_addr = &(sa4->sin_addr);
-        destination_port = ntohs(sa4->sin_port);
-      }
+      #ifdef AF_INET6
+            if (connection_ip_family == AF_INET6) {
+              struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *)to_sock_addr;
+              destination_addr = &(sa6->sin6_addr);
+              destination_port = ntohs(sa6->sin6_port);
+            }
+      #endif
+            if (connection_ip_family == AF_INET) {
+              struct sockaddr_in *sa4 = (struct sockaddr_in *)to_sock_addr;
+              destination_addr = &(sa4->sin_addr);
+              destination_port = ntohs(sa4->sin_port);
+            }
 
 
-      char destination_string[256];
-      memset(destination_string, 0, sizeof(destination_string));
-      inet_ntop(connection_ip_family, destination_addr, destination_string, sizeof(destination_string));
-       debug(1,"Send Delay_Req to %s:%u",  &destination_string, destination_port);
-*/
+            char destination_string[256];
+            memset(destination_string, 0, sizeof(destination_string));
+            inet_ntop(connection_ip_family, destination_addr, destination_string,
+      sizeof(destination_string)); debug(1,"Send Delay_Req to %s:%u",  &destination_string,
+      destination_port);
+      */
       clock_private_info->t3 = get_time_now(); // in case nothing better works
       if ((sendmsg(socket_number, &header, 0)) == -1) {
         // debug(1, "Error in sendmsg [errno = %d] to socket %d.", errno, socket_number);
@@ -390,7 +390,7 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
 void handle_delay_resp(char *buf, __attribute__((unused)) ssize_t recv_len,
                        clock_source_private_data *clock_private_info,
                        __attribute__((unused)) uint64_t reception_time) {
-    // debug(1,"Delay_Resp from %s", clock_private_info->ip);
+  // debug(1,"Delay_Resp from %s", clock_private_info->ip);
   struct ptp_delay_resp_message *msg = (struct ptp_delay_resp_message *)buf;
 
   if ((clock_private_info->current_stage == follow_up_seen) &&
@@ -482,7 +482,7 @@ void handle_delay_resp(char *buf, __attribute__((unused)) ssize_t recv_len,
       uint32_t old_flags = clock_private_info->flags;
 
       if ((clock_private_info->flags & (1 << clock_is_valid)) == 0) {
-        debug(1,"clock %" PRIx64 " is now valid at: %s", packet_clock_id, clock_private_info->ip);
+        debug(1, "clock %" PRIx64 " is now valid at: %s", packet_clock_id, clock_private_info->ip);
       }
       clock_private_info->clock_id = packet_clock_id;
       clock_private_info->flags |= (1 << clock_is_valid);
@@ -494,10 +494,9 @@ void handle_delay_resp(char *buf, __attribute__((unused)) ssize_t recv_len,
       if (old_flags != clock_private_info->flags) {
         update_master();
       } else if ((clock_private_info->flags & (1 << clock_is_master)) != 0) {
-        update_master_clock_info(clock_private_info->clock_id,
-                                 &clock_private_info->ip,
-                                 clock_private_info->local_time,
-                                 clock_private_info->local_to_source_time_offset);
+        update_master_clock_info(
+            clock_private_info->clock_id, (const char *)&clock_private_info->ip,
+            clock_private_info->local_time, clock_private_info->local_to_source_time_offset);
       }
 
       clock_private_info->next_sample_goes_here++;

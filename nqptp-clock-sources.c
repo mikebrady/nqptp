@@ -106,7 +106,6 @@ void manage_clock_sources(uint64_t reception_time, clock_source_private_data *cl
       }
     }
   }
-
 }
 
 // check all the entries in the clock array and mark all those that
@@ -159,7 +158,7 @@ void update_master() {
   for (i = 0; i < MAX_CLOCKS; i++) {
     if ((clocks_private[i].flags & (1 << clock_is_master)) != 0)
       if (old_master == -1)
-        old_master = i;                                     // find old master
+        old_master = i;                                 // find old master
     clocks_private[i].flags &= ~(1 << clock_is_master); // turn them all off
   }
 
@@ -204,7 +203,7 @@ void update_master() {
     // no master clock
     if (old_master != -1) {
       // but there was a master clock, so remove it
-      debug(1,"shm interface -- remove master clock designation");
+      debug(1, "shm interface -- remove master clock designation");
       update_master_clock_info(0, NULL, 0, 0);
     }
     if (timing_peer_count == 0)
@@ -217,7 +216,7 @@ void update_master() {
     // master_clock_index = best_so_far;
     if (old_master != best_so_far) {
       update_master_clock_info(clocks_private[best_so_far].clock_id,
-                               &clocks_private[best_so_far].ip,
+                               (const char *)&clocks_private[best_so_far].ip,
                                clocks_private[best_so_far].local_time,
                                clocks_private[best_so_far].local_to_source_time_offset);
     }
@@ -225,30 +224,34 @@ void update_master() {
 
   int records_in_use = 0;
   for (i = 0; i < MAX_CLOCKS; i++)
-   if (clocks_private[i].in_use != 0)
-     records_in_use++;
+    if (clocks_private[i].in_use != 0)
+      records_in_use++;
   if (records_in_use > 0) {
-    debug(1,"");
-    debug(1,"Current NQPTP Status:");
+    debug(1, "");
+    debug(1, "Current NQPTP Status:");
     uint32_t peer_mask = (1 << clock_is_a_timing_peer);
-    uint32_t peer_clock_mask =  peer_mask | (1 << clock_is_valid);
+    uint32_t peer_clock_mask = peer_mask | (1 << clock_is_valid);
     uint32_t peer_master_mask = peer_clock_mask | (1 << clock_is_master);
-    uint32_t non_peer_clock_mask =  (1 << clock_is_valid);
+    uint32_t non_peer_clock_mask = (1 << clock_is_valid);
     uint32_t non_peer_master_mask = non_peer_clock_mask | (1 << clock_is_master);
     for (i = 0; i < MAX_CLOCKS; i++) {
       if (clocks_private[i].in_use != 0) {
         if ((clocks_private[i].flags & peer_master_mask) == peer_master_mask) {
-          debug(1,"  Peer Master:     %" PRIx64 "  %s.", clocks_private[i].clock_id, clocks_private[i].ip);
+          debug(1, "  Peer Master:     %" PRIx64 "  %s.", clocks_private[i].clock_id,
+                clocks_private[i].ip);
         } else if ((clocks_private[i].flags & peer_clock_mask) == peer_clock_mask) {
-          debug(1,"  Peer Clock:      %" PRIx64 "  %s.", clocks_private[i].clock_id, clocks_private[i].ip);
+          debug(1, "  Peer Clock:      %" PRIx64 "  %s.", clocks_private[i].clock_id,
+                clocks_private[i].ip);
         } else if ((clocks_private[i].flags & peer_mask) == peer_mask) {
-          debug(1,"  Peer:                              %s.",clocks_private[i].ip);
+          debug(1, "  Peer:                              %s.", clocks_private[i].ip);
         } else if ((clocks_private[i].flags & non_peer_master_mask) == non_peer_master_mask) {
-          debug(1,"  Non Peer Master: %" PRIx64 "  %s.", clocks_private[i].clock_id, clocks_private[i].ip);
+          debug(1, "  Non Peer Master: %" PRIx64 "  %s.", clocks_private[i].clock_id,
+                clocks_private[i].ip);
         } else if ((clocks_private[i].flags & non_peer_clock_mask) == non_peer_clock_mask) {
-          debug(1,"  Non Peer Clock:  %" PRIx64 "  %s.", clocks_private[i].clock_id, clocks_private[i].ip);
+          debug(1, "  Non Peer Clock:  %" PRIx64 "  %s.", clocks_private[i].clock_id,
+                clocks_private[i].ip);
         } else {
-          debug(1,"  Non Peer Record:                   %s.",clocks_private[i].ip);
+          debug(1, "  Non Peer Record:                   %s.", clocks_private[i].ip);
         }
       }
     }
