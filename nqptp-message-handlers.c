@@ -494,7 +494,9 @@ void handle_delay_resp(char *buf, __attribute__((unused)) ssize_t recv_len,
       if (old_flags != clock_private_info->flags) {
         update_master();
       } else if ((clock_private_info->flags & (1 << clock_is_master)) != 0) {
-        update_master_clock_info(clock_private_info->clock_id, clock_private_info->local_time,
+        update_master_clock_info(clock_private_info->clock_id,
+                                 &clock_private_info->ip,
+                                 clock_private_info->local_time,
                                  clock_private_info->local_to_source_time_offset);
       }
 

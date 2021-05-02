@@ -59,6 +59,10 @@
 #include <signal.h>
 #include <sys/epoll.h>
 
+#ifndef FIELD_SIZEOF
+#define FIELD_SIZEOF(t, f) (sizeof(((t *)0)->f))
+#endif
+
 // 8 samples per second
 
 #define BUFLEN 4096    // Max length of buffer
@@ -71,7 +75,7 @@ int master_clock_index = -1;
 struct shm_structure *shared_memory = NULL; // this is where public clock info is available
 int epoll_fd;
 
-void update_master_clock_info(uint64_t master_clock_id, uint64_t local_time,
+void update_master_clock_info(uint64_t master_clock_id, const char *ip, uint64_t local_time,
                               uint64_t local_to_master_offset) {
   if (shared_memory->master_clock_id != master_clock_id)
     debug(1, "Master clock is: %" PRIx64 ".", master_clock_id);
@@ -79,6 +83,10 @@ void update_master_clock_info(uint64_t master_clock_id, uint64_t local_time,
   if (rc != 0)
     warn("Can't acquire mutex to update master clock!");
   shared_memory->master_clock_id = master_clock_id;
+  if (ip != NULL)
+    strncpy((char *)&shared_memory->master_clock_ip, ip, FIELD_SIZEOF(struct shm_structure, master_clock_ip) - 1);
+  else
+    shared_memory->master_clock_ip[0] = '\0';
   shared_memory->local_time = local_time;
   shared_memory->local_to_master_time_offset = local_to_master_offset;
   rc = pthread_mutex_unlock(&shared_memory->shm_mutex);

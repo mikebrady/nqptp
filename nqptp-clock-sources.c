@@ -205,7 +205,7 @@ void update_master() {
     if (old_master != -1) {
       // but there was a master clock, so remove it
       debug(1,"shm interface -- remove master clock designation");
-      update_master_clock_info(0, 0, 0);
+      update_master_clock_info(0, NULL, 0, 0);
     }
     if (timing_peer_count == 0)
       debug(2, "No timing peer list found");
@@ -217,6 +217,7 @@ void update_master() {
     // master_clock_index = best_so_far;
     if (old_master != best_so_far) {
       update_master_clock_info(clocks_private[best_so_far].clock_id,
+                               &clocks_private[best_so_far].ip,
                                clocks_private[best_so_far].local_time,
                                clocks_private[best_so_far].local_to_source_time_offset);
     }
