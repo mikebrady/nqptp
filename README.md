@@ -32,6 +32,7 @@ Clock records not updated for a period are deleted.
 Since `nqptp` uses ports 319 and 320, it can not coexist with any other user of those ports, such as full PTP service daemons.
 
 # Known Issues
+* It's probably buggy!
 * At present, `nqptp` does not take advantage of hardware timestamping.
 * The daemon is Linux only, and has been developed and tested on a `systemd` Linux only.
 
