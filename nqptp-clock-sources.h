@@ -50,7 +50,7 @@ typedef struct {
   uint64_t mm_count;   // mickey mouse averaging
   uint64_t mm_average; // the mickey mouse average
   enum stage current_stage;
-  uint64_t t1, t2, t3, previous_offset, previous_estimated_offset;
+  uint64_t t1, t2, t3, previous_offset, previous_estimated_offset, previous_offset_time;
   // for garbage collection
   uint64_t time_of_last_use; // will be taken out of use if not used for a while and not in the
                              // timing peer group

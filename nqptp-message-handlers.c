@@ -220,6 +220,7 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clo
 void handle_sync(char *buf, __attribute__((unused)) ssize_t recv_len,
                  clock_source_private_data *clock_private_info, uint64_t reception_time,
                  SOCKADDR *to_sock_addr, int socket_number) {
+  debug(3,"SYNC from %s.", &clock_private_info->ip);
   struct ptp_sync_message *msg = (struct ptp_sync_message *)buf;
   // this is just to see if anything interesting comes in the SYNC package
   // a non-zero origin timestamp
@@ -344,6 +345,8 @@ void handle_sync(char *buf, __attribute__((unused)) ssize_t recv_len,
         // debug(1, "Success in sendmsg to socket %d.", socket_number);
       }
     }
+  } else {
+        if ((clock_private_info->flags & (1 << clock_is_master)) != 0) debug(2,"master discarding SYNC");
   }
 }
 
@@ -379,6 +382,7 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
     clock_private_info->current_stage = follow_up_seen;
 
   } else {
+    if ((clock_private_info->flags & (1 << clock_is_master)) != 0) debug(2,"master discarding FOLLOWUP");
     debug(3,
           "Follow_Up %u expecting to be in state sync_seen (%u). Stage error -- "
           "current state is %u, sequence %u. Ignoring it. %s",
@@ -390,7 +394,7 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
 void handle_delay_resp(char *buf, __attribute__((unused)) ssize_t recv_len,
                        clock_source_private_data *clock_private_info,
                        __attribute__((unused)) uint64_t reception_time) {
-  // debug(1,"Delay_Resp from %s", clock_private_info->ip);
+  debug(2,"Delay_Resp from %s", clock_private_info->ip);
   struct ptp_delay_resp_message *msg = (struct ptp_delay_resp_message *)buf;
 
   if ((clock_private_info->current_stage == follow_up_seen) &&
@@ -435,18 +439,48 @@ void handle_delay_resp(char *buf, __attribute__((unused)) ssize_t recv_len,
       // if this is the very first...
       if (clock_private_info->vacant_samples == MAX_TIMING_SAMPLES) {
         clock_private_info->previous_offset = offset;
+        clock_private_info->previous_offset_time = clock_private_info->t2;
         clock_private_info->previous_estimated_offset = offset;
       }
 
       if (clock_private_info->vacant_samples > 0)
         clock_private_info->vacant_samples--;
 
+      // do acceptance checking
+      // if the new offset is greater, by any amount, than the old offset
+      // accept it
+      // if it is less than the new offset by up to what a reasonable drift divergence would allow
+      // accept it
+      // otherwise, reject it
+      // drift divergence of 1000 ppm (which is huge) would give 125 us per 125 ms.
+      // let's go with 500 us.
+      int64_t jitter = offset - clock_private_info->previous_estimated_offset;
+
+      //if (jitter <= -250 * 1000)
+      //  offset = clock_private_info->previous_estimated_offset -100 * 1000;
+
+      uint64_t jitter_timing_interval = clock_private_info->t2 - clock_private_info->previous_offset_time;
+      long double jitterppm = 0.0;
+      if (jitter_timing_interval != 0) {
+        jitterppm = (0.001 * (jitter * 1000000000))/jitter_timing_interval;
+      // debug(1,"jitter: %" PRId64 " in: %" PRId64 " ns, %f ppm ", jitter, jitter_timing_interval, jitterppm);
+      }
+
+      // 2,000 parts per million is gigantic
+      if (jitterppm > -1000) {
+
+       uint64_t estimated_offset = offset;
+
+/*
+       if (jitter > 4000 * 1000)
+        clock_private_info->mm_count = 0; // if it jumps by this much, start averaging again
+
       // do mickey mouse averaging
       if (clock_private_info->mm_count == 0) {
         clock_private_info->mm_average = offset;
         clock_private_info->mm_count = 1;
       } else {
-        if (clock_private_info->mm_count < 5000)
+        if (clock_private_info->mm_count < 1000)
           clock_private_info->mm_count++;
         clock_private_info->mm_average =
             (clock_private_info->mm_count - 1) *
@@ -454,7 +488,8 @@ void handle_delay_resp(char *buf, __attribute__((unused)) ssize_t recv_len,
         clock_private_info->mm_average =
             clock_private_info->mm_average + (1.0 * offset) / clock_private_info->mm_count;
       }
-      uint64_t estimated_offset = (uint64_t)clock_private_info->mm_average;
+      estimated_offset = (uint64_t)clock_private_info->mm_average;
+*/
 
       /*
             // do real averaging
@@ -477,8 +512,6 @@ void handle_delay_resp(char *buf, __attribute__((unused)) ssize_t recv_len,
             }
       */
 
-      clock_private_info->previous_estimated_offset = estimated_offset;
-
       uint32_t old_flags = clock_private_info->flags;
 
       if ((clock_private_info->flags & (1 << clock_is_valid)) == 0) {
@@ -497,6 +530,7 @@ void handle_delay_resp(char *buf, __attribute__((unused)) ssize_t recv_len,
         update_master_clock_info(
             clock_private_info->clock_id, (const char *)&clock_private_info->ip,
             clock_private_info->local_time, clock_private_info->local_to_source_time_offset);
+        debug(2,"mm:\t% " PRId64 "\ttime:\t%" PRIu64 "\toffset\t%" PRId64 "\tjitter:\t%f ms.", clock_private_info->mm_count, clock_private_info->local_time, offset, 0.000001 * jitter);
       }
 
       clock_private_info->next_sample_goes_here++;
@@ -504,6 +538,12 @@ void handle_delay_resp(char *buf, __attribute__((unused)) ssize_t recv_len,
       // if we have need to wrap.
       if (clock_private_info->next_sample_goes_here == MAX_TIMING_SAMPLES)
         clock_private_info->next_sample_goes_here = 0;
+      clock_private_info->previous_estimated_offset = estimated_offset;
+      } else {
+        debug(2,"dropping a PTP offset measurement as the offset change of %f milliseconds is too great.", jitter * 0.000001);
+      }
+      clock_private_info->previous_offset = offset;
+      clock_private_info->previous_offset_time = clock_private_info->t2;
     } else {
       debug(2,
             "Dropping an apparently slow timing exchange with a disparity of %f milliseconds on "
@@ -512,7 +552,8 @@ void handle_delay_resp(char *buf, __attribute__((unused)) ssize_t recv_len,
     }
 
   } else {
-    debug(3,
+    if ((clock_private_info->flags & (1 << clock_is_master)) != 0) debug(2,"master discarding DELAYRESP %u expected vs %u seen.", clock_private_info->sequence_number, ntohs(msg->header.sequenceId));
+    debug(2,
           "Delay_Resp %u expecting to be in state follow_up_seen (%u). Stage error -- "
           "current state is %u, sequence %u. Ignoring it. %s",
           ntohs(msg->header.sequenceId), follow_up_seen, clock_private_info->current_stage,
