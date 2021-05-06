@@ -4,6 +4,5 @@ nqptp_SOURCES = nqptp.c nqptp-clock-sources.c nqptp-message-handlers.c nqptp-uti
 AM_CFLAGS = -fno-common -Wno-multichar -Wall -Wextra -Wno-clobbered -Wno-psabi -pthread
 
 install-exec-hook:
-	getent group nqptp &>/dev/null || groupadd -r nqptp >/dev/null
-	[ -e /lib/systemd/system ] || mkdir -p /lib/systemd/system
-	[ -f /lib/systemd/system/nqptp.service ] || cp nqptp.service /lib/systemd/system
+	-e /lib/systemd/system || mkdir -p /lib/systemd/system
+	-f /lib/systemd/system/nqptp.service || cp nqptp.service /lib/systemd/system
