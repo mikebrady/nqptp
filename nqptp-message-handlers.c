@@ -52,13 +52,6 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
           int t = find_clock_source_record(new_ip, clock_private_info);
           if (t == -1)
             t = create_clock_source_record(new_ip, clock_private_info);
-
-          // if it is just about to become a timing peer, reset its sample count
-          // since we don't know what was going on beforehand
-          clock_private_info[t].mm_count = 0;
-          clock_private_info[t].vacant_samples = MAX_TIMING_SAMPLES;
-          clock_private_info[t].next_sample_goes_here = 0;
-
           clock_private_info[t].flags |= (1 << clock_is_a_timing_peer);
         }
       }
@@ -217,504 +210,79 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clo
   }
 }
 
-void handle_sync(char *buf, __attribute__((unused)) ssize_t recv_len,
-                 clock_source_private_data *clock_private_info, uint64_t reception_time,
-                 SOCKADDR *to_sock_addr, __attribute__((unused)) int socket_number) {
-  debug(3, "SYNC from %s.", &clock_private_info->ip);
-  struct ptp_sync_message *msg = (struct ptp_sync_message *)buf;
-  // this is just to see if anything interesting comes in the SYNC package
-  // a non-zero origin timestamp
-  // or correction field would be interesting....
-  // debug(1,"Sync from %s", clock_private_info->ip);
-
-  int ck;
-  int non_empty_origin_timestamp = 0;
-  for (ck = 0; ck < 10; ck++) {
-    if (msg->sync.originTimestamp[ck] != 0) {
-      non_empty_origin_timestamp = (non_empty_origin_timestamp | 1);
-    }
-  }
-  if (non_empty_origin_timestamp != 0)
-    debug(2, "Sync Origin Timestamp!");
-  if (msg->header.correctionField != 0)
-    debug(3, "correctionField: %" PRIx64 ".", msg->header.correctionField);
-
-  int discard_sync = 0;
-
-  // check if we should discard this SYNC
-  if (clock_private_info->current_stage != waiting_for_sync) {
-
-    // here, we have an unexpected SYNC. It could be because the
-    // previous transaction sequence failed for some reason
-    // But, if that is so, the SYNC will have a newer sequence number
-    // so, ignore it if it's a little older.
-
-    // If it seems a lot older in sequence number terms, then it might
-    // be the start of a completely new sequence, so if the
-    // difference is more than 40 (WAG), accept it
-
-    uint16_t new_sync_sequence_number = ntohs(msg->header.sequenceId);
-    int16_t sequence_number_difference =
-        (clock_private_info->sequence_number - new_sync_sequence_number);
-
-    if ((sequence_number_difference > 0) && (sequence_number_difference < 40))
-      discard_sync = 1;
-  }
-
-  if (discard_sync == 0) {
-    /*
-        // just check how long since the last sync, if there was one
-        clock_private_info->reception_interval = 0;
-        if (clock_private_info->t2 != 0) {
-          int16_t seq_diff = ntohs(msg->header.sequenceId) - clock_private_info->sequence_number;
-          if (seq_diff == 1) {
-            uint64_t delta = reception_time - clock_private_info->t2;
-            clock_private_info->reception_interval = delta;
-            debug(1," reception interval: %f", delta * 0.000001);
-
-          }
-        }
-        */
-    clock_private_info->sequence_number = ntohs(msg->header.sequenceId);
-    clock_private_info->t2 = reception_time;
-    // it turns out that we don't really need to send a Delay_Req
-    // as a Follow_Up message always comes through
-
-    // If we had hardware assisted network timing, then maybe
-    // Even then, AP2 devices don't seem to send an accurate
-    // Delay_Resp time -- it contains the same information as the Follow_Up
-
-    clock_private_info->current_stage = sync_seen;
-
-    // send a delay request message
-    {
-      struct ptp_delay_req_message m;
-      memset(&m, 0, sizeof(m));
-      m.header.transportSpecificAndMessageID = 0x11; // Table 19, pp 125, 1 byte field
-      m.header.reservedAndVersionPTP = 0x02;         // 1 byte field
-      m.header.messageLength = htons(44);
-      m.header.flags = htons(0x0400);
-      m.header.sourcePortID = htons(1);
-      m.header.controlOtherMessage = 1; // 1 byte field
-      m.header.sequenceId = htons(clock_private_info->sequence_number);
-      m.header.logMessagePeriod = 127;
-      uint64_t sid = get_self_clock_id();
-      memcpy(&m.header.clockIdentity, &sid, sizeof(uint64_t));
-      struct msghdr header;
-      struct iovec io;
-      memset(&header, 0, sizeof(header));
-      memset(&io, 0, sizeof(io));
-      header.msg_name = to_sock_addr;
-      header.msg_namelen = sizeof(SOCKADDR);
-      header.msg_iov = &io;
-      header.msg_iov->iov_base = &m;
-      header.msg_iov->iov_len = sizeof(m);
-      header.msg_iovlen = 1;
-
-      /*
-            void *destination_addr = NULL;
-            uint16_t destination_port = 0;
-
-            sa_family_t connection_ip_family = to_sock_addr->SAFAMILY;
-
-      #ifdef AF_INET6
-            if (connection_ip_family == AF_INET6) {
-              struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *)to_sock_addr;
-              destination_addr = &(sa6->sin6_addr);
-              destination_port = ntohs(sa6->sin6_port);
-            }
-      #endif
-            if (connection_ip_family == AF_INET) {
-              struct sockaddr_in *sa4 = (struct sockaddr_in *)to_sock_addr;
-              destination_addr = &(sa4->sin_addr);
-              destination_port = ntohs(sa4->sin_port);
-            }
-
-
-            char destination_string[256];
-            memset(destination_string, 0, sizeof(destination_string));
-            inet_ntop(connection_ip_family, destination_addr, destination_string,
-      sizeof(destination_string)); debug(1,"Send Delay_Req to %s:%u",  &destination_string,
-      destination_port);
-      */
-      clock_private_info->t3 = get_time_now(); // in case nothing better works
-/*
-      if ((sendmsg(socket_number, &header, 0)) == -1) {
-        // debug(1, "Error in sendmsg [errno = %d] to socket %d.", errno, socket_number);
-        // debug_print_buffer(1,(char *)&m, sizeof(m));
-      } else {
-        // debug(1, "Success in sendmsg to socket %d.", socket_number);
-      }
-*/
-    }
-  } else {
-    if ((clock_private_info->flags & (1 << clock_is_master)) != 0)
-      debug(2, "master discarding SYNC");
-  }
-}
-
 void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
-                      clock_source_private_data *clock_private_info,
-                      uint64_t reception_time) {
-  if ((clock_private_info->flags & (1 << clock_is_master)) != 0)
-    debug(2, "FOLLOWUP from %s.", &clock_private_info->ip);
-
+                      clock_source_private_data *clock_private_info, uint64_t reception_time) {
+  debug(2, "FOLLOWUP from %s.", &clock_private_info->ip);
   struct ptp_follow_up_message *msg = (struct ptp_follow_up_message *)buf;
 
-//  if ((clock_private_info->current_stage == sync_seen) &&
-  // if (clock_private_info->sequence_number == ntohs(msg->header.sequenceId)) {
-  if (1) {
+  uint64_t packet_clock_id = nctohl(&msg->header.clockIdentity[0]);
+  uint64_t packet_clock_id_low = nctohl(&msg->header.clockIdentity[4]);
+  packet_clock_id = packet_clock_id << 32;
+  packet_clock_id = packet_clock_id + packet_clock_id_low;
 
-    uint64_t packet_clock_id = nctohl(&msg->header.clockIdentity[0]);
-    uint64_t packet_clock_id_low = nctohl(&msg->header.clockIdentity[4]);
-    packet_clock_id = packet_clock_id << 32;
-    packet_clock_id = packet_clock_id + packet_clock_id_low;
+  uint16_t seconds_hi = nctohs(&msg->follow_up.preciseOriginTimestamp[0]);
+  uint32_t seconds_low = nctohl(&msg->follow_up.preciseOriginTimestamp[2]);
+  uint32_t nanoseconds = nctohl(&msg->follow_up.preciseOriginTimestamp[6]);
+  uint64_t preciseOriginTimestamp = seconds_hi;
+  preciseOriginTimestamp = preciseOriginTimestamp << 32;
+  preciseOriginTimestamp = preciseOriginTimestamp + seconds_low;
+  preciseOriginTimestamp = preciseOriginTimestamp * 1000000000L;
+  preciseOriginTimestamp = preciseOriginTimestamp + nanoseconds;
 
-    uint16_t seconds_hi = nctohs(&msg->follow_up.preciseOriginTimestamp[0]);
-    uint32_t seconds_low = nctohl(&msg->follow_up.preciseOriginTimestamp[2]);
-    uint32_t nanoseconds = nctohl(&msg->follow_up.preciseOriginTimestamp[6]);
-    uint64_t preciseOriginTimestamp = seconds_hi;
-    preciseOriginTimestamp = preciseOriginTimestamp << 32;
-    preciseOriginTimestamp = preciseOriginTimestamp + seconds_low;
-    preciseOriginTimestamp = preciseOriginTimestamp * 1000000000L;
-    preciseOriginTimestamp = preciseOriginTimestamp + nanoseconds;
+  // preciseOriginTimestamp is called "t1" in the IEEE spec.
+  // we are using the reception time here as t2, which is a hack
 
+  // update the shared clock information
+  uint64_t offset = preciseOriginTimestamp - reception_time;
 
-    // this result is called "t1" in the IEEE spec.
+  int64_t jitter = 0;
+  if (clock_private_info->previous_offset != 0) {
 
-    // hack
-    clock_private_info->t2 = reception_time;
-    clock_private_info->t1 = preciseOriginTimestamp;
+    // do acceptance checking
+    // if the new offset is greater, by any amount, than the old offset
+    // accept it
+    // if it is less than the new offset by up to what a reasonable drift divergence would allow
+    // accept it
+    // otherwise, reject it
+    // drift divergence of 1000 ppm (which is huge) would give 125 us per 125 ms.
 
-    // we already have "t2" and it seems as if we can't generate "t3"
-    // and "t4", so use t1 - t2 as the clock-to-local offsets
+    jitter = offset - clock_private_info->previous_offset;
 
-    clock_private_info->current_stage = follow_up_seen;
-
-    if (1) {
-      // update the shared clock information
-      uint64_t offset = clock_private_info->t1 - clock_private_info->t2;
-
-      // update our sample information
-
-      clock_private_info->samples[clock_private_info->next_sample_goes_here].local =
-          clock_private_info->t2; // this is when the Sync message arrived.
-      clock_private_info->samples[clock_private_info->next_sample_goes_here]
-          .local_to_remote_offset = offset;
-      clock_private_info->samples[clock_private_info->next_sample_goes_here].sequence_number =
-          clock_private_info->sequence_number;
-
-      // if this is the very first...
-      if (clock_private_info->vacant_samples == MAX_TIMING_SAMPLES) {
-        clock_private_info->previous_offset = offset;
-        clock_private_info->previous_offset_time = clock_private_info->t2;
-        clock_private_info->previous_estimated_offset = offset;
-      }
-
-      if (clock_private_info->vacant_samples > 0)
-        clock_private_info->vacant_samples--;
-
-      // do acceptance checking
-      // if the new offset is greater, by any amount, than the old offset
-      // accept it
-      // if it is less than the new offset by up to what a reasonable drift divergence would allow
-      // accept it
-      // otherwise, reject it
-      // drift divergence of 1000 ppm (which is huge) would give 125 us per 125 ms.
-
-      int64_t jitter = offset - clock_private_info->previous_estimated_offset;
-
-      uint64_t jitter_timing_interval =
-          clock_private_info->t2 - clock_private_info->previous_offset_time;
-      long double jitterppm = 0.0;
-      if (jitter_timing_interval != 0) {
-        jitterppm = (0.001 * (jitter * 1000000000)) / jitter_timing_interval;
-        debug(2,"jitter: %" PRId64 " in: %" PRId64 " ns, %+f ppm ", jitter, jitter_timing_interval, jitterppm);
-      }
-
-      if (jitterppm <= -1000) {
-        jitter = -30 * 1000;
-        offset = clock_private_info->previous_estimated_offset + jitter;
-      }
-
-      if (1) {
-
-        uint64_t estimated_offset = offset;
-
-        /*
-               if (jitter > 4000 * 1000)
-                clock_private_info->mm_count = 0; // if it jumps by this much, start averaging again
-
-              // do mickey mouse averaging
-              if (clock_private_info->mm_count == 0) {
-                clock_private_info->mm_average = offset;
-                clock_private_info->mm_count = 1;
-              } else {
-                if (clock_private_info->mm_count < 1000)
-                  clock_private_info->mm_count++;
-                clock_private_info->mm_average =
-                    (clock_private_info->mm_count - 1) *
-                    (clock_private_info->mm_average / clock_private_info->mm_count);
-                clock_private_info->mm_average =
-                    clock_private_info->mm_average + (1.0 * offset) / clock_private_info->mm_count;
-              }
-              estimated_offset = (uint64_t)clock_private_info->mm_average;
-        */
-
-        /*
-              // do real averaging
-
-              int sample_count = MAX_TIMING_SAMPLES - clock_private_info->vacant_samples;
-              int64_t divergence = 0;
-              uint64_t estimated_offset = offset;
-
-              if (sample_count > 1) {
-                int e;
-                long double offsets = 0;
-                for (e = 0; e < sample_count; e++) {
-                  uint64_t ho = clock_private_info->samples[e].local_to_remote_offset;
-
-                  offsets = offsets + 1.0 * ho;
-                }
-
-                offsets = offsets / sample_count;
-                estimated_offset = (uint64_t)offsets;
-              }
-        */
-
-        uint32_t old_flags = clock_private_info->flags;
-
-        if ((clock_private_info->flags & (1 << clock_is_valid)) == 0) {
-          debug(1, "clock %" PRIx64 " is now valid at: %s", packet_clock_id,
-                clock_private_info->ip);
-        }
-        clock_private_info->clock_id = packet_clock_id;
-        clock_private_info->flags |= (1 << clock_is_valid);
-        clock_private_info->local_time = clock_private_info->t2;
-        clock_private_info->local_to_source_time_offset = estimated_offset;
-
-        // debug(1,"mm_average: %" PRIx64 ", estimated_offset: %" PRIx64 ".", mm_average_int,
-        // estimated_offset);
-        if (old_flags != clock_private_info->flags) {
-          update_master();
-        } else if ((clock_private_info->flags & (1 << clock_is_master)) != 0) {
-          update_master_clock_info(
-              clock_private_info->clock_id, (const char *)&clock_private_info->ip,
-              clock_private_info->local_time, clock_private_info->local_to_source_time_offset);
-          debug(1, "mm:\t% " PRId64 "\ttime:\t%" PRIu64 "\toffset\t%" PRId64 "\tjitter:\t%+f ms.",
-                clock_private_info->mm_count, clock_private_info->local_time, offset,
-                0.000001 * jitter);
-        }
-
-        clock_private_info->next_sample_goes_here++;
-
-        // if we have need to wrap.
-        if (clock_private_info->next_sample_goes_here == MAX_TIMING_SAMPLES)
-          clock_private_info->next_sample_goes_here = 0;
-        clock_private_info->previous_estimated_offset = estimated_offset;
-      } else {
-        debug(2,
-              "dropping a PTP offset measurement as the offset change of %f milliseconds is too "
-              "great.",
-              jitter * 0.000001);
-      }
-      clock_private_info->previous_offset = offset;
-      clock_private_info->previous_offset_time = clock_private_info->t2;
-    } else {
-      /* debug(2,
-            "Dropping an apparently slow timing exchange with a disparity of %f milliseconds on "
-            "clock: %" PRIx64 ".",
-            t4t1diff * 0.000001, clock_private_info->clock_id);
-      */
+    uint64_t jitter_timing_interval = reception_time - clock_private_info->previous_offset_time;
+    long double jitterppm = 0.0;
+    if (jitter_timing_interval != 0) {
+      jitterppm = (0.001 * (jitter * 1000000000)) / jitter_timing_interval;
+      debug(2, "jitter: %" PRId64 " in: %" PRId64 " ns, %+f ppm ", jitter, jitter_timing_interval,
+            jitterppm);
     }
 
-  } else {
-    if ((clock_private_info->flags & (1 << clock_is_master)) != 0)
-      debug(2, "master discarding FOLLOWUP");
-    debug(3,
-          "Follow_Up %u expecting to be in state sync_seen (%u). Stage error -- "
-          "current state is %u, sequence %u. Ignoring it. %s",
-          ntohs(msg->header.sequenceId), sync_seen, clock_private_info->current_stage,
-          clock_private_info->sequence_number, clock_private_info->ip);
-  }
-}
-
-void handle_delay_resp(char *buf, __attribute__((unused)) ssize_t recv_len,
-                       clock_source_private_data *clock_private_info,
-                       __attribute__((unused)) uint64_t reception_time) {
-  debug(2, "Delay_Resp from %s", clock_private_info->ip);
-  struct ptp_delay_resp_message *msg = (struct ptp_delay_resp_message *)buf;
-
-  if ((clock_private_info->current_stage == follow_up_seen) &&
-      (clock_private_info->sequence_number == ntohs(msg->header.sequenceId))) {
-
-    uint64_t packet_clock_id = nctohl(&msg->header.clockIdentity[0]);
-    uint64_t packet_clock_id_low = nctohl(&msg->header.clockIdentity[4]);
-    packet_clock_id = packet_clock_id << 32;
-    packet_clock_id = packet_clock_id + packet_clock_id_low;
-
-    uint16_t seconds_hi = nctohs(&msg->delay_resp.receiveTimestamp[0]);
-    uint32_t seconds_low = nctohl(&msg->delay_resp.receiveTimestamp[2]);
-    uint32_t nanoseconds = nctohl(&msg->delay_resp.receiveTimestamp[6]);
-    uint64_t receiveTimestamp = seconds_hi;
-    receiveTimestamp = receiveTimestamp << 32;
-    receiveTimestamp = receiveTimestamp + seconds_low;
-    receiveTimestamp = receiveTimestamp * 1000000000L;
-    receiveTimestamp = receiveTimestamp + nanoseconds;
-
-    // this is t4 in the IEEE doc and should be close to t1
-    // on some systems, it is identical to t1.
-
-    // uint64_t delay_req_turnaround_time = reception_time - clock_private_info->t3;
-    uint64_t t4t1diff = receiveTimestamp - clock_private_info->t1;
-    // uint64_t t3t2diff = clock_private_info->t3 - clock_private_info->t2;
-    // debug(1,"t4t1diff: %f, delay_req_turnaround_time: %f, t3t2diff: %f.", t4t1diff * 0.000000001,
-    // delay_req_turnaround_time * 0.000000001, t3t2diff * 0.000000001);
-
-    if (t4t1diff < 20000000) {
-      // update the shared clock information
-      uint64_t offset = clock_private_info->t1 - clock_private_info->t2;
-
-      // update our sample information
-
-      clock_private_info->samples[clock_private_info->next_sample_goes_here].local =
-          clock_private_info->t2; // this is when the Sync message arrived.
-      clock_private_info->samples[clock_private_info->next_sample_goes_here]
-          .local_to_remote_offset = offset;
-      clock_private_info->samples[clock_private_info->next_sample_goes_here].sequence_number =
-          clock_private_info->sequence_number;
-
-      // if this is the very first...
-      if (clock_private_info->vacant_samples == MAX_TIMING_SAMPLES) {
-        clock_private_info->previous_offset = offset;
-        clock_private_info->previous_offset_time = clock_private_info->t2;
-        clock_private_info->previous_estimated_offset = offset;
-      }
-
-      if (clock_private_info->vacant_samples > 0)
-        clock_private_info->vacant_samples--;
-
-      // do acceptance checking
-      // if the new offset is greater, by any amount, than the old offset
-      // accept it
-      // if it is less than the new offset by up to what a reasonable drift divergence would allow
-      // accept it
-      // otherwise, reject it
-      // drift divergence of 1000 ppm (which is huge) would give 125 us per 125 ms.
-      // let's go with 500 us.
-      int64_t jitter = offset - clock_private_info->previous_estimated_offset;
-
-      uint64_t jitter_timing_interval =
-          clock_private_info->t2 - clock_private_info->previous_offset_time;
-      long double jitterppm = 0.0;
-      if (jitter_timing_interval != 0) {
-        jitterppm = (0.001 * (jitter * 1000000000)) / jitter_timing_interval;
-        debug(2,"jitter: %" PRId64 " in: %" PRId64 " ns, %+f ppm ", jitter, jitter_timing_interval, jitterppm);
-      }
-
-      if (jitterppm <= -1000) {
-        jitter = -30 * 1000;
-        offset = clock_private_info->previous_estimated_offset + jitter;
-      }
-
-      if (1) {
-
-        uint64_t estimated_offset = offset;
-
-        /*
-               if (jitter > 4000 * 1000)
-                clock_private_info->mm_count = 0; // if it jumps by this much, start averaging again
-
-              // do mickey mouse averaging
-              if (clock_private_info->mm_count == 0) {
-                clock_private_info->mm_average = offset;
-                clock_private_info->mm_count = 1;
-              } else {
-                if (clock_private_info->mm_count < 1000)
-                  clock_private_info->mm_count++;
-                clock_private_info->mm_average =
-                    (clock_private_info->mm_count - 1) *
-                    (clock_private_info->mm_average / clock_private_info->mm_count);
-                clock_private_info->mm_average =
-                    clock_private_info->mm_average + (1.0 * offset) / clock_private_info->mm_count;
-              }
-              estimated_offset = (uint64_t)clock_private_info->mm_average;
-        */
-
-        /*
-              // do real averaging
-
-              int sample_count = MAX_TIMING_SAMPLES - clock_private_info->vacant_samples;
-              int64_t divergence = 0;
-              uint64_t estimated_offset = offset;
-
-              if (sample_count > 1) {
-                int e;
-                long double offsets = 0;
-                for (e = 0; e < sample_count; e++) {
-                  uint64_t ho = clock_private_info->samples[e].local_to_remote_offset;
-
-                  offsets = offsets + 1.0 * ho;
-                }
-
-                offsets = offsets / sample_count;
-                estimated_offset = (uint64_t)offsets;
-              }
-        */
-
-        uint32_t old_flags = clock_private_info->flags;
-
-        if ((clock_private_info->flags & (1 << clock_is_valid)) == 0) {
-          debug(1, "clock %" PRIx64 " is now valid at: %s", packet_clock_id,
-                clock_private_info->ip);
-        }
-        clock_private_info->clock_id = packet_clock_id;
-        clock_private_info->flags |= (1 << clock_is_valid);
-        clock_private_info->local_time = clock_private_info->t2;
-        clock_private_info->local_to_source_time_offset = estimated_offset;
-
-        // debug(1,"mm_average: %" PRIx64 ", estimated_offset: %" PRIx64 ".", mm_average_int,
-        // estimated_offset);
-        if (old_flags != clock_private_info->flags) {
-          update_master();
-        } else if ((clock_private_info->flags & (1 << clock_is_master)) != 0) {
-          update_master_clock_info(
-              clock_private_info->clock_id, (const char *)&clock_private_info->ip,
-              clock_private_info->local_time, clock_private_info->local_to_source_time_offset);
-          debug(2, "mm:\t% " PRId64 "\ttime:\t%" PRIu64 "\toffset\t%" PRId64 "\tjitter:\t%f ms.",
-                clock_private_info->mm_count, clock_private_info->local_time, offset,
-                0.000001 * jitter);
-        }
-
-        clock_private_info->next_sample_goes_here++;
-
-        // if we have need to wrap.
-        if (clock_private_info->next_sample_goes_here == MAX_TIMING_SAMPLES)
-          clock_private_info->next_sample_goes_here = 0;
-        clock_private_info->previous_estimated_offset = estimated_offset;
-      } else {
-        debug(2,
-              "dropping a PTP offset measurement as the offset change of %f milliseconds is too "
-              "great.",
-              jitter * 0.000001);
-      }
-      clock_private_info->previous_offset = offset;
-      clock_private_info->previous_offset_time = clock_private_info->t2;
-    } else {
-      debug(2,
-            "Dropping an apparently slow timing exchange with a disparity of %f milliseconds on "
-            "clock: %" PRIx64 ".",
-            t4t1diff * 0.000001, clock_private_info->clock_id);
+    if (jitterppm <= -1000) {
+      jitter = -125 * 100; // i.e. 100 parts per million
+      offset = clock_private_info->previous_offset + jitter;
     }
-
-  } else {
-    if ((clock_private_info->flags & (1 << clock_is_master)) != 0)
-      debug(2, "master discarding DELAYRESP %u expected vs %u seen.",
-            clock_private_info->sequence_number, ntohs(msg->header.sequenceId));
-    debug(2,
-          "Delay_Resp %u expecting to be in state follow_up_seen (%u). Stage error -- "
-          "current state is %u, sequence %u. Ignoring it. %s",
-          ntohs(msg->header.sequenceId), follow_up_seen, clock_private_info->current_stage,
-          clock_private_info->sequence_number, clock_private_info->ip);
   }
+
+  // uint64_t estimated_offset = offset;
+
+  uint32_t old_flags = clock_private_info->flags;
+
+  if ((clock_private_info->flags & (1 << clock_is_valid)) == 0) {
+    debug(1, "clock %" PRIx64 " is now valid at: %s", packet_clock_id, clock_private_info->ip);
+  }
+  clock_private_info->clock_id = packet_clock_id;
+  clock_private_info->flags |= (1 << clock_is_valid);
+  clock_private_info->local_time = reception_time;
+  clock_private_info->local_to_source_time_offset = offset;
+
+  if (old_flags != clock_private_info->flags) {
+    update_master();
+  } else if ((clock_private_info->flags & (1 << clock_is_master)) != 0) {
+    update_master_clock_info(clock_private_info->clock_id, (const char *)&clock_private_info->ip,
+                             reception_time, offset);
+    debug(1, "time: %" PRIu64 ", offset: %" PRId64 ", jitter: %+f ms.", reception_time, offset,
+          0.000001 * jitter);
+  }
+
+  clock_private_info->previous_offset = offset;
+  clock_private_info->previous_offset_time = reception_time;
 }

@@ -69,9 +69,6 @@ int create_clock_source_record(char *sender_string,
     strncpy((char *)&clocks_private_info[i].ip, sender_string,
             FIELD_SIZEOF(clock_source_private_data, ip) - 1);
     clocks_private_info[i].in_use = 1;
-    clocks_private_info[i].t2 = 0;
-    clocks_private_info[i].current_stage = waiting_for_sync;
-    clocks_private_info[i].vacant_samples = MAX_TIMING_SAMPLES;
     debug(2, "create record for ip: %s.", &clocks_private_info[i].ip);
   } else {
     die("Clock tables full!");
@@ -152,6 +149,8 @@ void update_clock_self_identifications(clock_source_private_data *clocks_private
 }
 
 void update_master() {
+  // note -- this is definitely incomplete -- it doesn't do the full
+  // data set comparison specified by the IEEE 588 standard
   int old_master = -1;
   // find the current master clock if there is one and turn off all mastership
   int i;

@@ -395,15 +395,8 @@ int main(int argc, char **argv) {
                   update_clock_self_identifications((clock_source_private_data *)&clocks_private);
                   handle_announce(buf, recv_len, &clocks_private[the_clock], reception_time);
                   break;
-                case Sync: { // if it's a sync
-                  handle_sync(buf, recv_len, &clocks_private[the_clock], reception_time,
-                              &from_sock_addr, socket_number);
-                } break;
                 case Follow_Up: {
                   handle_follow_up(buf, recv_len, &clocks_private[the_clock], reception_time);
-                } break;
-                case Delay_Resp: {
-                  handle_delay_resp(buf, recv_len, &clocks_private[the_clock], reception_time);
                 } break;
                 default:
                   debug_print_buffer(2, buf, recv_len); // unusual messages will have debug level 1.
