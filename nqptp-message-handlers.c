@@ -273,7 +273,7 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
         offset = clock_private_info->previous_offset + jitter;
       }
     } else {
-      debug(1,"NQPTP lost sync with clock %" PRIx64 " at %s. Resynchronising.", clock_private_info->clock_id, clock_private_info->ip);
+      warn("Lost sync with clock %" PRIx64 " at %s. Resynchronising.", clock_private_info->clock_id, clock_private_info->ip);
       // leave the offset as it was coming in and take it as a sync time
       clock_private_info->last_sync_time = reception_time;
     }
