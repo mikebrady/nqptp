@@ -236,29 +236,46 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
   uint64_t offset = preciseOriginTimestamp - reception_time;
 
   int64_t jitter = 0;
-  if (clock_private_info->previous_offset != 0) {
+  if (clock_private_info->previous_offset == 0) {
+    clock_private_info->last_sync_time = reception_time;
+  } else {
 
-    // do acceptance checking
-    // if the new offset is greater, by any amount, than the old offset
-    // accept it
-    // if it is less than the new offset by up to what a reasonable drift divergence would allow
-    // accept it
-    // otherwise, reject it
-    // drift divergence of 1000 ppm (which is huge) would give 125 us per 125 ms.
+    int64_t time_since_last_sync = reception_time - clock_private_info->last_sync_time;
+    int64_t sync_timeout = 10000000000; // nanoseconds
+    debug(2,"Sync interval: %f seconds.", 0.000000001 * time_since_last_sync);
+    if (time_since_last_sync < sync_timeout) {
+      // do acceptance checking
+      // if the new offset is greater, by any amount, than the old offset
+      // accept it
+      // if it is less than the new offset by up to what a reasonable drift divergence would allow
+      // accept it
+      // otherwise, reject it
+      // drift divergence of 1000 ppm (which is huge) would give 125 us per 125 ms.
 
-    jitter = offset - clock_private_info->previous_offset;
+      jitter = offset - clock_private_info->previous_offset;
 
-    uint64_t jitter_timing_interval = reception_time - clock_private_info->previous_offset_time;
-    long double jitterppm = 0.0;
-    if (jitter_timing_interval != 0) {
-      jitterppm = (0.001 * (jitter * 1000000000)) / jitter_timing_interval;
-      debug(2, "jitter: %" PRId64 " in: %" PRId64 " ns, %+f ppm ", jitter, jitter_timing_interval,
-            jitterppm);
-    }
-
-    if (jitterppm <= -1000) {
-      jitter = -125 * 100; // i.e. 100 parts per million
-      offset = clock_private_info->previous_offset + jitter;
+      uint64_t jitter_timing_interval = reception_time - clock_private_info->previous_offset_time;
+      long double jitterppm = 0.0;
+      if (jitter_timing_interval != 0) {
+        jitterppm = (0.001 * (jitter * 1000000000)) / jitter_timing_interval;
+        debug(2, "jitter: %" PRId64 " in: %" PRId64 " ns, %+f ppm ", jitter, jitter_timing_interval,
+              jitterppm);
+      }
+      if (jitterppm >= -1000) {
+        // we take a positive or small negative jitter as a sync event
+        // as we have a new figure for the difference between the local clock and the
+        // remote clock which is almost the same or greater than our previous estimate
+        clock_private_info->last_sync_time = reception_time;
+      } else {
+        // let our previous estimate drop by some parts-per-million
+        //jitter = (-100 * jitter_timing_interval) / 1000000;
+        jitter = -10 * 1000; // this is nanoseconds in, supposedly, 125 milliseconds. 12.5 us / 125 ms is 100 ppm.
+        offset = clock_private_info->previous_offset + jitter;
+      }
+    } else {
+      debug(1,"NQPTP lost sync with clock %" PRIx64 " at %s. Resynchronising.", clock_private_info->clock_id, clock_private_info->ip);
+      // leave the offset as it was coming in and take it as a sync time
+      clock_private_info->last_sync_time = reception_time;
     }
   }
 

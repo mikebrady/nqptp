@@ -45,13 +45,8 @@ typedef struct {
   uint64_t local_time;                  // the local time when the offset was calculated
   uint64_t local_to_source_time_offset; // add this to the local time to get source time
   uint32_t flags;
-  //  uint16_t sequence_number;
   uint16_t in_use;
-  //  uint64_t mm_count;   // mickey mouse averaging
-  //  uint64_t mm_average; // the mickey mouse average
-  //  enum stage current_stage;
-  //  uint64_t t1, t2, t3, previous_offset, previous_estimated_offset, previous_offset_time;
-  uint64_t previous_offset, previous_offset_time;
+  uint64_t previous_offset, previous_offset_time, last_sync_time;
   // for garbage collection
   uint64_t time_of_last_use; // will be taken out of use if not used for a while and not in the
                              // timing peer group
