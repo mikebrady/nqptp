@@ -236,12 +236,13 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
   uint64_t offset = preciseOriginTimestamp - reception_time;
 
   int64_t jitter = 0;
-  if (clock_private_info->previous_offset == 0) {
+  // if there has never been a previous follow_up or if it was long ago (more than 15 seconds), don't use it
+  int64_t time_since_last_follow_up = reception_time - clock_private_info->previous_offset_time;
+  if ((clock_private_info->previous_offset_time == 0) || (time_since_last_follow_up > 15000000000)) {
     clock_private_info->last_sync_time = reception_time;
   } else {
-
     int64_t time_since_last_sync = reception_time - clock_private_info->last_sync_time;
-    int64_t sync_timeout = 10000000000; // nanoseconds
+    int64_t sync_timeout = 30000000000; // nanoseconds
     debug(2,"Sync interval: %f seconds.", 0.000000001 * time_since_last_sync);
     if (time_since_last_sync < sync_timeout) {
       // do acceptance checking
