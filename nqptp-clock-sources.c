@@ -214,6 +214,7 @@ void update_master() {
     clocks_private[best_so_far].flags |= (1 << clock_is_master);
     // master_clock_index = best_so_far;
     if (old_master != best_so_far) {
+      clocks_private[best_so_far].previous_offset_time = 0; // allow full resync
       update_master_clock_info(clocks_private[best_so_far].clock_id,
                                (const char *)&clocks_private[best_so_far].ip,
                                clocks_private[best_so_far].local_time,
