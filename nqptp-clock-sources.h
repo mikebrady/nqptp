@@ -32,17 +32,12 @@ typedef enum {
   clock_is_master
 } clock_flags;
 
-#define MAX_TIMING_SAMPLES 481
-typedef struct {
-  uint16_t sequence_number;
-  uint64_t local, local_to_remote_offset;
-} timing_samples;
-
 // information about each clock source
 typedef struct {
   char ip[64]; // 64 is nicely aligned and bigger than INET6_ADDRSTRLEN (46)
   uint64_t clock_id;
-  uint64_t local_time;                  // the local time when the offset was calculated
+  uint64_t local_time; // the local time when the offset was calculated
+  uint64_t origin_time;
   uint64_t local_to_source_time_offset; // add this to the local time to get source time
   uint32_t flags;
   uint16_t in_use;

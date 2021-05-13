@@ -164,7 +164,7 @@ void update_master() {
   int best_so_far = -1;
   int timing_peer_count = 0;
   uint32_t acceptance_mask =
-      (1 << clock_is_valid) | (1 << clock_is_qualified) | (1 << clock_is_a_timing_peer);
+      (1 << clock_is_qualified) | (1 << clock_is_a_timing_peer);
   for (i = 0; i < MAX_CLOCKS; i++) {
     if ((clocks_private[i].flags & acceptance_mask) == acceptance_mask) {
       // found a possible clock candidate
@@ -214,7 +214,7 @@ void update_master() {
     clocks_private[best_so_far].flags |= (1 << clock_is_master);
     // master_clock_index = best_so_far;
     if (old_master != best_so_far) {
-      clocks_private[best_so_far].previous_offset_time = 0; // allow full resync
+      clocks_private[best_so_far].previous_offset_time = 0; // resync when you become master
       update_master_clock_info(clocks_private[best_so_far].clock_id,
                                (const char *)&clocks_private[best_so_far].ip,
                                clocks_private[best_so_far].local_time,
