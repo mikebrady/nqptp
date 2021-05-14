@@ -50,3 +50,7 @@ Makefile
 
 # Executable
 nqptp
+
+# Version file generated from '$ git describe --dirty'
+gitversion.h
+

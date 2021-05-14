@@ -25,6 +25,10 @@
 #include "nqptp-ptp-definitions.h"
 #include "nqptp-utilities.h"
 
+#ifdef CONFIG_USE_GIT_VERSION_STRING
+#include "gitversion.h"
+#endif
+
 #include <arpa/inet.h>
 #include <stdio.h>  //printf
 #include <stdlib.h> //malloc;
@@ -131,6 +135,12 @@ int main(int argc, char **argv) {
   for (i = 1; i < argc; ++i) {
     if (argv[i][0] == '-') {
       if (strcmp(argv[i] + 1, "V") == 0) {
+#ifdef CONFIG_USE_GIT_VERSION_STRING
+        if (git_version_string[0] != '\0') 
+          fprintf(stdout, "Version: %s. Shared Memory Interface Version: %u.\n", git_version_string,
+                NQPTP_SHM_STRUCTURES_VERSION);
+        else
+#endif
         fprintf(stdout, "Version: %s. Shared Memory Interface Version: %u.\n", VERSION,
                 NQPTP_SHM_STRUCTURES_VERSION);
         exit(EXIT_SUCCESS);
