@@ -141,6 +141,7 @@ int main(int argc, char **argv) {
                 NQPTP_SHM_STRUCTURES_VERSION);
         else
 #endif
+
         fprintf(stdout, "Version: %s. Shared Memory Interface Version: %u.\n", VERSION,
                 NQPTP_SHM_STRUCTURES_VERSION);
         exit(EXIT_SUCCESS);
