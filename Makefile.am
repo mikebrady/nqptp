@@ -18,5 +18,5 @@ endif
 
 
 install-exec-hook:
-	-e /lib/systemd/system || mkdir -p /lib/systemd/system
-	-f /lib/systemd/system/nqptp.service || cp nqptp.service /lib/systemd/system
+	[ -e /lib/systemd/system ] || mkdir -p /lib/systemd/system
+	cp nqptp.service /lib/systemd/system
