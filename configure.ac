@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.68])
-AC_INIT([nqptp], [1.0d3], [4265913+mikebrady@users.noreply.github.com])
+AC_INIT([nqptp], [1.1-dev], [4265913+mikebrady@users.noreply.github.com])
 AM_INIT_AUTOMAKE
 AC_CONFIG_SRCDIR([nqptp.c])
 AC_CONFIG_HEADERS([config.h])
