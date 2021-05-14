@@ -213,7 +213,8 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clo
 void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
                       clock_source_private_data *clock_private_info, uint64_t reception_time) {
   if ((clock_private_info->flags & (1 << clock_is_master)) != 0) {
-	  debug(2, "FOLLOWUP from %" PRIx64 ", %s.", clock_private_info->clock_id, &clock_private_info->ip);
+    debug(2, "FOLLOWUP from %" PRIx64 ", %s.", clock_private_info->clock_id,
+          &clock_private_info->ip);
     struct ptp_follow_up_message *msg = (struct ptp_follow_up_message *)buf;
 
     uint64_t packet_clock_id = nctohl(&msg->header.clockIdentity[0]);
@@ -303,8 +304,8 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
     } else if ((clock_private_info->flags & (1 << clock_is_master)) != 0) {
       update_master_clock_info(clock_private_info->clock_id, (const char *)&clock_private_info->ip,
                                reception_time, offset);
-      debug(3, "clock: %" PRIx64 ", time: %" PRIu64 ", offset: %" PRId64 ", jitter: %+f ms.", clock_private_info->clock_id, reception_time, offset,
-            0.000001 * jitter);
+      debug(3, "clock: %" PRIx64 ", time: %" PRIu64 ", offset: %" PRId64 ", jitter: %+f ms.",
+            clock_private_info->clock_id, reception_time, offset, 0.000001 * jitter);
     }
 
     clock_private_info->previous_offset = offset;
