@@ -86,7 +86,10 @@ void update_master_clock_info(uint64_t master_clock_id, const char *ip, uint64_t
   int rc = pthread_mutex_lock(&shared_memory->shm_mutex);
   if (rc != 0)
     warn("Can't acquire mutex to update master clock!");
-  shared_memory->master_clock_id = master_clock_id;
+  if (shared_memory->master_clock_id != master_clock_id) {
+    shared_memory->master_clock_id = master_clock_id;
+    shared_memory->master_clock_start_time = get_time_now();
+  }
   if (ip != NULL)
     strncpy((char *)&shared_memory->master_clock_ip, ip,
             FIELD_SIZEOF(struct shm_structure, master_clock_ip) - 1);
@@ -136,7 +139,7 @@ int main(int argc, char **argv) {
     if (argv[i][0] == '-') {
       if (strcmp(argv[i] + 1, "V") == 0) {
 #ifdef CONFIG_USE_GIT_VERSION_STRING
-        if (git_version_string[0] != '\0') 
+        if (git_version_string[0] != '\0')
           fprintf(stdout, "Version: %s. Shared Memory Interface Version: %u.\n", git_version_string,
                 NQPTP_SHM_STRUCTURES_VERSION);
         else

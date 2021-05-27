@@ -22,7 +22,7 @@
 
 #define STORAGE_ID "/nqptp"
 #define MAX_CLOCKS 32
-#define NQPTP_SHM_STRUCTURES_VERSION 4
+#define NQPTP_SHM_STRUCTURES_VERSION 5
 #define NQPTP_CONTROL_PORT 9000
 
 // the control port will accept a UDP packet with the first letter being:
@@ -43,6 +43,7 @@ struct shm_structure {
   char master_clock_ip[64];             // where it's coming from
   uint64_t local_time;                  // the time when the offset was calculated
   uint64_t local_to_master_time_offset; // add this to the local time to get master clock time
+  uint64_t master_clock_start_time;     // this is when the master clock became master
 };
 
 #endif
