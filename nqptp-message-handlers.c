@@ -83,6 +83,12 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clo
     if ((size_t)recv_len >= sizeof(struct ptp_announce_message)) {
       struct ptp_announce_message *msg = (struct ptp_announce_message *)buf;
 
+      uint64_t packet_clock_id = nctohl(&msg->header.clockIdentity[0]);
+      uint64_t packet_clock_id_low = nctohl(&msg->header.clockIdentity[4]);
+      packet_clock_id = packet_clock_id << 32;
+      packet_clock_id = packet_clock_id + packet_clock_id_low;
+      clock_private_info->clock_id = packet_clock_id;
+
       int i;
       // number of elements in the array is 4, hence the 4-1 stuff
       for (i = 4 - 1; i > 1 - 1; i--) {
@@ -212,15 +218,18 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clo
 
 void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
                       clock_source_private_data *clock_private_info, uint64_t reception_time) {
+  clock_private_info->flags |= (1 << clock_is_valid);
   if ((clock_private_info->flags & (1 << clock_is_master)) != 0) {
     debug(2, "FOLLOWUP from %" PRIx64 ", %s.", clock_private_info->clock_id,
           &clock_private_info->ip);
     struct ptp_follow_up_message *msg = (struct ptp_follow_up_message *)buf;
 
+/*
     uint64_t packet_clock_id = nctohl(&msg->header.clockIdentity[0]);
     uint64_t packet_clock_id_low = nctohl(&msg->header.clockIdentity[4]);
     packet_clock_id = packet_clock_id << 32;
     packet_clock_id = packet_clock_id + packet_clock_id_low;
+*/
 
     uint16_t seconds_hi = nctohs(&msg->follow_up.preciseOriginTimestamp[0]);
     uint32_t seconds_low = nctohl(&msg->follow_up.preciseOriginTimestamp[2]);
@@ -290,11 +299,11 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
 
     uint32_t old_flags = clock_private_info->flags;
 
-    if ((clock_private_info->flags & (1 << clock_is_valid)) == 0) {
-      debug(1, "clock %" PRIx64 " is now valid at: %s", packet_clock_id, clock_private_info->ip);
-    }
-    clock_private_info->clock_id = packet_clock_id;
-    clock_private_info->flags |= (1 << clock_is_valid);
+    //if ((clock_private_info->flags & (1 << clock_is_valid)) == 0) {
+    //  debug(1, "clock %" PRIx64 " is now valid at: %s", packet_clock_id, clock_private_info->ip);
+    //}
+
+    // clock_private_info->clock_id = packet_clock_id;
     clock_private_info->local_time = reception_time;
     clock_private_info->origin_time = preciseOriginTimestamp;
     clock_private_info->local_to_source_time_offset = offset;
