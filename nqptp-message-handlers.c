@@ -219,35 +219,19 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clo
 void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
                       clock_source_private_data *clock_private_info, uint64_t reception_time) {
 
-    clock_private_info->flags |= (1 << clock_is_valid); // valid because it has at least one follow_up
-    struct ptp_follow_up_message *msg = (struct ptp_follow_up_message *)buf;
+  clock_private_info->flags |= (1 << clock_is_valid); // valid because it has at least one follow_up
+  struct ptp_follow_up_message *msg = (struct ptp_follow_up_message *)buf;
 
-    uint16_t seconds_hi = nctohs(&msg->follow_up.preciseOriginTimestamp[0]);
-    uint32_t seconds_low = nctohl(&msg->follow_up.preciseOriginTimestamp[2]);
-    uint32_t nanoseconds = nctohl(&msg->follow_up.preciseOriginTimestamp[6]);
-    uint64_t preciseOriginTimestamp = seconds_hi;
-    preciseOriginTimestamp = preciseOriginTimestamp << 32;
-    preciseOriginTimestamp = preciseOriginTimestamp + seconds_low;
-    preciseOriginTimestamp = preciseOriginTimestamp * 1000000000L;
-    preciseOriginTimestamp = preciseOriginTimestamp + nanoseconds;
+  uint16_t seconds_hi = nctohs(&msg->follow_up.preciseOriginTimestamp[0]);
+  uint32_t seconds_low = nctohl(&msg->follow_up.preciseOriginTimestamp[2]);
+  uint32_t nanoseconds = nctohl(&msg->follow_up.preciseOriginTimestamp[6]);
+  uint64_t preciseOriginTimestamp = seconds_hi;
+  preciseOriginTimestamp = preciseOriginTimestamp << 32;
+  preciseOriginTimestamp = preciseOriginTimestamp + seconds_low;
+  preciseOriginTimestamp = preciseOriginTimestamp * 1000000000L;
+  preciseOriginTimestamp = preciseOriginTimestamp + nanoseconds;
 
-    // update our sample information
-
-    clock_private_info->samples[clock_private_info->next_sample_goes_here].local_time =
-        reception_time;
-    clock_private_info->samples[clock_private_info->next_sample_goes_here]
-        .clock_time = preciseOriginTimestamp;
-
-    if (clock_private_info->vacant_samples > 0)
-      clock_private_info->vacant_samples--;
-
-    clock_private_info->next_sample_goes_here++;
-    // if we have need to wrap.
-    if (clock_private_info->next_sample_goes_here == MAX_TIMING_SAMPLES)
-      clock_private_info->next_sample_goes_here = 0;
-
-
-//  if ((clock_private_info->flags & (1 << clock_is_master)) != 0) {
+  //  if ((clock_private_info->flags & (1 << clock_is_master)) != 0) {
   if (1) {
     debug(2, "FOLLOWUP from %" PRIx64 ", %s.", clock_private_info->clock_id,
           &clock_private_info->ip);
@@ -308,7 +292,7 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
 
     uint32_t old_flags = clock_private_info->flags;
 
-    //if ((clock_private_info->flags & (1 << clock_is_valid)) == 0) {
+    // if ((clock_private_info->flags & (1 << clock_is_valid)) == 0) {
     //  debug(1, "clock %" PRIx64 " is now valid at: %s", packet_clock_id, clock_private_info->ip);
     //}
 
@@ -319,9 +303,11 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
 
     if (old_flags != clock_private_info->flags) {
       update_master();
-    } else if ((clock_private_info->flags & (1 << clock_is_master)) != 0) {
+    }
+
+    if ((clock_private_info->flags & (1 << clock_is_master)) != 0) {
       update_master_clock_info(clock_private_info->clock_id, (const char *)&clock_private_info->ip,
-                               reception_time, offset, clock_private_info->mastership_start_time);
+                               reception_time, offset);
       debug(3, "clock: %" PRIx64 ", time: %" PRIu64 ", offset: %" PRId64 ", jitter: %+f ms.",
             clock_private_info->clock_id, reception_time, offset, 0.000001 * jitter);
     }

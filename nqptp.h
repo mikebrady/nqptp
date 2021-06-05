@@ -32,6 +32,6 @@ extern int master_clock_index;
 extern struct shm_structure *shared_memory;
 
 void update_master_clock_info(uint64_t master_clock_id, const char *ip, uint64_t local_time,
-                              uint64_t local_to_master_offset, uint64_t mastership_start_time);
+                              uint64_t local_to_master_offset);
 
 #endif
