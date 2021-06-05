@@ -14,6 +14,7 @@ struct shm_structure {
   char master_clock_ip[64];  // the IP of the current master clock
   uint64_t local_time;       // the time when the offset was calculated
   uint64_t local_to_master_time_offset; // add this to the local time to get master clock time
+  uint64_t master_clock_start_time;     // this is when the master clock became master
 };
 ```
 
