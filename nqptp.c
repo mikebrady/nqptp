@@ -80,7 +80,7 @@ struct shm_structure *shared_memory = NULL; // this is where public clock info i
 int epoll_fd;
 
 void update_master_clock_info(uint64_t master_clock_id, const char *ip, uint64_t local_time,
-                              uint64_t local_to_master_offset) {
+                              uint64_t local_to_master_offset, uint64_t mastership_start_time) {
   if (shared_memory->master_clock_id != master_clock_id)
     debug(1, "Master clock is: %" PRIx64 ".", master_clock_id);
   int rc = pthread_mutex_lock(&shared_memory->shm_mutex);
@@ -88,7 +88,7 @@ void update_master_clock_info(uint64_t master_clock_id, const char *ip, uint64_t
     warn("Can't acquire mutex to update master clock!");
   if (shared_memory->master_clock_id != master_clock_id) {
     shared_memory->master_clock_id = master_clock_id;
-    shared_memory->master_clock_start_time = get_time_now();
+    shared_memory->master_clock_start_time = local_time;
   }
   if (ip != NULL)
     strncpy((char *)&shared_memory->master_clock_ip, ip,

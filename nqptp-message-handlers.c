@@ -218,18 +218,9 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clo
 
 void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
                       clock_source_private_data *clock_private_info, uint64_t reception_time) {
-  clock_private_info->flags |= (1 << clock_is_valid);
-  if ((clock_private_info->flags & (1 << clock_is_master)) != 0) {
-    debug(2, "FOLLOWUP from %" PRIx64 ", %s.", clock_private_info->clock_id,
-          &clock_private_info->ip);
-    struct ptp_follow_up_message *msg = (struct ptp_follow_up_message *)buf;
 
-/*
-    uint64_t packet_clock_id = nctohl(&msg->header.clockIdentity[0]);
-    uint64_t packet_clock_id_low = nctohl(&msg->header.clockIdentity[4]);
-    packet_clock_id = packet_clock_id << 32;
-    packet_clock_id = packet_clock_id + packet_clock_id_low;
-*/
+    clock_private_info->flags |= (1 << clock_is_valid); // valid because it has at least one follow_up
+    struct ptp_follow_up_message *msg = (struct ptp_follow_up_message *)buf;
 
     uint16_t seconds_hi = nctohs(&msg->follow_up.preciseOriginTimestamp[0]);
     uint32_t seconds_low = nctohl(&msg->follow_up.preciseOriginTimestamp[2]);
@@ -240,8 +231,26 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
     preciseOriginTimestamp = preciseOriginTimestamp * 1000000000L;
     preciseOriginTimestamp = preciseOriginTimestamp + nanoseconds;
 
-    // preciseOriginTimestamp is called "t1" in the IEEE spec.
-    // we are using the reception time here as t2, which is a hack
+    // update our sample information
+
+    clock_private_info->samples[clock_private_info->next_sample_goes_here].local_time =
+        reception_time;
+    clock_private_info->samples[clock_private_info->next_sample_goes_here]
+        .clock_time = preciseOriginTimestamp;
+
+    if (clock_private_info->vacant_samples > 0)
+      clock_private_info->vacant_samples--;
+
+    clock_private_info->next_sample_goes_here++;
+    // if we have need to wrap.
+    if (clock_private_info->next_sample_goes_here == MAX_TIMING_SAMPLES)
+      clock_private_info->next_sample_goes_here = 0;
+
+
+//  if ((clock_private_info->flags & (1 << clock_is_master)) != 0) {
+  if (1) {
+    debug(2, "FOLLOWUP from %" PRIx64 ", %s.", clock_private_info->clock_id,
+          &clock_private_info->ip);
 
     // check to see the difference between the previous preciseOriginTimestamp
 
@@ -285,7 +294,7 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
                                // 125 ms is 100 ppm.
           offset = clock_private_info->previous_offset + jitter;
         }
-      } else {
+      } else if ((clock_private_info->flags & (1 << clock_is_master)) != 0) {
         warn("Lost sync with clock %" PRIx64 " at %s. Resynchronising.",
              clock_private_info->clock_id, clock_private_info->ip);
         // leave the offset as it was coming in and take it as a sync time
@@ -305,14 +314,14 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
 
     // clock_private_info->clock_id = packet_clock_id;
     clock_private_info->local_time = reception_time;
-    clock_private_info->origin_time = preciseOriginTimestamp;
+    clock_private_info->source_time = preciseOriginTimestamp;
     clock_private_info->local_to_source_time_offset = offset;
 
     if (old_flags != clock_private_info->flags) {
       update_master();
     } else if ((clock_private_info->flags & (1 << clock_is_master)) != 0) {
       update_master_clock_info(clock_private_info->clock_id, (const char *)&clock_private_info->ip,
-                               reception_time, offset);
+                               reception_time, offset, clock_private_info->mastership_start_time);
       debug(3, "clock: %" PRIx64 ", time: %" PRIu64 ", offset: %" PRId64 ", jitter: %+f ms.",
             clock_private_info->clock_id, reception_time, offset, 0.000001 * jitter);
     }
