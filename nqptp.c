@@ -80,7 +80,7 @@ struct shm_structure *shared_memory = NULL; // this is where public clock info i
 int epoll_fd;
 
 void update_master_clock_info(uint64_t master_clock_id, const char *ip, uint64_t local_time,
-                              uint64_t local_to_master_offset) {
+                              uint64_t local_to_master_offset, uint64_t mastership_start_time) {
   if (shared_memory->master_clock_id != master_clock_id)
     debug(1, "Master clock is: %" PRIx64 ".", master_clock_id);
   int rc = pthread_mutex_lock(&shared_memory->shm_mutex);
@@ -88,7 +88,7 @@ void update_master_clock_info(uint64_t master_clock_id, const char *ip, uint64_t
     warn("Can't acquire mutex to update master clock!");
   if (shared_memory->master_clock_id != master_clock_id) {
     shared_memory->master_clock_id = master_clock_id;
-    shared_memory->master_clock_start_time = local_time;
+    shared_memory->master_clock_start_time = mastership_start_time;
   }
   if (ip != NULL)
     strncpy((char *)&shared_memory->master_clock_ip, ip,
@@ -141,12 +141,12 @@ int main(int argc, char **argv) {
 #ifdef CONFIG_USE_GIT_VERSION_STRING
         if (git_version_string[0] != '\0')
           fprintf(stdout, "Version: %s. Shared Memory Interface Version: %u.\n", git_version_string,
-                  NQPTP_SHM_STRUCTURES_VERSION);
+                NQPTP_SHM_STRUCTURES_VERSION);
         else
 #endif
 
-          fprintf(stdout, "Version: %s. Shared Memory Interface Version: %u.\n", VERSION,
-                  NQPTP_SHM_STRUCTURES_VERSION);
+        fprintf(stdout, "Version: %s. Shared Memory Interface Version: %u.\n", VERSION,
+                NQPTP_SHM_STRUCTURES_VERSION);
         exit(EXIT_SUCCESS);
       } else if (strcmp(argv[i] + 1, "vvv") == 0) {
         debug_level = 3;
