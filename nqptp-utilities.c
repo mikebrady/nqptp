@@ -18,19 +18,15 @@
  */
 
 #include "nqptp-utilities.h"
-#include "general-utilities.h"
-#include "nqptp-ptp-definitions.h"
 #include <errno.h>
-#include <fcntl.h>
-#include <ifaddrs.h>
-#include <linux/if_packet.h>
-#include <linux/net_tstamp.h>
-#include <netdb.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/socket.h>
-#include <sys/types.h>
+#include <fcntl.h>            // fcntl etc.
+#include <ifaddrs.h>          // getifaddrs
+#include <linux/if_packet.h>  // sockaddr_ll
+#include <linux/net_tstamp.h> // SOF_TIMESTAMPING_TX_HARDWARE and friends
+#include <netdb.h>            // getaddrinfo etc.
+#include <stdio.h>            // snprintf
+#include <stdlib.h>           // malloc, free
+#include <string.h>           // memset strcpy, etc.
 
 #include "debug.h"
 

@@ -34,9 +34,9 @@ typedef enum {
 
 // 8 samples per seconds
 #define MAX_TIMING_SAMPLES 47
- typedef struct {
-   uint64_t local_time, clock_time;
- } timing_samples;
+typedef struct {
+  uint64_t local_time, clock_time;
+} timing_samples;
 
 // information about each clock source
 typedef struct {
@@ -62,7 +62,6 @@ typedef struct {
   int vacant_samples; // the number of elements in the timing_samples array that are not yet used
   int next_sample_goes_here; // point to where in the timing samples array the next entries should
                              // go
-
 
   // these are for finding the best clock to use
   // See Figure 27 and 27 pp 89 -- 90 for the Data set comparison algorithm

@@ -20,6 +20,9 @@
 #ifndef NQPTP_H
 #define NQPTP_H
 
+#include <inttypes.h>
+#include <pthread.h>
+
 #include "nqptp-shm-structures.h"
 
 #define MAX_OPEN_SOCKETS 16
@@ -35,4 +38,3 @@ void update_master_clock_info(uint64_t master_clock_id, const char *ip, uint64_t
                               uint64_t local_to_master_offset, uint64_t mastership_start_time);
 
 #endif
-

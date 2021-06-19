@@ -32,7 +32,6 @@
 // The IPs will become the new list of timing peers, replacing any previous
 
 #include <inttypes.h>
-#include <netinet/in.h>
 #include <pthread.h>
 
 struct shm_structure {

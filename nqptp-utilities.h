@@ -19,8 +19,11 @@
 
 #ifndef NQPTP_UTILITIES_H
 #define NQPTP_UTILITIES_H
+
 #include "nqptp.h"
-#include <stddef.h>
+#include <inttypes.h>
+#include <pthread.h>
+
 // functions that are specific to NQPTP
 // general stuff should go in the general-utilities
 

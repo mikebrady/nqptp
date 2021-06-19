@@ -29,38 +29,21 @@
 #include "gitversion.h"
 #endif
 
-#include <arpa/inet.h>
-#include <stdio.h>  //printf
-#include <stdlib.h> //malloc;
-#include <string.h> //memset
-#include <sys/socket.h>
-#include <unistd.h> // close
-
-#include <ifaddrs.h>
-#include <pthread.h>
-#include <sys/types.h>
+#include <arpa/inet.h> // inet_ntop
+#include <stdio.h>     // printf
+#include <stdlib.h>    // malloc;
+#include <string.h>    // memset
 
 #include <errno.h>
-#include <netdb.h>
-#include <time.h>
+#include <unistd.h> // close
 
-#include <linux/if_packet.h>
-#include <net/ethernet.h> /* the L2 protocols */
-#include <sys/ioctl.h>
+#include <fcntl.h>    /* For O_* constants */
+#include <sys/mman.h> // for shared memory stuff
+#include <sys/stat.h> // umask
 
-#include <inttypes.h>
+#include <grp.h> // group stuff
 
-#include <asm/types.h>
-#include <linux/errqueue.h>
-#include <linux/net_tstamp.h>
-
-#include <fcntl.h> /* For O_* constants */
-#include <sys/mman.h>
-#include <sys/stat.h> /* For mode constants */
-
-#include <grp.h>
-
-#include <signal.h>
+#include <signal.h> // SIGTERM and stuff like that
 #include <sys/epoll.h>
 
 #ifndef FIELD_SIZEOF
@@ -141,12 +124,12 @@ int main(int argc, char **argv) {
 #ifdef CONFIG_USE_GIT_VERSION_STRING
         if (git_version_string[0] != '\0')
           fprintf(stdout, "Version: %s. Shared Memory Interface Version: %u.\n", git_version_string,
-                NQPTP_SHM_STRUCTURES_VERSION);
+                  NQPTP_SHM_STRUCTURES_VERSION);
         else
 #endif
 
-        fprintf(stdout, "Version: %s. Shared Memory Interface Version: %u.\n", VERSION,
-                NQPTP_SHM_STRUCTURES_VERSION);
+          fprintf(stdout, "Version: %s. Shared Memory Interface Version: %u.\n", VERSION,
+                  NQPTP_SHM_STRUCTURES_VERSION);
         exit(EXIT_SUCCESS);
       } else if (strcmp(argv[i] + 1, "vvv") == 0) {
         debug_level = 3;

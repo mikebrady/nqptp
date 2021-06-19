@@ -24,6 +24,7 @@
 // specialised stuff should go in the nqptp-utilities
 
 #include <inttypes.h>
+#include <sys/socket.h>
 #include <time.h>
 
 // struct sockaddr_in6 is bigger than struct sockaddr. derp

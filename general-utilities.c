@@ -19,8 +19,8 @@
 
 #include "general-utilities.h"
 #include "debug.h"
-#include <arpa/inet.h>
-#include <string.h>
+#include <arpa/inet.h> // ntohl etc.
+#include <string.h>    // memcpy
 
 void hcton64(uint64_t num, uint8_t *p) {
   uint64_t numc = num;

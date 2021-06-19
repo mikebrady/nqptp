@@ -19,8 +19,8 @@
 
 #include "nqptp-clock-sources.h"
 #include "debug.h"
-#include "nqptp-ptp-definitions.h"
 #include "general-utilities.h"
+#include "nqptp-ptp-definitions.h"
 #include <arpa/inet.h>
 #include <ifaddrs.h>
 #include <string.h>
@@ -165,7 +165,8 @@ void update_master() {
 
   int best_so_far = -1;
   int timing_peer_count = 0;
-  uint32_t acceptance_mask = (1 << clock_is_qualified) | (1 << clock_is_a_timing_peer) | (1 << clock_is_valid);
+  uint32_t acceptance_mask =
+      (1 << clock_is_qualified) | (1 << clock_is_a_timing_peer) | (1 << clock_is_valid);
   for (i = 0; i < MAX_CLOCKS; i++) {
     if ((clocks_private[i].flags & acceptance_mask) == acceptance_mask) {
       // found a possible clock candidate
@@ -210,11 +211,11 @@ void update_master() {
       debug(2, "No timing peer list found");
     else
       debug(1, "No master clock not found!");
-    } else {
-      // we found a master clock
-      clocks_private[best_so_far].flags |= (1 << clock_is_master);
+  } else {
+    // we found a master clock
+    clocks_private[best_so_far].flags |= (1 << clock_is_master);
 
-      if (old_master != best_so_far) {
+    if (old_master != best_so_far) {
       // clang-format off
       // Now we use the last few samples to calculate the best offset for the
       // new master clock.
@@ -299,7 +300,7 @@ void update_master() {
                                clocks_private[best_so_far].mastership_start_time);
       // clang-format on
 
-      clocks_private[best_so_far].previous_offset_time = 0;  // resync
+      clocks_private[best_so_far].previous_offset_time = 0; // resync
     }
   }
 
