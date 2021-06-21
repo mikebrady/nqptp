@@ -27,11 +27,10 @@ $ ./configure
 $ make
 # make install
 ```
-The `make install` creates the `nqptp` group and installs a `systemd` startup script. You should enable it and start it in the normal way. Note that `nqptp` must run in `root` mode to be able to access ports 319 and 320.
+The `make install` installs a `systemd` startup script. You should enable it and start it in the normal way. Note that `nqptp` must run in `root` mode to be able to access ports 319 and 320.
 
 # Notes
-A unix group called `nqptp` is created by the `make install` step. Members of this group have write access to the shared memory interface.
-If you wish to use the shared mutex to ensure records are not altered while you are accessing them, you should open your side of the shared memory interface with read-write permission. Be aware that while your program has the mutex lock, it can halt `nqptp`, so keep any activity while you have the lock very short and very simple, e.g. copying it to local memory. 
+If you wish to use the shared mutex to ensure records are not altered while you are accessing them, you should open your side of the shared memory interface with read-write permission. Be aware that while your program has the mutex lock, it is in a "critical region" wherer it can halt `nqptp`, so keep any activity while you have the lock very short and very simple, e.g. copying it to local memory. 
 
 Clock records not updated for a period are deleted.
 
@@ -40,7 +39,7 @@ Since `nqptp` uses ports 319 and 320, it can not coexist with any other user of 
 # Known Issues
 * It's probably buggy!
 * At present, `nqptp` does not take advantage of hardware timestamping.
-* The daemon is Linux only, and has been developed and tested on a `systemd` Linux only.
+* The daemon has been developed and tested on a `systemd` Linux only.
 
 # Things Can Change
 The `nqptp` daemon is under active development and, consequently, everything here can change, possibly very radically.
