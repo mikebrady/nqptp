@@ -30,7 +30,7 @@
 #endif
 
 #include <arpa/inet.h> // inet_ntop
-#include <stdio.h>     // printf
+#include <stdio.h>     // fprint
 #include <stdlib.h>    // malloc;
 #include <string.h>    // memset
 
@@ -41,10 +41,7 @@
 #include <sys/mman.h> // for shared memory stuff
 #include <sys/stat.h> // umask
 
-#include <grp.h> // group stuff
-
 #include <signal.h> // SIGTERM and stuff like that
-#include <sys/epoll.h>
 
 #ifndef FIELD_SIZEOF
 #define FIELD_SIZEOF(t, f) (sizeof(((t *)0)->f))
@@ -52,8 +49,7 @@
 
 // 8 samples per second
 
-#define BUFLEN 4096    // Max length of buffer
-#define MAX_EVENTS 128 // For epoll
+#define BUFLEN 4096 // Max length of buffer
 
 sockets_open_bundle sockets_open_stuff;
 
@@ -159,8 +155,6 @@ int main(int argc, char **argv) {
 
   epoll_fd = -1;
   shared_memory = NULL;
-  // memset(sources,0,sizeof(sources));
-  // level 0 is no messages, level 3 is most messages -- see debug.h
 
   // control-c (SIGINT) cleanly
   struct sigaction act;
@@ -192,19 +186,11 @@ int main(int argc, char **argv) {
   int shm_fd = -1;
 
   mode_t oldumask = umask(0);
-  struct group *grp = getgrnam("nqptp");
-  if (grp == NULL) {
-    inform("the group \"nqptp\" was not found, will try \"root\" group instead.");
-  }
   shm_fd = shm_open(STORAGE_ID, O_RDWR | O_CREAT, 0666);
   if (shm_fd == -1) {
     die("cannot open shared memory \"%s\".", STORAGE_ID);
   }
   (void)umask(oldumask);
-
-  if (fchown(shm_fd, -1, grp != NULL ? grp->gr_gid : 0) < 0) {
-    warn("failed to set ownership of shared memory \"%s\" to group \"nqptp\".", STORAGE_ID);
-  }
 
   if (ftruncate(shm_fd, sizeof(struct shm_structure)) == -1) {
     die("failed to set size of shared memory \"%s\".", STORAGE_ID);
@@ -239,176 +225,142 @@ int main(int argc, char **argv) {
   // now, get down to business
   if (sockets_open_stuff.sockets_open > 0) {
 
-    struct epoll_event event;
-    int epoll_fd = epoll_create(32);
-
-    if (epoll_fd == -1)
-      die("Failed to create epoll file descriptor\n");
-
-    unsigned int ep;
-    for (ep = 0; ep < sockets_open_stuff.sockets_open; ep++) {
-      // if (sockets[s].number > smax)
-      // smax = sockets[s].number;
-      event.events = EPOLLIN;
-      event.data.fd = sockets_open_stuff.sockets[ep].number;
-      if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, sockets_open_stuff.sockets[ep].number, &event) != 0)
-        die("failed to add socket %d to epoll", sockets_open_stuff.sockets[ep].number);
-      else
-        debug(3, "add socket %d to epoll", sockets_open_stuff.sockets[ep].number);
-    }
-
     while (1) {
+      fd_set readSockSet;
+      struct timeval timeout;
+      FD_ZERO(&readSockSet);
+      int smax = -1;
+      unsigned int s;
+      for (s = 0; s < sockets_open_stuff.sockets_open; s++) {
+        if (sockets_open_stuff.sockets[s].number > smax)
+          smax = sockets_open_stuff.sockets[s].number;
+        FD_SET(sockets_open_stuff.sockets[s].number, &readSockSet);
+      }
 
-      struct epoll_event events[MAX_EVENTS];
-      // the timeout is in milliseconds
-      int event_count = epoll_wait(epoll_fd, events, MAX_EVENTS, 1000);
+      timeout.tv_sec = 0;
+      timeout.tv_usec = 10000; // timeout after ten milliseconds
+      int retval = select(smax + 1, &readSockSet, NULL, NULL, &timeout);
       uint64_t reception_time = get_time_now(); // use this if other methods fail
+      if (retval > 0) {
+        unsigned t;
+        for (t = 0; t < sockets_open_stuff.sockets_open; t++) {
+          int socket_number = sockets_open_stuff.sockets[t].number;
+          if (FD_ISSET(socket_number, &readSockSet)) {
 
-      int t;
-      for (t = 0; t < event_count; t++) {
-        int socket_number = events[t].data.fd;
-        {
+            SOCKADDR from_sock_addr;
+            memset(&from_sock_addr, 0, sizeof(SOCKADDR));
 
-          SOCKADDR from_sock_addr;
-          memset(&from_sock_addr, 0, sizeof(SOCKADDR));
+            struct {
+              struct cmsghdr cm;
+              char control[512];
+            } control;
 
-          struct {
-            struct cmsghdr cm;
-            char control[512];
-          } control;
+            struct msghdr msg;
+            struct iovec iov[1];
+            memset(iov, 0, sizeof(iov));
+            memset(&msg, 0, sizeof(msg));
+            memset(&control, 0, sizeof(control));
 
-          struct msghdr msg;
-          struct iovec iov[1];
-          memset(iov, 0, sizeof(iov));
-          memset(&msg, 0, sizeof(msg));
-          memset(&control, 0, sizeof(control));
+            iov[0].iov_base = buf;
+            iov[0].iov_len = BUFLEN;
 
-          iov[0].iov_base = buf;
-          iov[0].iov_len = BUFLEN;
+            msg.msg_iov = iov;
+            msg.msg_iovlen = 1;
 
-          msg.msg_iov = iov;
-          msg.msg_iovlen = 1;
+            msg.msg_name = &from_sock_addr;
+            msg.msg_namelen = sizeof(from_sock_addr);
+            msg.msg_control = &control;
+            msg.msg_controllen = sizeof(control);
 
-          msg.msg_name = &from_sock_addr;
-          msg.msg_namelen = sizeof(from_sock_addr);
-          msg.msg_control = &control;
-          msg.msg_controllen = sizeof(control);
+            uint16_t receiver_port = 0;
+            // int msgsize = recv(udpsocket_fd, &msg_buffer, 4, 0);
+            recv_len = recvmsg(socket_number, &msg, MSG_DONTWAIT);
 
-          uint16_t receiver_port = 0;
-          // int msgsize = recv(udpsocket_fd, &msg_buffer, 4, 0);
-          recv_len = recvmsg(socket_number, &msg, MSG_DONTWAIT);
-
-          if (recv_len != -1) {
-            // get the receiver port
-            unsigned int jp;
-            for (jp = 0; jp < sockets_open_stuff.sockets_open; jp++) {
-              if (socket_number == sockets_open_stuff.sockets[jp].number)
-                receiver_port = sockets_open_stuff.sockets[jp].port;
-            }
-          }
-          if (recv_len == -1) {
-            if (errno == EAGAIN) {
-              usleep(1000); // this can happen, it seems...
-            } else {
-              debug(1, "recvmsg() error %d", errno);
-            }
-            // check if it's a control port message before checking for the length of the message.
-          } else if (receiver_port == NQPTP_CONTROL_PORT) {
-            handle_control_port_messages(buf, recv_len,
-                                         (clock_source_private_data *)&clocks_private);
-          } else if (recv_len >= (ssize_t)sizeof(struct ptp_common_message_header)) {
-            debug_print_buffer(2, buf, recv_len);
-            debug(3, "Received %d bytes control message on reception.", msg.msg_controllen);
-            // get the time
-            int level, type;
-            struct cmsghdr *cm;
-            struct timespec *ts = NULL;
-            for (cm = CMSG_FIRSTHDR(&msg); cm != NULL; cm = CMSG_NXTHDR(&msg, cm)) {
-              level = cm->cmsg_level;
-              type = cm->cmsg_type;
-              if (SOL_SOCKET == level && SO_TIMESTAMPING == type) {
-                /*
-                                  struct timespec *stamp = (struct timespec *)CMSG_DATA(cm);
-                                  fprintf(stderr, "SO_TIMESTAMPING Rx: ");
-                                  fprintf(stderr, "SW %ld.%09ld\n", (long)stamp->tv_sec,
-                   (long)stamp->tv_nsec); stamp++;
-                                  // skip deprecated HW transformed
-                                  stamp++;
-                                  fprintf(stderr, "SO_TIMESTAMPING Rx: ");
-                                  fprintf(stderr, "HW raw %ld.%09ld\n", (long)stamp->tv_sec,
-                   (long)stamp->tv_nsec);
-                */
-                ts = (struct timespec *)CMSG_DATA(cm);
-                reception_time = ts->tv_sec;
-                reception_time = reception_time * 1000000000;
-                reception_time = reception_time + ts->tv_nsec;
-              } else {
-                debug(3, "Can't establish a reception time -- falling back on get_time_now().");
+            if (recv_len != -1) {
+              // get the receiver port
+              unsigned int jp;
+              for (jp = 0; jp < sockets_open_stuff.sockets_open; jp++) {
+                if (socket_number == sockets_open_stuff.sockets[jp].number)
+                  receiver_port = sockets_open_stuff.sockets[jp].port;
               }
             }
+            if (recv_len == -1) {
+              if (errno == EAGAIN) {
+                usleep(1000); // this can happen, it seems...
+              } else {
+                debug(1, "recvmsg() error %d", errno);
+              }
+              // check if it's a control port message before checking for the length of the
+              // message.
+            } else if (receiver_port == NQPTP_CONTROL_PORT) {
+              handle_control_port_messages(buf, recv_len,
+                                           (clock_source_private_data *)&clocks_private);
+            } else if (recv_len >= (ssize_t)sizeof(struct ptp_common_message_header)) {
+              debug_print_buffer(2, buf, recv_len);
+              debug(3, "Received %d bytes control message on reception.", msg.msg_controllen);
 
-            // check its credentials
-            // the sending and receiving ports must be the same (i.e. 319 -> 319 or 320 -> 320)
+              // check its credentials
+              // the sending and receiving ports must be the same (i.e. 319 -> 319 or 320 -> 320)
 
-            // initialise the connection info
-            void *sender_addr = NULL;
-            uint16_t sender_port = 0;
+              // initialise the connection info
+              void *sender_addr = NULL;
+              uint16_t sender_port = 0;
 
-            sa_family_t connection_ip_family = from_sock_addr.SAFAMILY;
+              sa_family_t connection_ip_family = from_sock_addr.SAFAMILY;
 
 #ifdef AF_INET6
-            if (connection_ip_family == AF_INET6) {
-              struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *)&from_sock_addr;
-              sender_addr = &(sa6->sin6_addr);
-              sender_port = ntohs(sa6->sin6_port);
-            }
-#endif
-            if (connection_ip_family == AF_INET) {
-              struct sockaddr_in *sa4 = (struct sockaddr_in *)&from_sock_addr;
-              sender_addr = &(sa4->sin_addr);
-              sender_port = ntohs(sa4->sin_port);
-            }
-
-            //            if ((sender_port == receiver_port) && (connection_ip_family == AF_INET)) {
-            if (sender_port == receiver_port) {
-
-              char sender_string[256];
-              memset(sender_string, 0, sizeof(sender_string));
-              inet_ntop(connection_ip_family, sender_addr, sender_string, sizeof(sender_string));
-              // now, find or create a record for this ip
-              int the_clock = find_clock_source_record(
-                  sender_string, (clock_source_private_data *)&clocks_private);
-              // not sure about requiring a Sync before creating it...
-              if ((the_clock == -1) && ((buf[0] & 0xF) == Sync)) {
-                the_clock = create_clock_source_record(
-                    sender_string, (clock_source_private_data *)&clocks_private);
+              if (connection_ip_family == AF_INET6) {
+                struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *)&from_sock_addr;
+                sender_addr = &(sa6->sin6_addr);
+                sender_port = ntohs(sa6->sin6_port);
               }
-              if (the_clock != -1) {
-                clocks_private[the_clock].time_of_last_use =
-                    reception_time; // for garbage collection
-                switch (buf[0] & 0xF) {
-                case Announce:
-                  // needed to reject messages coming from self
-                  update_clock_self_identifications((clock_source_private_data *)&clocks_private);
-                  handle_announce(buf, recv_len, &clocks_private[the_clock], reception_time);
-                  break;
-                case Follow_Up: {
-                  handle_follow_up(buf, recv_len, &clocks_private[the_clock], reception_time);
-                } break;
-                default:
-                  debug_print_buffer(2, buf, recv_len); // unusual messages will have debug level 1.
-                  break;
+#endif
+              if (connection_ip_family == AF_INET) {
+                struct sockaddr_in *sa4 = (struct sockaddr_in *)&from_sock_addr;
+                sender_addr = &(sa4->sin_addr);
+                sender_port = ntohs(sa4->sin_port);
+              }
+
+              if (sender_port == receiver_port) {
+
+                char sender_string[256];
+                memset(sender_string, 0, sizeof(sender_string));
+                inet_ntop(connection_ip_family, sender_addr, sender_string, sizeof(sender_string));
+                // now, find or create a record for this ip
+                int the_clock = find_clock_source_record(
+                    sender_string, (clock_source_private_data *)&clocks_private);
+                // not sure about requiring a Sync before creating it...
+                if ((the_clock == -1) && ((buf[0] & 0xF) == Sync)) {
+                  the_clock = create_clock_source_record(
+                      sender_string, (clock_source_private_data *)&clocks_private);
+                }
+                if (the_clock != -1) {
+                  clocks_private[the_clock].time_of_last_use =
+                      reception_time; // for garbage collection
+                  switch (buf[0] & 0xF) {
+                  case Announce:
+                    // needed to reject messages coming from self
+                    update_clock_self_identifications((clock_source_private_data *)&clocks_private);
+                    handle_announce(buf, recv_len, &clocks_private[the_clock], reception_time);
+                    break;
+                  case Follow_Up: {
+                    handle_follow_up(buf, recv_len, &clocks_private[the_clock], reception_time);
+                  } break;
+                  default:
+                    debug_print_buffer(2, buf,
+                                       recv_len); // unusual messages will have debug level 1.
+                    break;
+                  }
                 }
               }
             }
           }
         }
       }
-      manage_clock_sources(reception_time, (clock_source_private_data *)&clocks_private);
+      if (retval >= 0)
+        manage_clock_sources(reception_time, (clock_source_private_data *)&clocks_private);
     }
   }
-
-  // here, close all the sockets...
-
+  // should never get to here, unless no sockets were ever opened.
   return 0;
 }

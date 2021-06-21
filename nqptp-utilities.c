@@ -19,30 +19,15 @@
 
 #include "nqptp-utilities.h"
 #include <errno.h>
-#include <fcntl.h>            // fcntl etc.
-#include <ifaddrs.h>          // getifaddrs
-#include <linux/if_packet.h>  // sockaddr_ll
-#include <linux/net_tstamp.h> // SOF_TIMESTAMPING_TX_HARDWARE and friends
-#include <netdb.h>            // getaddrinfo etc.
-#include <stdio.h>            // snprintf
-#include <stdlib.h>           // malloc, free
-#include <string.h>           // memset strcpy, etc.
+#include <fcntl.h>           // fcntl etc.
+#include <ifaddrs.h>         // getifaddrs
+#include <linux/if_packet.h> // sockaddr_ll
+#include <netdb.h>           // getaddrinfo etc.
+#include <stdio.h>           // snprintf
+#include <stdlib.h>          // malloc, free
+#include <string.h>          // memset strcpy, etc.
 
 #include "debug.h"
-
-#ifndef SO_TIMESTAMPING
-#define SO_TIMESTAMPING 37
-#define SCM_TIMESTAMPING SO_TIMESTAMPING
-#endif
-#ifndef SO_TIMESTAMPNS
-#define SO_TIMESTAMPNS 35
-#endif
-#ifndef SIOCGSTAMPNS
-#define SIOCGSTAMPNS 0x8907
-#endif
-#ifndef SIOCSHWTSTAMP
-#define SIOCSHWTSTAMP 0x89b0
-#endif
 
 void open_sockets_at_port(uint16_t port, sockets_open_bundle *sockets_open_stuff) {
   // open up sockets for UDP ports 319 and 320
@@ -81,15 +66,6 @@ void open_sockets_at_port(uint16_t port, sockets_open_bundle *sockets_open_stuff
 
       if (!ret)
         ret = bind(fd, p->ai_addr, p->ai_addrlen);
-
-      int so_timestamping_flags = SOF_TIMESTAMPING_TX_HARDWARE | SOF_TIMESTAMPING_TX_SOFTWARE |
-                                  SOF_TIMESTAMPING_RX_HARDWARE | SOF_TIMESTAMPING_RX_SOFTWARE |
-                                  SOF_TIMESTAMPING_SOFTWARE | SOF_TIMESTAMPING_RAW_HARDWARE;
-      // int so_timestamping_flags =  SOF_TIMESTAMPING_RX_SOFTWARE ;
-
-      if (ret == 0)
-        ret = setsockopt(fd, SOL_SOCKET, SO_TIMESTAMPING, &so_timestamping_flags,
-                         sizeof(so_timestamping_flags));
 
       int flags = fcntl(fd, F_GETFL);
       fcntl(fd, F_SETFL, flags | O_NONBLOCK);
@@ -201,39 +177,5 @@ uint64_t get_self_clock_id() {
   // it's in Network Byte Order!
   uint64_t result;
   memcpy(&result, local_clock_id, sizeof(result));
-  // debug(1,"local_clock_id: %" PRIx64 ".", result);
   return result;
 }
-
-/*
-void send_delay_req_message(int socket_number, SOCKADDR *from_sock_addr, uint16_t seqno) {
-  struct ptp_delay_req_message m;
-  memset(&m, 0, sizeof(m));
-  m.header.transportSpecificAndMessageID = 0x11; // Table 19, pp 125, 1 byte field
-  m.header.reservedAndVersionPTP = 0x02;         // 1 byte field
-  m.header.messageLength = htons(44);
-  m.header.flags = htons(0x608);
-  m.header.sourcePortID = htons(1);
-  m.header.controlOtherMessage = 5; // 1 byte field
-  m.header.sequenceId = htons(seqno);
-  m.header.logMessagePeriod = 0x7f; // Table 24, pp 128
-  uint64_t sid = get_self_clock_id();
-  memcpy(&m.header.clockIdentity, &sid, sizeof(uint64_t));
-  struct msghdr header;
-  struct iovec io;
-  memset(&header, 0, sizeof(header));
-  memset(&io, 0, sizeof(io));
-  header.msg_name = from_sock_addr;
-  header.msg_namelen = sizeof(SOCKADDR);
-  header.msg_iov = &io;
-  header.msg_iov->iov_base = &m;
-  header.msg_iov->iov_len = sizeof(m);
-  header.msg_iovlen = 1;
-  uint64_t transmission_time = get_time_now(); // in case nothing better works
-  if ((sendmsg(socket_number, &header, 0)) == -1) {
-    debug(1, "Error in sendmsg [errno = %d]", errno);
-  } else {
-    debug_print_buffer(1, (char *)&m, sizeof(m));
-  }
-}
-*/

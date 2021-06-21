@@ -243,86 +243,73 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
   if (clock_private_info->next_sample_goes_here == MAX_TIMING_SAMPLES)
     clock_private_info->next_sample_goes_here = 0;
 
-  //  if ((clock_private_info->flags & (1 << clock_is_master)) != 0) {
-  if (1) {
-    debug(2, "FOLLOWUP from %" PRIx64 ", %s.", clock_private_info->clock_id,
-          &clock_private_info->ip);
+  debug(2, "FOLLOWUP from %" PRIx64 ", %s.", clock_private_info->clock_id, &clock_private_info->ip);
 
-    // check to see the difference between the previous preciseOriginTimestamp
+  uint64_t offset = preciseOriginTimestamp - reception_time;
 
-    // update the shared clock information
-    uint64_t offset = preciseOriginTimestamp - reception_time;
+  int64_t jitter = 0;
+  // if there has never been a previous follow_up or if it was long ago (more than 15 seconds),
+  // don't use it
+  if (clock_private_info->previous_offset_time != 0) {
+    int64_t time_since_last_sync = reception_time - clock_private_info->last_sync_time;
+    int64_t sync_timeout = 60000000000; // nanoseconds
+    debug(2, "Sync interval: %f seconds.", 0.000000001 * time_since_last_sync);
+    if (time_since_last_sync < sync_timeout) {
 
-    int64_t jitter = 0;
-    // if there has never been a previous follow_up or if it was long ago (more than 15 seconds),
-    // don't use it
-    if (clock_private_info->previous_offset_time != 0) {
-      int64_t time_since_last_sync = reception_time - clock_private_info->last_sync_time;
-      int64_t sync_timeout = 60000000000; // nanoseconds
-      debug(2, "Sync interval: %f seconds.", 0.000000001 * time_since_last_sync);
-      if (time_since_last_sync < sync_timeout) {
-        // do acceptance checking
-        // if the new offset is greater, by any amount, than the old offset
-        // accept it
-        // if it is less than the new offset by up to what a reasonable drift divergence would allow
-        // accept it
-        // otherwise, reject it
-        // drift divergence of 1000 ppm (which is huge) would give 125 us per 125 ms.
+      // Do acceptance checking.
+      // If the new offset is greater, by any amount, than the old offset,
+      // accept it.
+      // If it is less than the new offset by up to what a reasonable drift divergence would allow,
+      // accept it.
+      // Otherwise, reject it
 
-        jitter = offset - clock_private_info->previous_offset;
+      // A drift divergence of 100 ppm would give 12.5 us per 125 ms.
 
-        uint64_t jitter_timing_interval = reception_time - clock_private_info->previous_offset_time;
-        long double jitterppm = 0.0;
-        if (jitter_timing_interval != 0) {
-          jitterppm = (0.001 * (jitter * 1000000000)) / jitter_timing_interval;
-          debug(2, "jitter: %" PRId64 " in: %" PRId64 " ns, %+f ppm ", jitter,
-                jitter_timing_interval, jitterppm);
-        }
-        if (jitterppm >= -1000) {
-          // we take a positive or small negative jitter as a sync event
-          // as we have a new figure for the difference between the local clock and the
-          // remote clock which is almost the same or greater than our previous estimate
-          clock_private_info->last_sync_time = reception_time;
-        } else {
-          // let our previous estimate drop by some parts-per-million
-          // jitter = (-100 * jitter_timing_interval) / 1000000;
-          jitter = -10 * 1000; // this is nanoseconds in, supposedly, 125 milliseconds. 12.5 us /
-                               // 125 ms is 100 ppm.
-          offset = clock_private_info->previous_offset + jitter;
-        }
-      } else if ((clock_private_info->flags & (1 << clock_is_master)) != 0) {
-        warn("Lost sync with clock %" PRIx64 " at %s. Resynchronising.",
-             clock_private_info->clock_id, clock_private_info->ip);
-        // leave the offset as it was coming in and take it as a sync time
-        clock_private_info->last_sync_time = reception_time;
+      jitter = offset - clock_private_info->previous_offset;
+
+      uint64_t jitter_timing_interval = reception_time - clock_private_info->previous_offset_time;
+      long double jitterppm = 0.0;
+      if (jitter_timing_interval != 0) {
+        jitterppm = (0.001 * (jitter * 1000000000)) / jitter_timing_interval;
+        debug(2, "jitter: %" PRId64 " in: %" PRId64 " ns, %+f ppm ", jitter, jitter_timing_interval,
+              jitterppm);
       }
-    } else {
+      if (jitterppm >= -1000) {
+        // we take a positive or small negative jitter as a sync event
+        // as we have a new figure for the difference between the local clock and the
+        // remote clock which is almost the same or greater than our previous estimate
+        clock_private_info->last_sync_time = reception_time;
+      } else {
+        // let our previous estimate drop fall back by this many nanoseconds
+        jitter = -10 * 1000; // this is nanoseconds in, supposedly, 125 milliseconds. 12.5 us /
+                             // 125 ms is 100 ppm.
+        offset = clock_private_info->previous_offset + jitter;
+      }
+    } else if ((clock_private_info->flags & (1 << clock_is_master)) != 0) {
+      warn("Lost sync with clock %" PRIx64 " at %s. Resynchronising.", clock_private_info->clock_id,
+           clock_private_info->ip);
+      // leave the offset as it was coming in and take it as a sync time
       clock_private_info->last_sync_time = reception_time;
     }
-
-    // uint64_t estimated_offset = offset;
-
-    uint32_t old_flags = clock_private_info->flags;
-
-    // if ((clock_private_info->flags & (1 << clock_is_valid)) == 0) {
-    //  debug(1, "clock %" PRIx64 " is now valid at: %s", packet_clock_id, clock_private_info->ip);
-    //}
-
-    // clock_private_info->clock_id = packet_clock_id;
-    clock_private_info->local_time = reception_time;
-    clock_private_info->source_time = preciseOriginTimestamp;
-    clock_private_info->local_to_source_time_offset = offset;
-
-    if (old_flags != clock_private_info->flags) {
-      update_master();
-    } else if ((clock_private_info->flags & (1 << clock_is_master)) != 0) {
-      update_master_clock_info(clock_private_info->clock_id, (const char *)&clock_private_info->ip,
-                               reception_time, offset, clock_private_info->mastership_start_time);
-      debug(3, "clock: %" PRIx64 ", time: %" PRIu64 ", offset: %" PRId64 ", jitter: %+f ms.",
-            clock_private_info->clock_id, reception_time, offset, 0.000001 * jitter);
-    }
-
-    clock_private_info->previous_offset = offset;
-    clock_private_info->previous_offset_time = reception_time;
+  } else {
+    clock_private_info->last_sync_time = reception_time;
   }
+
+  uint32_t old_flags = clock_private_info->flags;
+
+  clock_private_info->local_time = reception_time;
+  clock_private_info->source_time = preciseOriginTimestamp;
+  clock_private_info->local_to_source_time_offset = offset;
+
+  if (old_flags != clock_private_info->flags) {
+    update_master();
+  } else if ((clock_private_info->flags & (1 << clock_is_master)) != 0) {
+    update_master_clock_info(clock_private_info->clock_id, (const char *)&clock_private_info->ip,
+                             reception_time, offset, clock_private_info->mastership_start_time);
+    debug(3, "clock: %" PRIx64 ", time: %" PRIu64 ", offset: %" PRId64 ", jitter: %+f ms.",
+          clock_private_info->clock_id, reception_time, offset, 0.000001 * jitter);
+  }
+
+  clock_private_info->previous_offset = offset;
+  clock_private_info->previous_offset_time = reception_time;
 }

@@ -53,7 +53,7 @@ typedef struct {
   // for garbage collection
   uint64_t time_of_last_use; // will be taken out of use if not used for a while and not in the
                              // timing peer group
-  // (A member of the timing peer group could appear and disappear)
+  // (A member of the timing peer group could appear and disappear so will not be gc'ed.)
   // for Announce Qualification
   uint64_t announce_times[4]; // we'll check qualification and currency using these
   int is_one_of_ours;         // true if it is one of our own clocks
