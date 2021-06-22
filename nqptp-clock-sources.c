@@ -26,6 +26,11 @@
 #include <string.h>
 #include <sys/types.h>
 
+#ifdef CONFIG_FOR_FREEBSD
+#include <sys/socket.h>
+#include <netinet/in.h>
+#endif
+
 #ifndef FIELD_SIZEOF
 #define FIELD_SIZEOF(t, f) (sizeof(((t *)0)->f))
 #endif

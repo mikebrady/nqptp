@@ -21,7 +21,19 @@
 #include <errno.h>
 #include <fcntl.h>           // fcntl etc.
 #include <ifaddrs.h>         // getifaddrs
+
+#ifdef CONFIG_FOR_LINUX
 #include <linux/if_packet.h> // sockaddr_ll
+#endif
+
+#ifdef CONFIG_FOR_FREEBSD
+#include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <net/if_types.h>
+#include <net/if_dl.h>
+#endif
+
 #include <netdb.h>           // getaddrinfo etc.
 #include <stdio.h>           // snprintf
 #include <stdlib.h>          // malloc, free
@@ -141,6 +153,7 @@ void debug_print_buffer(int level, char *buf, size_t buf_len) {
   }
 }
 
+
 uint64_t get_self_clock_id() {
   // make up a clock ID based on an interfaces' MAC
   char local_clock_id[8];
@@ -153,6 +166,7 @@ uint64_t get_self_clock_id() {
   } else {
     int found = 0;
     for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
+#ifdef AF_PACKET
       if ((ifa->ifa_addr) && (ifa->ifa_addr->sa_family == AF_PACKET)) {
         struct sockaddr_ll *s = (struct sockaddr_ll *)ifa->ifa_addr;
         if ((strcmp(ifa->ifa_name, "lo") != 0) && (found == 0)) {
@@ -161,6 +175,24 @@ uint64_t get_self_clock_id() {
           found = 1;
         }
       }
+#else
+// This AF_LINK stuff hasn't been tested!
+#ifdef AF_LINK
+       struct sockaddr_dl * sdl = (struct sockaddr_dl *) ifa->ifa_addr;
+       if ((sdl) && (sdl->sdl_family == AF_LINK)) {
+        if (sdl->sdl_type == IFT_ETHER) {
+          char *s = LLADDR(sdl);
+          int i;
+          for (i = 0; i < sdl->sdl_alen; i++) {
+            debug(1,"char %d: \"%c\".", i, *s);
+            // *t++ = (uint8_t)*s++;   
+          }   
+          found = 1;
+        }
+      }
+
+#endif
+#endif
     }
     freeifaddrs(ifaddr);
   }

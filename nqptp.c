@@ -43,6 +43,11 @@
 
 #include <signal.h> // SIGTERM and stuff like that
 
+#ifdef CONFIG_FOR_FREEBSD
+#include <sys/socket.h>
+#include <netinet/in.h>
+#endif
+
 #ifndef FIELD_SIZEOF
 #define FIELD_SIZEOF(t, f) (sizeof(((t *)0)->f))
 #endif
@@ -195,9 +200,19 @@ int main(int argc, char **argv) {
   if (ftruncate(shm_fd, sizeof(struct shm_structure)) == -1) {
     die("failed to set size of shared memory \"%s\".", STORAGE_ID);
   }
+
+#ifdef CONFIG_FOR_FREEBSD
+  shared_memory =
+      (struct shm_structure *)mmap(NULL, sizeof(struct shm_structure), PROT_READ | PROT_WRITE,
+                                   MAP_SHARED, shm_fd, 0);
+#endif
+
+#ifdef CONFIG_FOR_LINUX
   shared_memory =
       (struct shm_structure *)mmap(NULL, sizeof(struct shm_structure), PROT_READ | PROT_WRITE,
                                    MAP_LOCKED | MAP_SHARED, shm_fd, 0);
+#endif
+
   if (shared_memory == (struct shm_structure *)-1) {
     die("failed to mmap shared memory \"%s\".", STORAGE_ID);
   }
