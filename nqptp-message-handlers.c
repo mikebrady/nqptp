@@ -304,6 +304,14 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
   if (old_flags != clock_private_info->flags) {
     update_master();
   } else if ((clock_private_info->flags & (1 << clock_is_master)) != 0) {
+    // if there were no prior samples, then this must be the first sample with this clock
+    // as master. Therefore set its mastership_start_time to the reception time.
+    if (clock_private_info->vacant_samples == (MAX_TIMING_SAMPLES - 1)) {
+      debug(2,"Clock %" PRIx64 " became a bus master with no valid prior samples -- this is its first one.", clock_private_info->clock_id);
+      clock_private_info->mastership_start_time = reception_time;
+    }
+
+
     update_master_clock_info(clock_private_info->clock_id, (const char *)&clock_private_info->ip,
                              reception_time, offset, clock_private_info->mastership_start_time);
     debug(3, "clock: %" PRIx64 ", time: %" PRIu64 ", offset: %" PRId64 ", jitter: %+f ms.",

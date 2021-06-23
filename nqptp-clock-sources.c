@@ -255,11 +255,20 @@ void update_master() {
         // present, definitive, sample:
 
         uint64_t oldest_acceptable_time = time_now - 10000000000; // only go back this far (ns)
+
+        int64_t cko = age_of_oldest_legitimate_sample - oldest_acceptable_time;
+        if (cko < 0)
+          debug(1,"starting sample is too old: %" PRId64 " ns.", cko);
+
         int i;
         for (i = 0; i < number_of_samples; i++) {
+
+          int64_t age = time_now - clocks_private[best_so_far].samples[i].local_time;
+
           int64_t age_relative_to_oldest_acceptable_time =
               clocks_private[best_so_far].samples[i].local_time - oldest_acceptable_time;
           if (age_relative_to_oldest_acceptable_time > 0) {
+            debug(3, "sample accepted at %f seconds old.", 0.000000001 * age);
             if (clocks_private[best_so_far].samples[i].local_time <
                 age_of_oldest_legitimate_sample) {
               age_of_oldest_legitimate_sample = clocks_private[best_so_far].samples[i].local_time;
@@ -284,27 +293,35 @@ void update_master() {
               debug(3, "sample too far into the future");
             }
           } else {
-            debug(3, "sample too old");
+            debug(3, "sample too old at %f seconds old.", 0.000000001 * age);
           }
         }
       }
 
-      clocks_private[best_so_far].mastership_start_time = age_of_oldest_legitimate_sample;
-      int64_t offset_difference =
-          best_offset_so_far - clocks_private[best_so_far].local_to_source_time_offset;
+      // it is possible that the clock has been designated master without any valid recent samples
+      // in which case the number of valid samples will be zero.
+      if (samples_checked == 0) {
+        debug(2,"clock %" PRIx64 " has become master without any recent samples...", clocks_private[best_so_far].clock_id);
+        // having no samples is a flag for the first FOLLOW_UP to set the bus mastership start time
+        // to its own reception time.
+        clocks_private[best_so_far].vacant_samples = MAX_TIMING_SAMPLES; // discard all samples
+      } else {
+        clocks_private[best_so_far].mastership_start_time = age_of_oldest_legitimate_sample;
+        int64_t offset_difference =
+            best_offset_so_far - clocks_private[best_so_far].local_to_source_time_offset;
 
-      debug(2, "Lookback difference: %f ms with %d samples checked of %d samples total.",
-            0.000001 * offset_difference, samples_checked, number_of_samples);
-      clocks_private[best_so_far].local_to_source_time_offset = best_offset_so_far;
+        debug(2, "Lookback difference: %f ms with %d samples checked of %d samples total.",
+              0.000001 * offset_difference, samples_checked, number_of_samples);
+        clocks_private[best_so_far].local_to_source_time_offset = best_offset_so_far;
 
-      debug(2, "Master sampling started %f ms before becoming master.",
-            0.000001 * (clocks_private[best_so_far].local_time - age_of_oldest_legitimate_sample));
-      update_master_clock_info(clocks_private[best_so_far].clock_id,
-                               (const char *)&clocks_private[best_so_far].ip,
-                               clocks_private[best_so_far].local_time,
-                               clocks_private[best_so_far].local_to_source_time_offset,
-                               clocks_private[best_so_far].mastership_start_time);
-
+        debug(2, "Master sampling started %f ms before becoming master.",
+              0.000001 * (clocks_private[best_so_far].local_time - age_of_oldest_legitimate_sample));
+        update_master_clock_info(clocks_private[best_so_far].clock_id,
+                                 (const char *)&clocks_private[best_so_far].ip,
+                                 clocks_private[best_so_far].local_time,
+                                 clocks_private[best_so_far].local_to_source_time_offset,
+                                 clocks_private[best_so_far].mastership_start_time);
+      }
       clocks_private[best_so_far].previous_offset_time = 0; // resync
     }
   }
