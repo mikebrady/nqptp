@@ -66,7 +66,7 @@ int epoll_fd;
 void update_master_clock_info(uint64_t master_clock_id, const char *ip, uint64_t local_time,
                               uint64_t local_to_master_offset, uint64_t mastership_start_time) {
   if (shared_memory->master_clock_id != master_clock_id)
-    debug(1, "Master clock is: %" PRIx64 ".", master_clock_id);
+    debug_log_nqptp_status(1);
   int rc = pthread_mutex_lock(&shared_memory->shm_mutex);
   if (rc != 0)
     warn("Can't acquire mutex to update master clock!");
