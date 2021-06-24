@@ -37,9 +37,10 @@
 #include <errno.h>
 #include <unistd.h> // close
 
-#include <fcntl.h>    /* For O_* constants */
-#include <sys/mman.h> // for shared memory stuff
-#include <sys/stat.h> // umask
+#include <fcntl.h>      // For O_* constants
+#include <sys/mman.h>   // for shared memory stuff
+#include <sys/stat.h>   // umask
+#include <sys/select.h> // for fd_set
 
 #include <signal.h> // SIGTERM and stuff like that
 
