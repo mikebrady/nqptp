@@ -38,6 +38,8 @@
 #include <unistd.h> // close
 
 #include <fcntl.h>    /* For O_* constants */
+#include <sys/select.h> // for fd_set
+#include <time.h> // for timeval
 #include <sys/mman.h> // for shared memory stuff
 #include <sys/stat.h> // umask
 
