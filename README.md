@@ -1,9 +1,9 @@
 # NQPTP – Not Quite PTP
-`nqptp` monitors PTP traffic. Briefly, `nqptp` monitors timing data from any [PTP](https://en.wikipedia.org/wiki/Precision_Time_Protocol) clocks – up to 32 – it sees on ports 319 and 320. It maintains records for each clock, identified by its Clock ID and IP.
+Briefly, `nqptp` monitors timing data from any [PTP](https://en.wikipedia.org/wiki/Precision_Time_Protocol) clocks – up to 32 – it sees on ports 319 and 320. It maintains records for each clock, identified by Clock ID and IP.
 
 Information about the *master clock* is provided in a [POSIX shared memory](https://pubs.opengroup.org/onlinepubs/007908799/xsh/shm_open.html) interface at `/nqptp`. 
 
-A timing peer list can be sent to `nqptp` over port 9000. The list consists of the letter 'T' followed by a space-separated list of the IP numbers of the timing peers. The list *completely replaces* any existing timing peer list.
+A timing peer list can be sent to `nqptp` over port 9000. The list consists of the letter `T` followed by a space-separated list of the IP numbers of the timing peers. The list replaces any existing timing peer list.
 
 
 Here are details of the interface:
