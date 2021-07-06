@@ -34,10 +34,10 @@ if test "x$build_freebsd" = "xyes" ; then
 fi
 
 AC_CHECK_PROGS([GIT], [git])
-if test -n "$GIT"; then
+if test -n "$GIT" && test -e ".git/index" ; then
   AC_DEFINE([CONFIG_USE_GIT_VERSION_STRING], 1, [Use the version string produced by running 'git describe --dirty'.])
 fi
-AM_CONDITIONAL([USE_GIT], [test -n "$GIT"])
+AM_CONDITIONAL([USE_GIT_VERSION], [test -n "$GIT" && test -e ".git/index" ])
 
 AC_CONFIG_SRCDIR([nqptp.c])
 AC_CONFIG_HEADERS([config.h])
