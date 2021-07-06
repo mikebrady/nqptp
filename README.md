@@ -39,12 +39,12 @@ Clock records not updated for a period are deleted.
 Since `nqptp` uses ports 319 and 320, it can not coexist with any other user of those ports, such as full PTP service daemons.
 
 # Known Issues
+* `nqptp` has not been checked or audited for security issues. Note that it must run in `root` mode.
 * It's probably buggy!
-* At present, `nqptp` does not take advantage of hardware timestamping.
-* The daemon has been developed and tested on a `systemd` Linux only.
+* `nqptp` does not take advantage of hardware timestamping.
 
 # Things Can Change
 The `nqptp` daemon is under active development and, consequently, everything here can change, possibly very radically.
 
 # NQPTP is not PTP!
-`nqptp` uses just a part of the [IEEE 1588-2008](https://standards.ieee.org/standard/1588-2008.html) protocol. It is not a PTP clock of any kind.
+`nqptp` uses just a part of the [IEEE 1588-2008](https://standards.ieee.org/standard/1588-2008.html) protocol. It is not a PTP clock.
