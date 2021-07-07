@@ -265,7 +265,6 @@ void update_master() {
 
     if (old_master != best_so_far) {
       // if the naster is a new one
-      clocks_private[best_so_far].previous_offset_time = 0; // resync
       clocks_private[best_so_far].flags |= (1 << clock_is_becoming_master);
     } else {
       // if its the same one as before
