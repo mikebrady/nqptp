@@ -4,12 +4,40 @@
 AC_PREREQ([2.68])
 AC_INIT([nqptp], [1.1-dev], [4265913+mikebrady@users.noreply.github.com])
 AM_INIT_AUTOMAKE
+AC_CANONICAL_HOST
+
+build_linux=no
+build_freebsd=no
+
+# Detect the target system
+case "${host_os}" in
+    linux*)
+        build_linux=yes
+        ;;
+    freebsd*)
+        build_freebsd=yes
+        ;;    
+    *)
+        AC_MSG_ERROR(["OS $host_os is not supported"])
+        ;;
+esac
+
+# Pass the conditionals to automake
+AM_CONDITIONAL([BUILD_FOR_LINUX], [test "$build_linux" = "yes"])
+AM_CONDITIONAL([BUILD_FOR_FREEBSD], [test "$build_freebsd" = "yes"])
+
+if test "x$build_linux" = "xyes" ; then
+  AC_DEFINE([CONFIG_FOR_LINUX], 1, [Build for Linux.])
+fi
+if test "x$build_freebsd" = "xyes" ; then
+  AC_DEFINE([CONFIG_FOR_FREEBSD], 1, [Build for FreeBSD.])
+fi
 
 AC_CHECK_PROGS([GIT], [git])
-if test -n "$GIT"; then
+if test -n "$GIT" && test -e ".git/index" ; then
   AC_DEFINE([CONFIG_USE_GIT_VERSION_STRING], 1, [Use the version string produced by running 'git describe --dirty'.])
 fi
-AM_CONDITIONAL([USE_GIT], [test -n "$GIT"])
+AM_CONDITIONAL([USE_GIT_VERSION], [test -n "$GIT" && test -e ".git/index" ])
 
 AC_CONFIG_SRCDIR([nqptp.c])
 AC_CONFIG_HEADERS([config.h])

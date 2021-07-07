@@ -1,10 +1,10 @@
 bin_PROGRAMS = nqptp
 nqptp_SOURCES = nqptp.c nqptp-clock-sources.c nqptp-message-handlers.c nqptp-utilities.c general-utilities.c debug.c
 
-AM_CFLAGS = -fno-common -Wno-multichar -Wall -Wextra -Wno-clobbered -Wno-psabi -pthread
+AM_CFLAGS = -fno-common -Wall -Wextra -pthread --include=config.h
 CLEANFILES =
 
-if USE_GIT
+if USE_GIT_VERSION
 nqptp.c: gitversion.h
 gitversion.h: .git/index
 	echo "// Do not edit!" > gitversion.h
@@ -18,5 +18,9 @@ endif
 
 
 install-exec-hook:
+if BUILD_FOR_LINUX
 	[ -e /lib/systemd/system ] || mkdir -p /lib/systemd/system
 	cp nqptp.service /lib/systemd/system
+endif
+ # no installer for FreeBSD yet
+ 

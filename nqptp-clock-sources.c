@@ -26,6 +26,11 @@
 #include <string.h>
 #include <sys/types.h>
 
+#ifdef CONFIG_FOR_FREEBSD
+#include <sys/socket.h>
+#include <netinet/in.h>
+#endif
+
 #ifndef FIELD_SIZEOF
 #define FIELD_SIZEOF(t, f) (sizeof(((t *)0)->f))
 #endif
@@ -150,6 +155,48 @@ void update_clock_self_identifications(clock_source_private_data *clocks_private
   freeifaddrs(ifap);
 }
 
+void debug_log_nqptp_status(int level) {
+  int records_in_use = 0;
+  int i;
+  for (i = 0; i < MAX_CLOCKS; i++)
+    if (clocks_private[i].in_use != 0)
+      records_in_use++;
+  if (records_in_use > 0) {
+    debug(level, "");
+    debug(level, "Current NQPTP Status:");
+    uint32_t peer_mask = (1 << clock_is_a_timing_peer);
+    uint32_t peer_clock_mask = peer_mask | (1 << clock_is_valid);
+    uint32_t peer_master_mask = peer_clock_mask | (1 << clock_is_master);
+    uint32_t peer_becoming_master_mask = peer_clock_mask | (1 << clock_is_becoming_master);
+    uint32_t non_peer_clock_mask = (1 << clock_is_valid);
+    uint32_t non_peer_master_mask = non_peer_clock_mask | (1 << clock_is_master);
+    for (i = 0; i < MAX_CLOCKS; i++) {
+      if (clocks_private[i].in_use != 0) {
+        if ((clocks_private[i].flags & peer_master_mask) == peer_master_mask) {
+          debug(level, "  Peer Master:            %" PRIx64 "  %s.", clocks_private[i].clock_id,
+                clocks_private[i].ip);
+        } else if ((clocks_private[i].flags & peer_becoming_master_mask) == peer_becoming_master_mask) {
+          debug(level, "  Peer Becoming Master:   %" PRIx64 "  %s.", clocks_private[i].clock_id,
+                clocks_private[i].ip);
+        } else if ((clocks_private[i].flags & peer_clock_mask) == peer_clock_mask) {
+          debug(level, "  Peer Clock:             %" PRIx64 "  %s.", clocks_private[i].clock_id,
+                clocks_private[i].ip);
+        } else if ((clocks_private[i].flags & peer_mask) == peer_mask) {
+          debug(level, "  Peer:                                     %s.", clocks_private[i].ip);
+        } else if ((clocks_private[i].flags & non_peer_master_mask) == non_peer_master_mask) {
+          debug(level, "  Non Peer Master:        %" PRIx64 "  %s.", clocks_private[i].clock_id,
+                clocks_private[i].ip);
+        } else if ((clocks_private[i].flags & non_peer_clock_mask) == non_peer_clock_mask) {
+          debug(level, "  Non Peer Clock:         %16" PRIx64 "  %s.", clocks_private[i].clock_id,
+                clocks_private[i].ip);
+        } else {
+          debug(level, "  Non Peer Record:                          %s.", clocks_private[i].ip);
+        }
+      }
+    }
+  }
+}
+
 void update_master() {
   // note -- this is definitely incomplete -- it doesn't do the full
   // data set comparison specified by the IEEE 588 standard
@@ -161,6 +208,7 @@ void update_master() {
       if (old_master == -1)
         old_master = i;                                 // find old master
     clocks_private[i].flags &= ~(1 << clock_is_master); // turn them all off
+    clocks_private[i].flags &= ~(1 << clock_is_becoming_master); // turn them all off
   }
 
   int best_so_far = -1;
@@ -213,129 +261,16 @@ void update_master() {
       debug(1, "No master clock not found!");
   } else {
     // we found a master clock
-    clocks_private[best_so_far].flags |= (1 << clock_is_master);
+
 
     if (old_master != best_so_far) {
-      uint64_t oldest_acceptable_master_clock_time =
-          clocks_private[best_so_far].source_time + 1150000000; // ns.
-
-      // we will try to improve on this present, definitive, local_to_source_time_offset we have
-      int changes_made = 0;
-
-      uint64_t best_offset_so_far = clocks_private[best_so_far].local_to_source_time_offset;
-      uint64_t age_of_oldest_legitimate_sample = clocks_private[best_so_far].local_time;
-
-      int number_of_samples = MAX_TIMING_SAMPLES - clocks_private[best_so_far].vacant_samples;
-      int samples_checked = 0;
-      if (number_of_samples > 0) {
-        debug(3, "Number of samples: %d.", number_of_samples);
-        uint64_t time_now = get_time_now();
-
-        // Now we use the last few samples to calculate the best offset for the
-        // new master clock.
-
-        // The time of the oldest sample we use will become the time of the start of the
-        // mastership
-
-        // We will accept samples that would make the local-to-clock offset greatest,
-        // provided they are not too old and that they don't push the current clock time
-        // more than, say, 1000 ms plus one sample interval (i.e about 1.125 seconds) in the future.
-
-        // This present sample is the only time estimate we have when the clock is definitely a
-        // master, so we use it to eliminate any previous time estimates, made when the clock wasn't
-        // designated a master, that would put it more than, say, a 1.15 seconds further into the
-        // future.
-
-        // Allow the samples to give a valid master clock time up to this much later than the
-        // present, definitive, sample:
-
-        uint64_t oldest_acceptable_time = time_now - 10000000000; // only go back this far (ns)
-        int i;
-        for (i = 0; i < number_of_samples; i++) {
-          int64_t age_relative_to_oldest_acceptable_time =
-              clocks_private[best_so_far].samples[i].local_time - oldest_acceptable_time;
-          if (age_relative_to_oldest_acceptable_time > 0) {
-            if (clocks_private[best_so_far].samples[i].local_time <
-                age_of_oldest_legitimate_sample) {
-              age_of_oldest_legitimate_sample = clocks_private[best_so_far].samples[i].local_time;
-            }
-            uint64_t possible_offset = clocks_private[best_so_far].samples[i].clock_time -
-                                       clocks_private[best_so_far].samples[i].local_time;
-            uint64_t possible_master_clock_time =
-                clocks_private[best_so_far].local_time + possible_offset;
-            int64_t age_relative_to_oldest_acceptable_master_clock_time =
-                possible_master_clock_time - oldest_acceptable_master_clock_time;
-            if (age_relative_to_oldest_acceptable_master_clock_time <= 0) {
-              samples_checked++;
-              // so, the sample was not obtained too far in the past
-              // and it would not push the estimated master clock_time too far into the future
-              // so, if it is greater than the best_offset_so_far, then make it the new one
-              if (possible_offset > best_offset_so_far) {
-                debug(3, "new best offset");
-                best_offset_so_far = possible_offset;
-                changes_made++;
-              }
-            } else {
-              debug(3, "sample too far into the future");
-            }
-          } else {
-            debug(3, "sample too old");
-          }
-        }
-      }
-
-      clocks_private[best_so_far].mastership_start_time = age_of_oldest_legitimate_sample;
-      int64_t offset_difference =
-          best_offset_so_far - clocks_private[best_so_far].local_to_source_time_offset;
-
-      debug(2, "Lookback difference: %f ms with %d samples checked of %d samples total.",
-            0.000001 * offset_difference, samples_checked, number_of_samples);
-      clocks_private[best_so_far].local_to_source_time_offset = best_offset_so_far;
-
-      debug(2, "Master sampling started %f ms before becoming master.",
-            0.000001 * (clocks_private[best_so_far].local_time - age_of_oldest_legitimate_sample));
-      update_master_clock_info(clocks_private[best_so_far].clock_id,
-                               (const char *)&clocks_private[best_so_far].ip,
-                               clocks_private[best_so_far].local_time,
-                               clocks_private[best_so_far].local_to_source_time_offset,
-                               clocks_private[best_so_far].mastership_start_time);
-
+      // if the naster is a new one
       clocks_private[best_so_far].previous_offset_time = 0; // resync
+      clocks_private[best_so_far].flags |= (1 << clock_is_becoming_master);
+    } else {
+      // if its the same one as before
+      clocks_private[best_so_far].flags |= (1 << clock_is_master);
     }
   }
-
-  int records_in_use = 0;
-  for (i = 0; i < MAX_CLOCKS; i++)
-    if (clocks_private[i].in_use != 0)
-      records_in_use++;
-  if (records_in_use > 0) {
-    debug(1, "");
-    debug(1, "Current NQPTP Status:");
-    uint32_t peer_mask = (1 << clock_is_a_timing_peer);
-    uint32_t peer_clock_mask = peer_mask | (1 << clock_is_valid);
-    uint32_t peer_master_mask = peer_clock_mask | (1 << clock_is_master);
-    uint32_t non_peer_clock_mask = (1 << clock_is_valid);
-    uint32_t non_peer_master_mask = non_peer_clock_mask | (1 << clock_is_master);
-    for (i = 0; i < MAX_CLOCKS; i++) {
-      if (clocks_private[i].in_use != 0) {
-        if ((clocks_private[i].flags & peer_master_mask) == peer_master_mask) {
-          debug(1, "  Peer Master:     %" PRIx64 "  %s.", clocks_private[i].clock_id,
-                clocks_private[i].ip);
-        } else if ((clocks_private[i].flags & peer_clock_mask) == peer_clock_mask) {
-          debug(1, "  Peer Clock:      %" PRIx64 "  %s.", clocks_private[i].clock_id,
-                clocks_private[i].ip);
-        } else if ((clocks_private[i].flags & peer_mask) == peer_mask) {
-          debug(1, "  Peer:                              %s.", clocks_private[i].ip);
-        } else if ((clocks_private[i].flags & non_peer_master_mask) == non_peer_master_mask) {
-          debug(1, "  Non Peer Master: %" PRIx64 "  %s.", clocks_private[i].clock_id,
-                clocks_private[i].ip);
-        } else if ((clocks_private[i].flags & non_peer_clock_mask) == non_peer_clock_mask) {
-          debug(1, "  Non Peer Clock:  %" PRIx64 "  %s.", clocks_private[i].clock_id,
-                clocks_private[i].ip);
-        } else {
-          debug(1, "  Non Peer Record:                   %s.", clocks_private[i].ip);
-        }
-      }
-    }
-  }
+  debug_log_nqptp_status(1);
 }

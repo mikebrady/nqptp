@@ -45,6 +45,11 @@
 
 #include <signal.h> // SIGTERM and stuff like that
 
+#ifdef CONFIG_FOR_FREEBSD
+#include <sys/socket.h>
+#include <netinet/in.h>
+#endif
+
 #ifndef FIELD_SIZEOF
 #define FIELD_SIZEOF(t, f) (sizeof(((t *)0)->f))
 #endif
@@ -63,7 +68,7 @@ int epoll_fd;
 void update_master_clock_info(uint64_t master_clock_id, const char *ip, uint64_t local_time,
                               uint64_t local_to_master_offset, uint64_t mastership_start_time) {
   if (shared_memory->master_clock_id != master_clock_id)
-    debug(1, "Master clock is: %" PRIx64 ".", master_clock_id);
+    debug_log_nqptp_status(1);
   int rc = pthread_mutex_lock(&shared_memory->shm_mutex);
   if (rc != 0)
     warn("Can't acquire mutex to update master clock!");
@@ -197,9 +202,19 @@ int main(int argc, char **argv) {
   if (ftruncate(shm_fd, sizeof(struct shm_structure)) == -1) {
     die("failed to set size of shared memory \"%s\".", STORAGE_ID);
   }
+
+#ifdef CONFIG_FOR_FREEBSD
+  shared_memory =
+      (struct shm_structure *)mmap(NULL, sizeof(struct shm_structure), PROT_READ | PROT_WRITE,
+                                   MAP_SHARED, shm_fd, 0);
+#endif
+
+#ifdef CONFIG_FOR_LINUX
   shared_memory =
       (struct shm_structure *)mmap(NULL, sizeof(struct shm_structure), PROT_READ | PROT_WRITE,
                                    MAP_LOCKED | MAP_SHARED, shm_fd, 0);
+#endif
+
   if (shared_memory == (struct shm_structure *)-1) {
     die("failed to mmap shared memory \"%s\".", STORAGE_ID);
   }

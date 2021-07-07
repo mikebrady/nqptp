@@ -29,6 +29,7 @@ typedef enum {
   clock_is_valid,
   clock_is_a_timing_peer,
   clock_is_qualified,
+  clock_is_becoming_master,
   clock_is_master
 } clock_flags;
 
@@ -88,5 +89,7 @@ void manage_clock_sources(uint64_t reception_time, clock_source_private_data *cl
 extern clock_source_private_data clocks_private[MAX_CLOCKS];
 
 void update_master();
+
+void debug_log_nqptp_status(int level);
 
 #endif
