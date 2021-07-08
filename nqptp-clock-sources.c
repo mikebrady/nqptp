@@ -129,29 +129,34 @@ void update_clock_self_identifications(clock_source_private_data *clocks_private
   int response = getifaddrs(&ifap);
   if (response == 0) {
     for (ifa = ifap; ifa; ifa = ifa->ifa_next) {
-      family = ifa->ifa_addr->sa_family;
-#ifdef AF_INET6
-      if (ifa->ifa_addr && family == AF_INET6) {
-        struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *)ifa->ifa_addr;
-        addr = &(sa6->sin6_addr);
-      }
-#endif
-      if (ifa->ifa_addr && family == AF_INET) {
-        struct sockaddr_in *sa4 = (struct sockaddr_in *)ifa->ifa_addr;
-        addr = &(sa4->sin_addr);
-      }
-      char ip_string[64];
-      memset(ip_string, 0, sizeof(ip_string));
-      if (addr != NULL)
-        inet_ntop(family, addr, ip_string, sizeof(ip_string));
-      if (strlen(ip_string) != 0) {
-        // now set the is_one_of_ours flag of any clock with this ip
-        for (i = 0; i < MAX_CLOCKS; i++) {
-          if (strcasecmp(ip_string, clocks_private_info[i].ip) == 0) {
-            debug(2, "found an entry for one of our clocks");
-            clocks_private_info[i].is_one_of_ours = 1;
+      struct sockaddr *my_ifa_addr = ifa->ifa_addr;
+      if (my_ifa_addr) {
+        family = my_ifa_addr->sa_family;
+  #ifdef AF_INET6
+        if (family == AF_INET6) {
+          struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *)my_ifa_addr;
+          addr = &(sa6->sin6_addr);
+        }
+  #endif
+        if (family == AF_INET) {
+          struct sockaddr_in *sa4 = (struct sockaddr_in *)my_ifa_addr;
+          addr = &(sa4->sin_addr);
+        }
+        char ip_string[64];
+        memset(ip_string, 0, sizeof(ip_string));
+        if (addr != NULL)
+          inet_ntop(family, addr, ip_string, sizeof(ip_string));
+        if (strlen(ip_string) != 0) {
+          // now set the is_one_of_ours flag of any clock with this ip
+          for (i = 0; i < MAX_CLOCKS; i++) {
+            if (strcasecmp(ip_string, clocks_private_info[i].ip) == 0) {
+              debug(2, "found an entry for one of our clocks");
+              clocks_private_info[i].is_one_of_ours = 1;
+            }
           }
         }
+      } else {
+        debug(1,"NULL ifa->ifa_addr. Probably harmless.");
       }
     }
     freeifaddrs(ifap);
