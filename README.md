@@ -34,6 +34,9 @@ Version without git build information:
 Version: 1.1-dev. Shared Memory Interface Version: 5.
 ```
 ### Build and Install
+
+Note that you will need superuser privileges to install, enable and start the daemon.
+
 ```
 $ git clone https://github.com/mikebrady/nqptp.git
 $ cd nqptp
@@ -42,7 +45,14 @@ $ ./configure
 $ make
 # make install
 ```
-The `make install` installs a `systemd` startup script. You should enable it and start it in the normal way. Note that `nqptp` must run in `root` mode to be able to access ports 319 and 320.
+The `make install` installs a `systemd` startup script. You should enable it and start it in the normal way:
+
+```
+# systemctl enable nqptp
+# systemctl start nqptp
+```
+
+Note that `nqptp` must run in `root` mode to be able to access ports 319 and 320.
 
 # Notes
 If you wish to use the shared mutex to ensure records are not altered while you are accessing them, you should open your side of the shared memory interface with read-write permission. Be aware that while your program has the mutex lock, it is in a "critical region" where it can halt `nqptp`, so keep any activity while you have the lock very short and very simple, e.g. copying it to local memory. 
