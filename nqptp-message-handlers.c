@@ -245,6 +245,11 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
 
   debug(2, "FOLLOWUP from %" PRIx64 ", %s.", clock_private_info->clock_id, &clock_private_info->ip);
   uint64_t offset = preciseOriginTimestamp - reception_time;
+  
+  clock_private_info->local_time = reception_time;
+  clock_private_info->source_time = preciseOriginTimestamp;
+  clock_private_info->local_to_source_time_offset = offset;
+  
   int64_t jitter = 0;
 
     if ((clock_private_info->flags & (1 << clock_is_becoming_master)) != 0) {
@@ -336,6 +341,7 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
             0.000001 * (reception_time - age_of_oldest_legitimate_sample));
       clock_private_info->flags &= ~(1 << clock_is_becoming_master);
       clock_private_info->flags |= 1 << clock_is_master;
+      clock_private_info->previous_offset_time = 0;
     } else if (clock_private_info->previous_offset_time != 0) {
       // i.e. if it's not becoming a master and there has been a previous follow_up
     int64_t time_since_last_sync = reception_time - clock_private_info->last_sync_time;
@@ -373,7 +379,7 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
         offset = clock_private_info->previous_offset + jitter;
       }
     } else if ((clock_private_info->flags & (1 << clock_is_master)) != 0) {
-      warn("Lost sync with clock %" PRIx64 " at %s. Resynchronising.", clock_private_info->clock_id,
+      debug(1, "Lost sync with clock %" PRIx64 " at %s. Resynchronising.", clock_private_info->clock_id,
            clock_private_info->ip);
       // leave the offset as it was coming in and take it as a sync time
       clock_private_info->last_sync_time = reception_time;
@@ -381,10 +387,6 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
   } else {
     clock_private_info->last_sync_time = reception_time;
   }
-
-  clock_private_info->local_time = reception_time;
-  clock_private_info->source_time = preciseOriginTimestamp;
-  clock_private_info->local_to_source_time_offset = offset;
 
   if ((clock_private_info->flags & (1 << clock_is_master)) != 0) {
     update_master_clock_info(clock_private_info->clock_id, (const char *)&clock_private_info->ip,
