@@ -35,7 +35,7 @@ Version: 1.1-dev. Shared Memory Interface Version: 5.
 ```
 ### Build and Install
 ```
-$ git clone git@github.com:mikebrady/nqptp.git
+$ git clone https://github.com/mikebrady/nqptp.git
 $ cd nqptp
 $ autoreconf -fi
 $ ./configure
