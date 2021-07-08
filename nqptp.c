@@ -314,8 +314,7 @@ int main(int argc, char **argv) {
                                            (clock_source_private_data *)&clocks_private);
             } else if (recv_len >= (ssize_t)sizeof(struct ptp_common_message_header)) {
               debug_print_buffer(2, buf, recv_len);
-              debug(3, "Received %d bytes control message on reception.", msg.msg_controllen);
-
+              
               // check its credentials
               // the sending and receiving ports must be the same (i.e. 319 -> 319 or 320 -> 320)
 
