@@ -66,7 +66,7 @@ typedef struct {
 
   // these are for finding the best clock to use
   // See Figure 27 and 27 pp 89 -- 90 for the Data set comparison algorithm
-
+  uint16_t clock_port_number; // used along with the clock_id as the portIdentity
   uint8_t grandmasterPriority1;
   uint32_t grandmasterQuality; // class/accuracy/variance -- lower is better
   uint8_t grandmasterClass;

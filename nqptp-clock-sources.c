@@ -22,14 +22,14 @@
 #include "general-utilities.h"
 #include "nqptp-ptp-definitions.h"
 #include <arpa/inet.h>
+#include <errno.h>
 #include <ifaddrs.h>
 #include <string.h>
 #include <sys/types.h>
-#include <errno.h>
 
 #ifdef CONFIG_FOR_FREEBSD
-#include <sys/socket.h>
 #include <netinet/in.h>
+#include <sys/socket.h>
 #endif
 
 #ifndef FIELD_SIZEOF
@@ -132,12 +132,12 @@ void update_clock_self_identifications(clock_source_private_data *clocks_private
       struct sockaddr *my_ifa_addr = ifa->ifa_addr;
       if (my_ifa_addr) {
         family = my_ifa_addr->sa_family;
-  #ifdef AF_INET6
+#ifdef AF_INET6
         if (family == AF_INET6) {
           struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *)my_ifa_addr;
           addr = &(sa6->sin6_addr);
         }
-  #endif
+#endif
         if (family == AF_INET) {
           struct sockaddr_in *sa4 = (struct sockaddr_in *)my_ifa_addr;
           addr = &(sa4->sin_addr);
@@ -156,12 +156,12 @@ void update_clock_self_identifications(clock_source_private_data *clocks_private
           }
         }
       } else {
-        debug(1,"NULL ifa->ifa_addr. Probably harmless.");
+        debug(1, "NULL ifa->ifa_addr. Probably harmless.");
       }
     }
     freeifaddrs(ifap);
   } else {
-    debug(1,"getifaddrs error - %s.", strerror(errno));
+    debug(1, "getifaddrs error - %s.", strerror(errno));
   }
 }
 
@@ -185,7 +185,8 @@ void debug_log_nqptp_status(int level) {
         if ((clocks_private[i].flags & peer_master_mask) == peer_master_mask) {
           debug(level, "  Peer Master:            %" PRIx64 "  %s.", clocks_private[i].clock_id,
                 clocks_private[i].ip);
-        } else if ((clocks_private[i].flags & peer_becoming_master_mask) == peer_becoming_master_mask) {
+        } else if ((clocks_private[i].flags & peer_becoming_master_mask) ==
+                   peer_becoming_master_mask) {
           debug(level, "  Peer Becoming Master:   %" PRIx64 "  %s.", clocks_private[i].clock_id,
                 clocks_private[i].ip);
         } else if ((clocks_private[i].flags & peer_clock_mask) == peer_clock_mask) {
@@ -207,17 +208,62 @@ void debug_log_nqptp_status(int level) {
   }
 }
 
+int uint32_cmp(uint32_t a, uint32_t b, const char *cause) {
+  // returns -1 if a is less than b, 0 if a = b, +1 if a is greater than b
+  if (a == b) {
+    return 0;
+  } else {
+    debug(2, "Best Master Clock algorithm deciding factor: %s. Values: %u, %u.", cause, a, b);
+    if (a < b)
+      return -1;
+    else
+      return 1;
+  }
+}
+
+int uint64_cmp(uint64_t a, uint64_t b, const char *cause) {
+  // returns -1 if a is less than b, 0 if a = b, +1 if a is greater than b
+  if (a == b) {
+    return 0;
+  } else {
+    debug(2, "Best Master Clock algorithm deciding factor: %s. Values: %" PRIx64 ", %" PRIx64 ".",
+          cause, a, b);
+    if (a < b)
+      return -1;
+    else
+      return 1;
+  }
+}
+
 void update_master() {
-  // note -- this is definitely incomplete -- it doesn't do the full
-  // data set comparison specified by the IEEE 588 standard
+
+  // This implements the IEEE 1588-2008 best master clock algorithm.
+
+  // However, since nqptp is not a ptp clock, some of it doesn't apply.
+  // Specifically, the Identity of Receiver stuff doesn't apply, since the
+  // program is merely monitoring Announce message data and isn't a PTP clock itself
+  // and thus does not have any kind or receiver identity itself.
+
+  // Clock information coming from the same clock over IPv4 and IPv6 should have different
+  // port numbers.
+
+  // Figure 28 can be therefore be simplified considerably:
+
+  // Since nqptp can not be a receiver, and since nqptp can not originate a clock
+  // (and anyway nqptp filters out packets coming from self)
+  // we can do a single comparison of stepsRemoved and pick the shorter, if any.
+
+  // Figure 28 reduces to checking steps removed and then, if necessary, checking identities.
+  // If we see two identical sets of information, it is an error,
+  // but we leave things as they are.
   int old_master = -1;
   // find the current master clock if there is one and turn off all mastership
   int i;
   for (i = 0; i < MAX_CLOCKS; i++) {
     if ((clocks_private[i].flags & (1 << clock_is_master)) != 0)
       if (old_master == -1)
-        old_master = i;                                 // find old master
-    clocks_private[i].flags &= ~(1 << clock_is_master); // turn them all off
+        old_master = i;                                          // find old master
+    clocks_private[i].flags &= ~(1 << clock_is_master);          // turn them all off
     clocks_private[i].flags &= ~(1 << clock_is_becoming_master); // turn them all off
   }
 
@@ -229,32 +275,58 @@ void update_master() {
     if ((clocks_private[i].flags & acceptance_mask) == acceptance_mask) {
       // found a possible clock candidate
       timing_peer_count++;
+      int outcome;
       if (best_so_far == -1) {
         best_so_far = i;
       } else {
-        // do the data set comparison detailed in Figure 27 and Figure 28 on pp89-90
+        // Do the data set comparison detailed in Figure 27 and Figure 28 on pp89-90
         if (clocks_private[i].grandmasterIdentity ==
             clocks_private[best_so_far].grandmasterIdentity) {
-          // should implement Figure 28 here
-        } else if (clocks_private[i].grandmasterPriority1 <
-                   clocks_private[best_so_far].grandmasterPriority1) {
-          best_so_far = i;
-        } else if (clocks_private[i].grandmasterClass <
-                   clocks_private[best_so_far].grandmasterClass) {
-          best_so_far = i;
-        } else if (clocks_private[i].grandmasterAccuracy <
-                   clocks_private[best_so_far].grandmasterAccuracy) {
-          best_so_far = i;
-        } else if (clocks_private[i].grandmasterVariance <
-                   clocks_private[best_so_far].grandmasterVariance) {
-          best_so_far = i;
-        } else if (clocks_private[i].grandmasterPriority2 <
-                   clocks_private[best_so_far].grandmasterPriority2) {
-          best_so_far = i;
-        } else if (clocks_private[i].grandmasterIdentity <
-                   clocks_private[best_so_far].grandmasterIdentity) {
-          best_so_far = i;
+          // Do the relevant part of Figure 28:
+          outcome = uint32_cmp(clocks_private[i].stepsRemoved,
+                               clocks_private[best_so_far].stepsRemoved, "steps removed");
+          // we need to check the portIdentify, which is the clock_id and the clock_port_number
+          if (outcome == 0)
+            outcome = uint64_cmp(clocks_private[i].clock_id, clocks_private[best_so_far].clock_id,
+                                 "clock id");
+          if (outcome == 0)
+            outcome =
+                uint32_cmp(clocks_private[i].clock_port_number,
+                           clocks_private[best_so_far].clock_port_number, "clock port number");
+          if (outcome == 0) {
+            debug(1,
+                  "Best Master Clock algorithm: two separate but identical potential clock "
+                  "masters: %" PRIx64 ".",
+                  clocks_private[best_so_far].clock_id);
+          }
+
+        } else {
+          outcome =
+              uint32_cmp(clocks_private[i].grandmasterPriority1,
+                         clocks_private[best_so_far].grandmasterPriority1, "grandmasterPriority1");
+          if (outcome == 0)
+            outcome = uint32_cmp(clocks_private[i].grandmasterClass,
+                                 clocks_private[best_so_far].grandmasterClass, "grandmasterClass");
+          if (outcome == 0)
+            outcome =
+                uint32_cmp(clocks_private[i].grandmasterAccuracy,
+                           clocks_private[best_so_far].grandmasterAccuracy, "grandmasterAccuracy");
+          if (outcome == 0)
+            outcome =
+                uint32_cmp(clocks_private[i].grandmasterVariance,
+                           clocks_private[best_so_far].grandmasterVariance, "grandmasterVariance");
+          if (outcome == 0)
+            outcome = uint32_cmp(clocks_private[i].grandmasterPriority2,
+                                 clocks_private[best_so_far].grandmasterPriority2,
+                                 "grandmasterPriority2");
+          if (outcome == 0)
+            // this can't fail, as it's a condition of entering this section that they are different
+            outcome =
+                uint64_cmp(clocks_private[i].grandmasterIdentity,
+                           clocks_private[best_so_far].grandmasterIdentity, "grandmasterIdentity");
         }
+        if (outcome == -1)
+          best_so_far = i;
       }
     }
   }
@@ -262,7 +334,7 @@ void update_master() {
     // no master clock
     if (old_master != -1) {
       // but there was a master clock, so remove it
-      debug(1, "shm interface -- remove master clock designation");
+      debug(2, "Remove master clock.");
       update_master_clock_info(0, NULL, 0, 0, 0);
     }
     if (timing_peer_count == 0)
@@ -271,7 +343,6 @@ void update_master() {
       debug(1, "No master clock not found!");
   } else {
     // we found a master clock
-
 
     if (old_master != best_so_far) {
       // if the naster is a new one

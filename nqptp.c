@@ -37,17 +37,17 @@
 #include <errno.h>
 #include <unistd.h> // close
 
-#include <fcntl.h>    /* For O_* constants */
+#include <fcntl.h>      /* For O_* constants */
+#include <sys/mman.h>   // for shared memory stuff
 #include <sys/select.h> // for fd_set
-#include <time.h> // for timeval
-#include <sys/mman.h> // for shared memory stuff
-#include <sys/stat.h> // umask
+#include <sys/stat.h>   // umask
+#include <time.h>       // for timeval
 
 #include <signal.h> // SIGTERM and stuff like that
 
 #ifdef CONFIG_FOR_FREEBSD
-#include <sys/socket.h>
 #include <netinet/in.h>
+#include <sys/socket.h>
 #endif
 
 #ifndef FIELD_SIZEOF
@@ -204,9 +204,8 @@ int main(int argc, char **argv) {
   }
 
 #ifdef CONFIG_FOR_FREEBSD
-  shared_memory =
-      (struct shm_structure *)mmap(NULL, sizeof(struct shm_structure), PROT_READ | PROT_WRITE,
-                                   MAP_SHARED, shm_fd, 0);
+  shared_memory = (struct shm_structure *)mmap(NULL, sizeof(struct shm_structure),
+                                               PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
 #endif
 
 #ifdef CONFIG_FOR_LINUX
@@ -314,7 +313,7 @@ int main(int argc, char **argv) {
                                            (clock_source_private_data *)&clocks_private);
             } else if (recv_len >= (ssize_t)sizeof(struct ptp_common_message_header)) {
               debug_print_buffer(2, buf, recv_len);
-              
+
               // check its credentials
               // the sending and receiving ports must be the same (i.e. 319 -> 319 or 320 -> 320)
 
