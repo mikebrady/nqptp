@@ -1,7 +1,7 @@
 # NQPTP – Not Quite PTP
-Briefly, `nqptp` monitors timing data from any [PTP](https://en.wikipedia.org/wiki/Precision_Time_Protocol) clocks – up to 32 – it sees on ports 319 and 320. It maintains records for each clock, identified by Clock ID and IP.
+`nqptp` is a daemon that monitors timing data from any [PTP](https://en.wikipedia.org/wiki/Precision_Time_Protocol) clocks – up to 32 – it sees on ports 319 and 320. It maintains records for each clock, identified by Clock ID and IP.
 
-A timing peer list can be sent to `nqptp` over port 9000. The list consists of the letter `T` followed by a space-separated list of the IP numbers of the timing peers. The list replaces any existing timing peer list.
+A _timing peer list_ can be sent to `nqptp` over port 9000. The list consists of the letter `T` followed by a space-separated list of the IP numbers of the timing peers. The list replaces any existing timing peer list.
 
 Information about the timing peer list's *master clock* is provided via a [POSIX shared memory](https://pubs.opengroup.org/onlinepubs/007908799/xsh/shm_open.html) interface at `/nqptp`. 
 
@@ -22,6 +22,10 @@ struct shm_structure {
 
 # Installation
 
+This guide is for a recent Linux system with the `systemd` startup system.
+
+As usual, you should ensure everything is up to date.
+
 #### Please use `git`!
 As you probably know, you can download the repository in two ways: (1) using `git` to clone it  -- recommended -- or (2) downloading the repository as a ZIP archive. Please us the `git` method. The reason it that when you use `git`,
 the build process can incorporate the `git` build information in the version string you get when you execute the command `$ nqptp -V`.
@@ -34,18 +38,28 @@ Version without git build information:
 Version: 1.1-dev. Shared Memory Interface Version: 5.
 ```
 ### Build and Install
+
+Note that you will need superuser privileges to install, enable and start the daemon.
+
 ```
-$ git clone git@github.com:mikebrady/nqptp.git
+$ git clone https://github.com/mikebrady/nqptp.git
 $ cd nqptp
 $ autoreconf -fi
 $ ./configure
 $ make
 # make install
 ```
-The `make install` installs a `systemd` startup script. You should enable it and start it in the normal way. Note that `nqptp` must run in `root` mode to be able to access ports 319 and 320.
+The `make install` installs a `systemd` startup script. You should enable it and start it in the normal way:
+
+```
+# systemctl enable nqptp
+# systemctl start nqptp
+```
+
+Note that `nqptp` must run in `root` mode to be able to access ports 319 and 320.
 
 # Notes
-If you wish to use the shared mutex to ensure records are not altered while you are accessing them, you should open your side of the shared memory interface with read-write permission. Be aware that while your program has the mutex lock, it is in a "critical region" where it can halt `nqptp`, so keep any activity while you have the lock very short and very simple, e.g. copying it to local memory. 
+If you wish to use the shared mutex to ensure records are not altered while you are accessing them, you should open your side of the shared memory interface with read-write permission. Be aware that while your program has the mutex lock, it is in a "critical region" where it can halt `nqptp`, so keep any activity while you have the lock very short and very simple, e.g. copying the contents of shared memory to local memory. 
 
 Clock records not updated for a period are deleted.
 
