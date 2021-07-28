@@ -45,11 +45,11 @@ Note that you will need superuser privileges to install, enable and start the da
 $ git clone https://github.com/mikebrady/nqptp.git
 $ cd nqptp
 $ autoreconf -fi
-$ ./configure
+$ ./configure --with-systemd-startup
 $ make
 # make install
 ```
-The `make install` installs a `systemd` startup script. You should enable it and start it in the normal way:
+The `make install` installs a `systemd` startup script as requested. You should enable it and start it in the normal way:
 
 ```
 # systemctl enable nqptp
