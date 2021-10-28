@@ -338,17 +338,17 @@ void update_master() {
       update_master_clock_info(0, NULL, 0, 0, 0);
     }
     if (timing_peer_count == 0)
-      debug(2, "No timing peer list found");
+      debug(2, "no valid qualified clocks ");
     else
-      debug(1, "No master clock not found!");
+      debug(1, "no master clock!");
   } else {
     // we found a master clock
 
     if (old_master != best_so_far) {
-      // if the naster is a new one
+      // if the master is a new one
       clocks_private[best_so_far].flags |= (1 << clock_is_becoming_master);
     } else {
-      // if its the same one as before
+      // if it's the same one as before
       clocks_private[best_so_far].flags |= (1 << clock_is_master);
     }
   }

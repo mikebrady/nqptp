@@ -62,6 +62,24 @@ sockets_open_bundle sockets_open_stuff;
 
 int master_clock_index = -1;
 
+typedef struct {
+  uint64_t trigger_time;
+  uint64_t (*task)(uint64_t nominal_call_time, void * private_data);
+} timed_task_t;
+
+#define TIMED_TASKS 2
+
+timed_task_t timed_tasks[TIMED_TASKS];
+
+
+uint64_t sample_task(uint64_t call_time, void *private_data) {
+  int *i = (int *)private_data;
+  debug(1,"sample_task %d called.", *i);
+  uint64_t next_time = call_time;
+  next_time = next_time + 1000000000;
+  return next_time;
+}
+
 struct shm_structure *shared_memory = NULL; // this is where public clock info is available
 int epoll_fd;
 
@@ -237,6 +255,13 @@ int main(int argc, char **argv) {
   if (err != 0) {
     die("mutex initialization failed - %s.", strerror(errno));
   }
+  
+  // start the timed tasks
+  
+  timed_tasks[0].trigger_time = get_time_now() + 1000000000;
+  timed_tasks[0].task = sample_task;
+  timed_tasks[1].trigger_time = get_time_now() + 10000000000;
+  timed_tasks[1].task = sample_task;
 
   // now, get down to business
   if (sockets_open_stuff.sockets_open > 0) {
@@ -374,6 +399,16 @@ int main(int argc, char **argv) {
       }
       if (retval >= 0)
         manage_clock_sources(reception_time, (clock_source_private_data *)&clocks_private);
+      int i;
+      for (i = 0; i<TIMED_TASKS; i++) {
+        if (timed_tasks[i].trigger_time != 0) {
+          int64_t time_to_wait = timed_tasks[i].trigger_time - reception_time;
+          if (time_to_wait <= 0) {
+            debug(1,"repetitive task %d called now.", i);            
+            timed_tasks[i].trigger_time = timed_tasks[i].task(reception_time,(void *)&i);
+          }
+        }
+      }
     }
   }
   // should never get to here, unless no sockets were ever opened.
