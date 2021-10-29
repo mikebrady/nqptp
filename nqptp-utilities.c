@@ -18,6 +18,7 @@
  */
 
 #include "nqptp-utilities.h"
+#include "general-utilities.h"
 #include <errno.h>
 #include <fcntl.h>   // fcntl etc.
 #include <ifaddrs.h> // getifaddrs
@@ -155,7 +156,7 @@ void debug_print_buffer(int level, char *buf, size_t buf_len) {
 
 uint64_t get_self_clock_id() {
   // make up a clock ID based on an interfaces' MAC
-  char local_clock_id[8];
+  unsigned char local_clock_id[8];
   int len = 0;
   struct ifaddrs *ifaddr = NULL;
   struct ifaddrs *ifa = NULL;
@@ -205,8 +206,6 @@ uint64_t get_self_clock_id() {
     local_clock_id[3] = 0xFF;
     local_clock_id[4] = 0xFE;
   }
-  // it's in Network Byte Order!
-  uint64_t result;
-  memcpy(&result, local_clock_id, sizeof(result));
-  return result;
+  // convert to host byte order
+  return nctoh64(local_clock_id);
 }
