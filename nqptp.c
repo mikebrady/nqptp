@@ -174,7 +174,7 @@ int main(int argc, char **argv) {
   }
 
   debug_init(debug_level, 0, 1, 1);
-  debug(1, "startup");
+  debug(1, "startup. self clock id: \"%" PRIx64 "\".", get_self_clock_id());
   atexit(goodbye);
 
   sockets_open_stuff.sockets_open = 0;
@@ -421,13 +421,31 @@ uint64_t broadcasting_task(uint64_t call_time, __attribute__((unused)) void *pri
   int i;
   uint32_t acceptance_mask =
 //      (1 << clock_is_qualified) | (1 << clock_is_a_timing_peer) | (1 << clock_is_valid);
-       (1 << clock_is_a_timing_peer) | (1 << clock_is_valid);
+//       (1 << clock_is_a_timing_peer) | (1 << clock_is_valid);
+       (1 << clock_is_a_timing_peer);
   for (i = 0; i < MAX_CLOCKS; i++) {
     if ((clocks_private[i].flags & acceptance_mask) == acceptance_mask) {
       debug(1, "message clock \"%" PRIx64 "\" at %s.", clocks_private[i].clock_id, clocks_private[i].ip);
-      struct ptp_announce_message message;
-      memset((void *)&message,0,sizeof(message));
-      
+      struct ptp_announce_message msg;
+      memset((void *)&msg,0,sizeof(msg));
+      uint64_t my_clock_id = get_self_clock_id();
+      msg.header.transportSpecificAndMessageID = 0x10 + Announce;
+      msg.header.reservedAndVersionPTP = 0x02;
+      msg.header.messageLength = htons(sizeof(struct ptp_announce_message));
+      msg.header.flags = htons(0x0408);
+      hcton64(my_clock_id, &msg.header.clockIdentity[0]);
+      msg.header.sourcePortID = htons(32776);
+      msg.header.controlOtherMessage = 0x05;
+      msg.header.logMessagePeriod = 0xFE;
+    	msg.announce.currentUtcOffset = htons(37);
+      hcton64(my_clock_id, &msg.announce.grandmasterIdentity[0]);
+      uint32_t my_clock_quality = 0xf8fe436a;
+      msg.announce.grandmasterClockQuality = htonl(my_clock_quality);
+      msg.announce.grandmasterPriority1 = 248;
+      msg.announce.grandmasterPriority2 = 248;
+      msg.announce.timeSource = 160;
+      // show it
+      debug_print_buffer(1, (char *)&msg, sizeof(struct ptp_announce_message));
     }
   }
   
