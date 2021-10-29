@@ -65,20 +65,21 @@ int master_clock_index = -1;
 typedef struct {
   uint64_t trigger_time;
   uint64_t (*task)(uint64_t nominal_call_time, void * private_data);
+  void * private_data;
 } timed_task_t;
 
-#define TIMED_TASKS 2
+#define TIMED_TASKS 1
 
 timed_task_t timed_tasks[TIMED_TASKS];
 
-
-uint64_t sample_task(uint64_t call_time, void *private_data) {
-  int *i = (int *)private_data;
-  debug(1,"sample_task %d called.", *i);
+/*
+uint64_t sample_task(uint64_t call_time, __attribute__((unused)) void *private_data) {
+  debug(1,"sample_task called.");
   uint64_t next_time = call_time;
   next_time = next_time + 1000000000;
   return next_time;
 }
+*/
 
 struct shm_structure *shared_memory = NULL; // this is where public clock info is available
 int epoll_fd;
@@ -257,11 +258,11 @@ int main(int argc, char **argv) {
   }
   
   // start the timed tasks
+  uint64_t broadcasting_task(uint64_t call_time, void *private_data);
   
-  timed_tasks[0].trigger_time = get_time_now() + 1000000000;
-  timed_tasks[0].task = sample_task;
-  timed_tasks[1].trigger_time = get_time_now() + 10000000000;
-  timed_tasks[1].task = sample_task;
+  timed_tasks[0].trigger_time = get_time_now() + 100000000; // start after 100 ms
+  timed_tasks[0].private_data = (void *)&clocks_private;
+  timed_tasks[0].task = broadcasting_task;
 
   // now, get down to business
   if (sockets_open_stuff.sockets_open > 0) {
@@ -404,8 +405,7 @@ int main(int argc, char **argv) {
         if (timed_tasks[i].trigger_time != 0) {
           int64_t time_to_wait = timed_tasks[i].trigger_time - reception_time;
           if (time_to_wait <= 0) {
-            debug(1,"repetitive task %d called now.", i);            
-            timed_tasks[i].trigger_time = timed_tasks[i].task(reception_time,(void *)&i);
+            timed_tasks[i].trigger_time = timed_tasks[i].task(reception_time,timed_tasks[i].private_data);
           }
         }
       }
@@ -414,3 +414,25 @@ int main(int argc, char **argv) {
   // should never get to here, unless no sockets were ever opened.
   return 0;
 }
+
+uint64_t broadcasting_task(uint64_t call_time, __attribute__((unused)) void *private_data) {  
+  clock_source_private_data* clocks_private = (clock_source_private_data *)private_data;
+  // for every clock in the timing peer list
+  int i;
+  uint32_t acceptance_mask =
+//      (1 << clock_is_qualified) | (1 << clock_is_a_timing_peer) | (1 << clock_is_valid);
+       (1 << clock_is_a_timing_peer) | (1 << clock_is_valid);
+  for (i = 0; i < MAX_CLOCKS; i++) {
+    if ((clocks_private[i].flags & acceptance_mask) == acceptance_mask) {
+      debug(1, "message clock \"%" PRIx64 "\" at %s.", clocks_private[i].clock_id, clocks_private[i].ip);
+      struct ptp_announce_message message;
+      memset((void *)&message,0,sizeof(message));
+      
+    }
+  }
+  
+  uint64_t next_time = call_time;
+  next_time = next_time + 1000000000;
+  return next_time;
+}
+
