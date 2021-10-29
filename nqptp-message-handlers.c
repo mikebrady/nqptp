@@ -126,6 +126,8 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clo
         uint8_t clockClass = (clockQuality >> 24) & 0xff;
         uint8_t clockAccuracy = (clockQuality >> 16) & 0xff;
         uint16_t offsetScaledLogVariance = clockQuality & 0xffff;
+        uint16_t stepsRemoved = ntohs(msg->announce.stepsRemoved);
+        uint16_t sourcePortID = ntohs(msg->header.sourcePortID);
         int best_clock_update_needed = 0;
         if (((clock_private_info->flags & (1 << clock_is_qualified)) == 0) &&
             (msg->announce.stepsRemoved < 255)) {
@@ -137,8 +139,8 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clo
           clock_private_info->grandmasterAccuracy = clockAccuracy;
           clock_private_info->grandmasterVariance = offsetScaledLogVariance;
           clock_private_info->grandmasterPriority2 = msg->announce.grandmasterPriority2;
-          clock_private_info->stepsRemoved = ntohs(msg->announce.stepsRemoved);
-          clock_private_info->clock_port_number = ntohs(msg->header.sourcePortID);
+          clock_private_info->stepsRemoved = stepsRemoved;
+          clock_private_info->clock_port_number = sourcePortID;
           best_clock_update_needed = 1;
         } else {
           // otherwise, something in it might have changed, I guess, that
@@ -171,8 +173,8 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clo
             clock_private_info->grandmasterPriority2 = msg->announce.grandmasterPriority2;
             best_clock_update_needed = 1;
           }
-          if (clock_private_info->stepsRemoved != msg->announce.stepsRemoved) {
-            clock_private_info->stepsRemoved = msg->announce.stepsRemoved;
+          if (clock_private_info->stepsRemoved != stepsRemoved) {
+            clock_private_info->stepsRemoved = stepsRemoved;
             best_clock_update_needed = 1;
           }
         }
@@ -186,14 +188,15 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clo
                 clock_private_info->stepsRemoved < 255 ? "" : "not ");
           debug(2, "    grandmasterIdentity:         %" PRIx64 ".", grandmaster_clock_id);
           debug(2, "    grandmasterPriority1:        %u.", msg->announce.grandmasterPriority1);
-          debug(2, "    grandmasterClockQuality:     0x%x.", msg->announce.grandmasterClockQuality);
+          debug(2, "    grandmasterClockQuality:     0x%x.", clockQuality);
           debug(2, "        clockClass:              %u.", clockClass); // See 7.6.2.4 clockClass
           debug(2, "        clockAccuracy:           0x%x.",
                 clockAccuracy); // See 7.6.2.5 clockAccuracy
           debug(2, "        offsetScaledLogVariance: 0x%x.",
                 offsetScaledLogVariance); // See 7.6.3 PTP variance
           debug(2, "    grandmasterPriority2:        %u.", msg->announce.grandmasterPriority2);
-          debug(2, "    stepsRemoved:                %u.", msg->announce.stepsRemoved);
+          debug(2, "    stepsRemoved:                %u.", stepsRemoved);
+          debug(2, "    portNumber:                  %u.", sourcePortID);
 
           // now go and re-mark the best clock in the timing peer list
           if (clock_private_info->stepsRemoved >= 255) // 9.3.2.5 (d)
