@@ -34,6 +34,16 @@ void hcton64(uint64_t num, uint8_t *p) {
   memcpy(p, &rev, sizeof(uint32_t));
 }
 
+uint64_t nctoh64(const uint8_t *p) { // read 4 characters from *p and do ntohl on them
+  // this is to avoid possible aliasing violations
+  uint64_t value = nctohl(p);
+  uint64_t value_low = nctohl(p+4);
+  value = value << 32;
+  value = value + value_low;
+  return value;
+}
+
+
 uint32_t nctohl(const uint8_t *p) { // read 4 characters from *p and do ntohl on them
   // this is to avoid possible aliasing violations
   uint32_t holder;
