@@ -71,13 +71,29 @@ int create_clock_source_record(char *sender_string,
   }
 
   if (found == 1) {
-    response = i;
-    memset(&clocks_private_info[i], 0, sizeof(clock_source_private_data));
-    strncpy((char *)&clocks_private_info[i].ip, sender_string,
-            FIELD_SIZEOF(clock_source_private_data, ip) - 1);
-    clocks_private_info[i].vacant_samples = MAX_TIMING_SAMPLES;
-    clocks_private_info[i].in_use = 1;
-    debug(2, "create record for ip: %s.", &clocks_private_info[i].ip);
+    int family = 0;
+    int ret;
+  // check its ipv4/6 family
+    struct addrinfo hint, *res = NULL;
+    memset(&hint, '\0', sizeof hint);
+    hint.ai_family = PF_UNSPEC;
+    hint.ai_flags = AI_NUMERICHOST;
+
+    ret = getaddrinfo(sender_string, NULL, &hint, &res);
+    if (getaddrinfo(sender_string, NULL, &hint, &res) == 0) {
+      family = res->ai_family;
+      freeaddrinfo(res);
+      response = i;
+      memset(&clocks_private_info[i], 0, sizeof(clock_source_private_data));
+      strncpy((char *)&clocks_private_info[i].ip, sender_string,
+              FIELD_SIZEOF(clock_source_private_data, ip) - 1);
+      clocks_private_info[i].family = family;
+      clocks_private_info[i].vacant_samples = MAX_TIMING_SAMPLES;
+      clocks_private_info[i].in_use = 1;
+      debug(1, "create record for ip: %s, family: %d.", &clocks_private_info[i].ip, clocks_private_info[i].family);
+    } else {
+      die("cannot getaddrinfo for ip: %s.", &clocks_private_info[i].ip);
+    }
   } else {
     die("Clock tables full!");
   }
