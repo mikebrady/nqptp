@@ -26,10 +26,11 @@
 #include <ifaddrs.h>
 #include <string.h>
 #include <sys/types.h>
+#include <sys/socket.h>
+#include <netdb.h>
 
 #ifdef CONFIG_FOR_FREEBSD
 #include <netinet/in.h>
-#include <sys/socket.h>
 #endif
 
 #ifndef FIELD_SIZEOF
@@ -72,14 +73,12 @@ int create_clock_source_record(char *sender_string,
 
   if (found == 1) {
     int family = 0;
-    int ret;
-  // check its ipv4/6 family
+
+  // check its ipv4/6 family -- derived froom https://stackoverflow.com/a/3736377, with thanks.
     struct addrinfo hint, *res = NULL;
     memset(&hint, '\0', sizeof hint);
     hint.ai_family = PF_UNSPEC;
     hint.ai_flags = AI_NUMERICHOST;
-
-    ret = getaddrinfo(sender_string, NULL, &hint, &res);
     if (getaddrinfo(sender_string, NULL, &hint, &res) == 0) {
       family = res->ai_family;
       freeaddrinfo(res);
@@ -90,7 +89,7 @@ int create_clock_source_record(char *sender_string,
       clocks_private_info[i].family = family;
       clocks_private_info[i].vacant_samples = MAX_TIMING_SAMPLES;
       clocks_private_info[i].in_use = 1;
-      debug(1, "create record for ip: %s, family: %d.", &clocks_private_info[i].ip, clocks_private_info[i].family);
+      debug(1, "create record for ip: %s, family: %s.", &clocks_private_info[i].ip, clocks_private_info[i].family == AF_INET6 ? "IPv6" : "IPv4");
     } else {
       die("cannot getaddrinfo for ip: %s.", &clocks_private_info[i].ip);
     }
