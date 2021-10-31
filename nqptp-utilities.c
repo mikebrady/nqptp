@@ -93,7 +93,8 @@ void open_sockets_at_port(uint16_t port, sockets_open_bundle *sockets_open_stuff
             p->ai_family == AF_INET6 ? "IPv6" : "IPv4", port, strerror(errno));
       } else {
 
-        debug(2, "listening on %s port %d.", p->ai_family == AF_INET6 ? "IPv6" : "IPv4", port);
+        debug(1, "socket %d is listening on %s port %d.", fd,
+              p->ai_family == AF_INET6 ? "IPv6" : "IPv4", port);
         sockets_open_stuff->sockets[sockets_open_stuff->sockets_open].number = fd;
         sockets_open_stuff->sockets[sockets_open_stuff->sockets_open].port = port;
         sockets_open_stuff->sockets[sockets_open_stuff->sockets_open].family = p->ai_family;

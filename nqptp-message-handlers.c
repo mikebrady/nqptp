@@ -64,6 +64,8 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
       }
       debug(2, "Timing group end");
 
+      announce_messages_sent_to_timing_peers = 0;
+
     } else {
       warn("Unrecognised string on the control port.");
     }

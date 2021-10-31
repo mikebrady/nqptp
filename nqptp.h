@@ -31,6 +31,7 @@
 // group becomes the master and its native time becomes the "master time".
 // This is what is provided to the client.
 
+extern int announce_messages_sent_to_timing_peers; // used to stop sending Announce messages
 extern int master_clock_index;
 extern struct shm_structure *shared_memory;
 

@@ -45,6 +45,9 @@
 
 #include <signal.h> // SIGTERM and stuff like that
 
+#include <netdb.h>
+#include <sys/socket.h>
+
 #ifdef CONFIG_FOR_FREEBSD
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -58,14 +61,16 @@
 
 #define BUFLEN 4096 // Max length of buffer
 
+int announce_messages_sent_to_timing_peers; // used to stop sending Announce messages
+
 sockets_open_bundle sockets_open_stuff;
 
 int master_clock_index = -1;
 
 typedef struct {
   uint64_t trigger_time;
-  uint64_t (*task)(uint64_t nominal_call_time, void * private_data);
-  void * private_data;
+  uint64_t (*task)(uint64_t nominal_call_time, void *private_data);
+  void *private_data;
 } timed_task_t;
 
 #define TIMED_TASKS 1
@@ -256,10 +261,10 @@ int main(int argc, char **argv) {
   if (err != 0) {
     die("mutex initialization failed - %s.", strerror(errno));
   }
-  
+
   // start the timed tasks
   uint64_t broadcasting_task(uint64_t call_time, void *private_data);
-  
+
   timed_tasks[0].trigger_time = get_time_now() + 100000000; // start after 100 ms
   timed_tasks[0].private_data = (void *)&clocks_private;
   timed_tasks[0].task = broadcasting_task;
@@ -401,11 +406,12 @@ int main(int argc, char **argv) {
       if (retval >= 0)
         manage_clock_sources(reception_time, (clock_source_private_data *)&clocks_private);
       int i;
-      for (i = 0; i<TIMED_TASKS; i++) {
+      for (i = 0; i < TIMED_TASKS; i++) {
         if (timed_tasks[i].trigger_time != 0) {
           int64_t time_to_wait = timed_tasks[i].trigger_time - reception_time;
           if (time_to_wait <= 0) {
-            timed_tasks[i].trigger_time = timed_tasks[i].task(reception_time,timed_tasks[i].private_data);
+            timed_tasks[i].trigger_time =
+                timed_tasks[i].task(reception_time, timed_tasks[i].private_data);
           }
         }
       }
@@ -415,42 +421,89 @@ int main(int argc, char **argv) {
   return 0;
 }
 
-uint64_t broadcasting_task(uint64_t call_time, __attribute__((unused)) void *private_data) {  
-  clock_source_private_data* clocks_private = (clock_source_private_data *)private_data;
+uint64_t broadcasting_task(uint64_t call_time, __attribute__((unused)) void *private_data) {
+  clock_source_private_data *clocks_private = (clock_source_private_data *)private_data;
   // for every clock in the timing peer list
   int i;
   uint32_t acceptance_mask =
-//      (1 << clock_is_qualified) | (1 << clock_is_a_timing_peer) | (1 << clock_is_valid);
-//       (1 << clock_is_a_timing_peer) | (1 << clock_is_valid);
-       (1 << clock_is_a_timing_peer);
-  for (i = 0; i < MAX_CLOCKS; i++) {
-    if ((clocks_private[i].flags & acceptance_mask) == acceptance_mask) {
-      debug(1, "message clock \"%" PRIx64 "\" at %s.", clocks_private[i].clock_id, clocks_private[i].ip);
-      struct ptp_announce_message msg;
-      memset((void *)&msg,0,sizeof(msg));
-      uint64_t my_clock_id = get_self_clock_id();
-      msg.header.transportSpecificAndMessageID = 0x10 + Announce;
-      msg.header.reservedAndVersionPTP = 0x02;
-      msg.header.messageLength = htons(sizeof(struct ptp_announce_message));
-      msg.header.flags = htons(0x0408);
-      hcton64(my_clock_id, &msg.header.clockIdentity[0]);
-      msg.header.sourcePortID = htons(32776);
-      msg.header.controlOtherMessage = 0x05;
-      msg.header.logMessagePeriod = 0xFE;
-    	msg.announce.currentUtcOffset = htons(37);
-      hcton64(my_clock_id, &msg.announce.grandmasterIdentity[0]);
-      uint32_t my_clock_quality = 0xf8fe436a;
-      msg.announce.grandmasterClockQuality = htonl(my_clock_quality);
-      msg.announce.grandmasterPriority1 = 248;
-      msg.announce.grandmasterPriority2 = 248;
-      msg.announce.timeSource = 160;
-      // show it
-      debug_print_buffer(1, (char *)&msg, sizeof(struct ptp_announce_message));
+      //      (1 << clock_is_qualified) | (1 << clock_is_a_timing_peer) | (1 << clock_is_valid);
+      //       (1 << clock_is_a_timing_peer) | (1 << clock_is_valid);
+      (1 << clock_is_a_timing_peer);
+  if (announce_messages_sent_to_timing_peers < 3) {
+    announce_messages_sent_to_timing_peers++;
+    for (i = 0; i < MAX_CLOCKS; i++) {
+      if ((clocks_private[i].flags & acceptance_mask) == acceptance_mask) {
+
+        // create the message
+        struct ptp_announce_message msg;
+        memset((void *)&msg, 0, sizeof(msg));
+        uint64_t my_clock_id = get_self_clock_id();
+        msg.header.transportSpecificAndMessageID = 0x10 + Announce;
+        msg.header.reservedAndVersionPTP = 0x02;
+        msg.header.messageLength = htons(sizeof(struct ptp_announce_message));
+        msg.header.flags = htons(0x0408);
+        hcton64(my_clock_id, &msg.header.clockIdentity[0]);
+        msg.header.sourcePortID = htons(32776);
+        msg.header.controlOtherMessage = 0x05;
+        msg.header.logMessagePeriod = 0xFE;
+        msg.announce.currentUtcOffset = htons(37);
+        hcton64(my_clock_id, &msg.announce.grandmasterIdentity[0]);
+        uint32_t my_clock_quality = 0xf8fe436a;
+        msg.announce.grandmasterClockQuality = htonl(my_clock_quality);
+        msg.announce.grandmasterPriority1 = 248;
+        msg.announce.grandmasterPriority2 = 248;
+        msg.announce.timeSource = 160;
+        // show it
+        // debug_print_buffer(1, (char *)&msg, sizeof(struct ptp_announce_message));
+        // get the socket for the correct port -- 320 -- and family -- IPv4 or IPv6 -- to send it
+        // from.
+
+        int s = 0;
+        unsigned t;
+        for (t = 0; t < sockets_open_stuff.sockets_open; t++) {
+          if ((sockets_open_stuff.sockets[t].port == 320) &&
+              (sockets_open_stuff.sockets[t].family == clocks_private[i].family))
+            s = sockets_open_stuff.sockets[t].number;
+        }
+        if (s == 0) {
+          debug(1, "sending socket not found!");
+        } else {
+          // debug(1, "Send message from socket %d.", s);
+
+          const char *portname = "320";
+          struct addrinfo hints;
+          memset(&hints, 0, sizeof(hints));
+          hints.ai_family = AF_UNSPEC;
+          hints.ai_socktype = SOCK_DGRAM;
+          hints.ai_protocol = 0;
+          hints.ai_flags = AI_ADDRCONFIG;
+          struct addrinfo *res = NULL;
+          int err = getaddrinfo(clocks_private[i].ip, portname, &hints, &res);
+          if (err != 0) {
+            debug(1, "failed to resolve remote socket address (err=%d)", err);
+          } else {
+            // here, we have the destination, so send it
+
+            // if (clocks_private[i].family == AF_INET6) {
+            debug(1, "message clock \"%" PRIx64 "\" at %s on %s, iteration: %d.",
+                  clocks_private[i].clock_id, clocks_private[i].ip,
+                  clocks_private[i].family == AF_INET6 ? "IPv6" : "IPv4",
+                  announce_messages_sent_to_timing_peers);
+            int ret = sendto(s, &msg, sizeof(msg), 0, res->ai_addr, res->ai_addrlen);
+            if (ret == -1)
+              debug(1, "result of sendto is %d.", ret);
+            // }
+            freeaddrinfo(res);
+          }
+        }
+      }
     }
   }
-  
-  uint64_t next_time = call_time;
-  next_time = next_time + 1000000000;
-  return next_time;
-}
 
+  uint64_t announce_interval = 1;
+  announce_interval = announce_interval << (8 + aPTPinitialLogAnnounceInterval);
+  announce_interval = announce_interval * 1000000000;
+  announce_interval = announce_interval >> 8; // nanoseconds
+  return call_time + 250000000;
+  // return call_time + announce_interval;
+}
