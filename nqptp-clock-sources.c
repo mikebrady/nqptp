@@ -24,10 +24,10 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <ifaddrs.h>
-#include <string.h>
-#include <sys/types.h>
-#include <sys/socket.h>
 #include <netdb.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <sys/types.h>
 
 #ifdef CONFIG_FOR_FREEBSD
 #include <netinet/in.h>
@@ -74,7 +74,7 @@ int create_clock_source_record(char *sender_string,
   if (found == 1) {
     int family = 0;
 
-  // check its ipv4/6 family -- derived froom https://stackoverflow.com/a/3736377, with thanks.
+    // check its ipv4/6 family -- derived from https://stackoverflow.com/a/3736377, with thanks.
     struct addrinfo hint, *res = NULL;
     memset(&hint, '\0', sizeof hint);
     hint.ai_family = PF_UNSPEC;
@@ -89,7 +89,8 @@ int create_clock_source_record(char *sender_string,
       clocks_private_info[i].family = family;
       clocks_private_info[i].vacant_samples = MAX_TIMING_SAMPLES;
       clocks_private_info[i].in_use = 1;
-      debug(1, "create record for ip: %s, family: %s.", &clocks_private_info[i].ip, clocks_private_info[i].family == AF_INET6 ? "IPv6" : "IPv4");
+      debug(2, "create record for ip: %s, family: %s.", &clocks_private_info[i].ip,
+            clocks_private_info[i].family == AF_INET6 ? "IPv6" : "IPv4");
     } else {
       die("cannot getaddrinfo for ip: %s.", &clocks_private_info[i].ip);
     }
@@ -123,6 +124,8 @@ void manage_clock_sources(uint64_t reception_time, clock_source_private_data *cl
         memset(&clocks_private_info[i], 0, sizeof(clock_source_private_data));
         if (old_flags != 0)
           update_master();
+        else
+          debug_log_nqptp_status(1);
       }
     }
   }
@@ -186,8 +189,8 @@ void debug_log_nqptp_status(int level) {
   for (i = 0; i < MAX_CLOCKS; i++)
     if (clocks_private[i].in_use != 0)
       records_in_use++;
+  debug(level, "");
   if (records_in_use > 0) {
-    debug(level, "");
     debug(level, "Current NQPTP Status:");
     uint32_t peer_mask = (1 << clock_is_a_timing_peer);
     uint32_t peer_clock_mask = peer_mask | (1 << clock_is_valid);
@@ -220,6 +223,8 @@ void debug_log_nqptp_status(int level) {
         }
       }
     }
+  } else {
+    debug(level, "Current NQPTP Status: no records in use.");
   }
 }
 

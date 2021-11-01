@@ -29,7 +29,7 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
                                   clock_source_private_data *clock_private_info) {
   if (recv_len != -1) {
     buf[recv_len - 1] = 0; // make sure there's a null in it!
-    debug(1, "New timing peer list: \"%s\".", buf);
+    debug(2, "New timing peer list: \"%s\".", buf);
     if (buf[0] == 'T') {
 
       char *ip_list = buf + 1;
@@ -51,6 +51,8 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
           if (t == -1)
             t = create_clock_source_record(new_ip, clock_private_info);
           clock_private_info[t].flags |= (1 << clock_is_a_timing_peer);
+          clock_private_info[t].announcements_sent = 0;
+          clock_private_info[t].followup_seen = 0; // no followup seen while a timing peer
         }
       }
 
@@ -63,9 +65,6 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
           debug(2, "%s.", &clock_private_info[i].ip);
       }
       debug(2, "Timing group end");
-
-      announce_messages_sent_to_timing_peers = 0;
-
     } else {
       warn("Unrecognised string on the control port.");
     }
@@ -88,6 +87,9 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clo
       packet_clock_id = packet_clock_id << 32;
       packet_clock_id = packet_clock_id + packet_clock_id_low;
       clock_private_info->clock_id = packet_clock_id;
+
+      debug(2, "announcement seen from %" PRIx64 " at %s.", clock_private_info->clock_id,
+            clock_private_info->ip);
 
       int i;
       // number of elements in the array is 4, hence the 4-1 stuff
@@ -132,7 +134,7 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clo
         uint16_t sourcePortID = ntohs(msg->header.sourcePortID);
         int best_clock_update_needed = 0;
         if (((clock_private_info->flags & (1 << clock_is_qualified)) == 0) &&
-            (msg->announce.stepsRemoved < 255)) {
+            (stepsRemoved < 255)) {
           // if it's just becoming qualified
           clock_private_info->grandmasterIdentity = grandmaster_clock_id;
           clock_private_info->grandmasterPriority1 = msg->announce.grandmasterPriority1;
@@ -223,7 +225,6 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clo
 void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
                       clock_source_private_data *clock_private_info, uint64_t reception_time) {
 
-  clock_private_info->flags |= (1 << clock_is_valid); // valid because it has at least one follow_up
   struct ptp_follow_up_message *msg = (struct ptp_follow_up_message *)buf;
 
   uint16_t seconds_hi = nctohs(&msg->follow_up.preciseOriginTimestamp[0]);
@@ -236,6 +237,9 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
   preciseOriginTimestamp = preciseOriginTimestamp + nanoseconds;
 
   // update our sample information
+
+  clock_private_info->followup_seen =
+      1; // say we've seen a follow_up -- suppresses announcements_sent
 
   clock_private_info->samples[clock_private_info->next_sample_goes_here].local_time =
       reception_time;
@@ -347,6 +351,7 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
     clock_private_info->flags &= ~(1 << clock_is_becoming_master);
     clock_private_info->flags |= 1 << clock_is_master;
     clock_private_info->previous_offset_time = 0;
+    debug_log_nqptp_status(1);
   } else if (clock_private_info->previous_offset_time != 0) {
     // i.e. if it's not becoming a master and there has been a previous follow_up
     int64_t time_since_last_sync = reception_time - clock_private_info->last_sync_time;
@@ -393,6 +398,9 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
     clock_private_info->last_sync_time = reception_time;
   }
 
+  clock_private_info->previous_offset = offset;
+  clock_private_info->previous_offset_time = reception_time;
+
   if ((clock_private_info->flags & (1 << clock_is_master)) != 0) {
     update_master_clock_info(clock_private_info->clock_id, (const char *)&clock_private_info->ip,
                              reception_time, offset, clock_private_info->mastership_start_time);
@@ -400,6 +408,11 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
           clock_private_info->clock_id, reception_time, offset, 0.000001 * jitter);
   }
 
-  clock_private_info->previous_offset = offset;
-  clock_private_info->previous_offset_time = reception_time;
+  if ((clock_private_info->flags & (1 << clock_is_valid)) == 0) {
+    debug(2, "follow_up seen from %" PRIx64 " at %s.", clock_private_info->clock_id,
+          clock_private_info->ip);
+    clock_private_info->flags |=
+        (1 << clock_is_valid); // valid because it has at least one follow_up
+    update_master();
+  }
 }
