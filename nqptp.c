@@ -448,7 +448,7 @@ uint64_t broadcasting_task(uint64_t call_time, __attribute__((unused)) void *pri
       hcton64(my_clock_id, &msg.announce.grandmasterIdentity[0]);
       uint32_t my_clock_quality = 0xf8fe436a;
       msg.announce.grandmasterClockQuality = htonl(my_clock_quality);
-      msg.announce.grandmasterPriority1 = 100;
+      msg.announce.grandmasterPriority1 = 248;
       msg.announce.grandmasterPriority2 = 248;
       msg.announce.timeSource = 160;
       // show it
