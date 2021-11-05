@@ -95,6 +95,15 @@ enum messageType {
   Reserved_F
 };
 
+// Table 34, part of
+enum tlvTypeValue {
+  Reserved,
+  MANAGEMENT,
+  MANAGEMENT_ERROR_STATUS,
+  ORGANIZATION_EXTENSION
+  // there are more, but not needed yet
+};
+
 // this is the Common Message Header
 struct __attribute__((__packed__)) ptp_common_message_header {
   uint8_t transportSpecificAndMessageID; // 0x11
@@ -158,6 +167,24 @@ struct __attribute__((__packed__)) ptp_pdelay_resp {
   uint8_t requestingPortIdentity[10];
 };
 
+// this is the structure of a TLV (14.3, Table 35, pp 135) without any space for the data
+struct __attribute__((__packed__)) ptp_tlv {
+  uint16_t tlvType;
+  uint16_t lengthField;
+  uint8_t organizationId[3];
+  uint8_t organizationSubType[3];
+  uint8_t dataField[0];
+};
+
+
+
+// this is the extra part for a Signaling message (13.12, pp 132) without any TLVs
+struct __attribute__((__packed__)) ptp_signaling {
+  uint8_t targetPortIdentity[10];
+  // to be followed by _one_ or more TLVs
+  struct ptp_tlv tlvs[0];
+};
+
 struct __attribute__((__packed__)) ptp_pdelay_req_message {
   struct ptp_common_message_header header;
   struct ptp_pdelay_req pdelay_req;
@@ -192,5 +219,11 @@ struct __attribute__((__packed__)) ptp_announce_message {
   struct ptp_common_message_header header;
   struct ptp_announce announce;
 };
+
+struct __attribute__((__packed__)) ptp_signaling_message {
+  struct ptp_common_message_header header;
+  struct ptp_signaling signaling;
+};
+
 
 #endif
