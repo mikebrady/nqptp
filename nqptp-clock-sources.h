@@ -44,7 +44,6 @@ typedef struct {
   char ip[64];            // 64 is nicely aligned and bigger than INET6_ADDRSTRLEN (46)
   int family;             // AF_INET or AF_INET6
   int announcements_sent; // number of announce messages returned to this clock
-  int followup_seen;      // set to true when a followup has come from this clock
   uint64_t clock_id;
   uint64_t local_time; // the local time when the offset was calculated
   uint64_t source_time;

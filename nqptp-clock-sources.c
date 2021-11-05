@@ -125,7 +125,7 @@ void manage_clock_sources(uint64_t reception_time, clock_source_private_data *cl
         if (old_flags != 0)
           update_master();
         else
-          debug_log_nqptp_status(1);
+          debug_log_nqptp_status(2);
       }
     }
   }
@@ -372,5 +372,5 @@ void update_master() {
       clocks_private[best_so_far].flags |= (1 << clock_is_master);
     }
   }
-  debug_log_nqptp_status(1);
+  debug_log_nqptp_status(2);
 }

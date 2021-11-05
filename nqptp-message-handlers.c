@@ -26,7 +26,8 @@
 #include "nqptp-utilities.h"
 
 void handle_control_port_messages(char *buf, ssize_t recv_len,
-                                  clock_source_private_data *clock_private_info) {
+                                  clock_source_private_data *clock_private_info,
+                                  uint64_t reception_time) {
   if (recv_len != -1) {
     buf[recv_len - 1] = 0; // make sure there's a null in it!
     debug(2, "New timing peer list: \"%s\".", buf);
@@ -52,9 +53,11 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
             t = create_clock_source_record(new_ip, clock_private_info);
           clock_private_info[t].flags |= (1 << clock_is_a_timing_peer);
           clock_private_info[t].announcements_sent = 0;
-          clock_private_info[t].followup_seen = 0; // no followup seen while a timing peer
         }
       }
+
+      timing_peer_list_creation_time = reception_time;
+      timing_peer_list_followup_seen = 0;
 
       // now find and mark the best clock in the timing peer list as the master
       update_master();
@@ -238,8 +241,14 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
 
   // update our sample information
 
-  clock_private_info->followup_seen =
-      1; // say we've seen a follow_up -- suppresses announcements_sent
+  if ((timing_peer_list_followup_seen == 0) &&
+      ((clock_private_info->flags & (1 << clock_is_a_timing_peer)) != 0)) {
+    debug(2, "Follow_Up from: %" PRIx64 " at %s.", clock_private_info->clock_id,
+          clock_private_info->ip);
+  }
+
+  timing_peer_list_followup_seen =
+      1; // say we've seen a follow_up (to suppress sending an Announce message)
 
   clock_private_info->samples[clock_private_info->next_sample_goes_here].local_time =
       reception_time;
@@ -351,7 +360,7 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
     clock_private_info->flags &= ~(1 << clock_is_becoming_master);
     clock_private_info->flags |= 1 << clock_is_master;
     clock_private_info->previous_offset_time = 0;
-    debug_log_nqptp_status(1);
+    debug_log_nqptp_status(2);
   } else if (clock_private_info->previous_offset_time != 0) {
     // i.e. if it's not becoming a master and there has been a previous follow_up
     int64_t time_since_last_sync = reception_time - clock_private_info->last_sync_time;
@@ -388,9 +397,10 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
                              // 125 ms is 100 ppm.
         offset = clock_private_info->previous_offset + jitter;
       }
-    } else if ((clock_private_info->flags & (1 << clock_is_master)) != 0) {
-      debug(1, "Lost sync with clock %" PRIx64 " at %s. Resynchronising.",
-            clock_private_info->clock_id, clock_private_info->ip);
+    } else {
+      if ((clock_private_info->flags & (1 << clock_is_master)) != 0)
+        debug(1, "Resynchronising master clock %" PRIx64 " at %s.", clock_private_info->clock_id,
+              clock_private_info->ip);
       // leave the offset as it was coming in and take it as a sync time
       clock_private_info->last_sync_time = reception_time;
     }
