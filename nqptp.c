@@ -266,6 +266,8 @@ int main(int argc, char **argv) {
     die("mutex initialization failed - %s.", strerror(errno));
   }
 
+
+
   // start the timed tasks
   uint64_t broadcasting_task(uint64_t call_time, void *private_data);
 
@@ -435,15 +437,9 @@ uint64_t broadcasting_task(uint64_t call_time, __attribute__((unused)) void *pri
     clock_source_private_data *clocks_private = (clock_source_private_data *)private_data;
     int i;
     uint32_t acceptance_mask =
-        //      (1 << clock_is_qualified) | (1 << clock_is_a_timing_peer) | (1 << clock_is_valid);
-        //       (1 << clock_is_a_timing_peer) | (1 << clock_is_valid);
-
-        // (1 << clock_is_a_timing_peer);
-        //(1 << clock_is_qualified);
-        // 0;
-        (1 << clock_is_a_timing_peer);
+        (1 << clock_is_a_timing_peer) | (1 << clock_is_qualified);
     for (i = 0; i < MAX_CLOCKS; i++) {
-      if (((clocks_private[i].flags & acceptance_mask) == acceptance_mask) &&
+      if (((clocks_private[i].flags & acceptance_mask) != 0) &&
           (clocks_private[i].announcements_sent == 0) && (clocks_private[i].is_one_of_ours == 0)) {
 
         // create a message to attempt to waken this silent PTP clock by
@@ -557,6 +553,10 @@ uint64_t broadcasting_task(uint64_t call_time, __attribute__((unused)) void *pri
             clocks_private[i].announcements_sent++;
             debug(2, "message clock \"%" PRIx64 "\" at %s on %s.", clocks_private[i].clock_id,
                   clocks_private[i].ip, clocks_private[i].family == AF_INET6 ? "IPv6" : "IPv4");
+            msg->announce.grandmasterPriority1 = 250;
+            ret = sendto(s, msg, msg_length, 0, res->ai_addr, res->ai_addrlen);
+            if (ret == -1)
+              debug(1, "result of second sendto is %d.", ret);
             // }
             freeaddrinfo(res);
           }
