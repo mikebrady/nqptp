@@ -1,3 +1,9 @@
+## Version: 1.1-dev-74-gf713183
+**Enhancement**
+* Add code to activate a PTP clock that has become effectively silent. This can happen to a PTP clock on an Apple Silicon Mac after it has been woken from sleep. It may happen elsewhere.
+The new code begins and then rapidly terminates a clock mastership negotiation, and this causes the clock to become active.
+This 'silent clock' is unexpected behaviour and may be a bug.
+
 ## Version: 1.1-dev-51-g812326a
 ***Pesky Change You Can't Ignore***
 
