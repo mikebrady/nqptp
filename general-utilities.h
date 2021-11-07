@@ -38,9 +38,9 @@
 
 void hcton64(uint64_t num, uint8_t *p);
 
-//these are designed to avoid aliasing check errors
+// these are designed to avoid aliasing check errors
 uint64_t nctoh64(const uint8_t *p);
-uint32_t nctohl(const uint8_t *p); 
+uint32_t nctohl(const uint8_t *p);
 uint16_t nctohs(const uint8_t *p);
 uint64_t timespec_to_ns(struct timespec *tn);
 uint64_t get_time_now();

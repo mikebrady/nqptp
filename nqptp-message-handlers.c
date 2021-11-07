@@ -26,8 +26,7 @@
 #include "nqptp-utilities.h"
 
 void handle_control_port_messages(char *buf, ssize_t recv_len,
-                                  clock_source_private_data *clock_private_info,
-                                  uint64_t reception_time) {
+                                  clock_source_private_data *clock_private_info) {
   if (recv_len != -1) {
     buf[recv_len - 1] = 0; // make sure there's a null in it!
     debug(2, "New timing peer list: \"%s\".", buf);
@@ -55,9 +54,6 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
           clock_private_info[t].announcements_sent = 0;
         }
       }
-
-      timing_peer_list_creation_time = reception_time;
-      timing_peer_list_followup_seen = 0;
 
       // now find and mark the best clock in the timing peer list as the master
       update_master();
@@ -90,9 +86,16 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clo
       packet_clock_id = packet_clock_id << 32;
       packet_clock_id = packet_clock_id + packet_clock_id_low;
       clock_private_info->clock_id = packet_clock_id;
+      clock_private_info->grandmasterPriority1 =
+          msg->announce.grandmasterPriority1; // need this for possibly pinging it later...
+      clock_private_info->grandmasterPriority2 =
+          msg->announce.grandmasterPriority2; // need this for possibly pinging it later...
 
       debug(2, "announcement seen from %" PRIx64 " at %s.", clock_private_info->clock_id,
             clock_private_info->ip);
+
+      if (clock_private_info->announcements_without_followups < 5)
+        clock_private_info->announcements_without_followups++;
 
       int i;
       // number of elements in the array is 4, hence the 4-1 stuff
@@ -241,14 +244,7 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
 
   // update our sample information
 
-  if ((timing_peer_list_followup_seen == 0) &&
-      ((clock_private_info->flags & (1 << clock_is_a_timing_peer)) != 0)) {
-    debug(2, "Follow_Up from: %" PRIx64 " at %s.", clock_private_info->clock_id,
-          clock_private_info->ip);
-  }
-
-  timing_peer_list_followup_seen =
-      1; // say we've seen a follow_up (to suppress sending an Announce message)
+  clock_private_info->announcements_without_followups = 0; // we've seen a followup
 
   clock_private_info->samples[clock_private_info->next_sample_goes_here].local_time =
       reception_time;

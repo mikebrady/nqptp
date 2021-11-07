@@ -176,8 +176,6 @@ struct __attribute__((__packed__)) ptp_tlv {
   uint8_t dataField[0];
 };
 
-
-
 // this is the extra part for a Signaling message (13.12, pp 132) without any TLVs
 struct __attribute__((__packed__)) ptp_signaling {
   uint8_t targetPortIdentity[10];
@@ -224,6 +222,5 @@ struct __attribute__((__packed__)) ptp_signaling_message {
   struct ptp_common_message_header header;
   struct ptp_signaling signaling;
 };
-
 
 #endif

@@ -35,7 +35,6 @@ void handle_delay_resp(char *buf, ssize_t recv_len, clock_source_private_data *c
                        uint64_t reception_time);
 
 void handle_control_port_messages(char *buf, ssize_t recv_len,
-                                  clock_source_private_data *clock_private_info,
-                                  uint64_t reception_time);
+                                  clock_source_private_data *clock_private_info);
 
 #endif
