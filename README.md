@@ -37,6 +37,13 @@ Version: 1.1-dev-24-g0c00a79. Shared Memory Interface Version: 5.
 Version without git build information:
 Version: 1.1-dev. Shared Memory Interface Version: 5.
 ```
+### Remove Old Service Files
+If you are updating from a version older than 1.1-dev-51, remove the service file `nqptp.service` from the directory `/lib/systemd/system` (you'll need superuser privileges):
+```
+# rm /lib/systemd/system/nqptp.service
+```
+Don't worry if you get a message stating that the file doesn't exist -- no harm done.
+
 ### Build and Install
 
 Note that you will need superuser privileges to install, enable and start the daemon.
@@ -61,7 +68,7 @@ Note that `nqptp` must run in `root` mode to be able to access ports 319 and 320
 # Notes
 If you wish to use the shared mutex to ensure records are not altered while you are accessing them, you should open your side of the shared memory interface with read-write permission. Be aware that while your program has the mutex lock, it is in a "critical region" where it can halt `nqptp`, so keep any activity while you have the lock very short and very simple, e.g. copying the contents of shared memory to local memory. 
 
-Clock records not updated for a period are deleted.
+Clock records that are not updated for a period are deleted.
 
 Since `nqptp` uses ports 319 and 320, it can not coexist with any other user of those ports, such as full PTP service daemons.
 
