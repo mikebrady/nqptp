@@ -59,19 +59,31 @@ $ make
 ```
 The `make install` installs a `systemd` startup script as requested. You should enable it and start it in the normal way:
 
+### First Install or Update?
+#### First Install
+If you are installing `nqptp` for the first time, enable it and start it:
 ```
 # systemctl enable nqptp
 # systemctl start nqptp
 ```
-
-Note that `nqptp` must run in `root` mode to be able to access ports 319 and 320.
-
+If Shairport Sync is already running, you should you restart it after starting `nqptp`:
+```
+# systemctl restart shairport-sync
+```
+#### Update
+If you are updating an existing installation of `nqptp`, after installing it you should restart it. You should then also restart Shairport Sync:
+```
+# systemctl restart nqptp
+# systemctl restart shairport-sync
+```
 # Notes
+Please note that `nqptp` must run in `root` mode to be able to access ports 319 and 320.
+
+Since `nqptp` uses ports 319 and 320, it can not coexist with any other user of those ports, such as full PTP service daemons.
+
 If you wish to use the shared mutex to ensure records are not altered while you are accessing them, you should open your side of the shared memory interface with read-write permission. Be aware that while your program has the mutex lock, it is in a "critical region" where it can halt `nqptp`, so keep any activity while you have the lock very short and very simple, e.g. copying the contents of shared memory to local memory. 
 
 Clock records that are not updated for a period are deleted.
-
-Since `nqptp` uses ports 319 and 320, it can not coexist with any other user of those ports, such as full PTP service daemons.
 
 # Known Issues
 * `nqptp` has not been checked or audited for security issues. Note that it must run in `root` mode.
