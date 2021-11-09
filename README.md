@@ -51,7 +51,7 @@ Note that you will need superuser privileges to install, enable and start the da
 ```
 $ git clone https://github.com/mikebrady/nqptp.git
 $ cd nqptp
-$ git checkout wakener
+$ git checkout developer
 $ autoreconf -fi
 $ ./configure --with-systemd-startup
 $ make
