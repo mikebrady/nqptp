@@ -51,7 +51,6 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
           if (t == -1)
             t = create_clock_source_record(new_ip, clock_private_info);
           clock_private_info[t].flags |= (1 << clock_is_a_timing_peer);
-          clock_private_info[t].announcements_sent = 0;
         }
       }
 

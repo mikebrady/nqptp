@@ -497,18 +497,10 @@ uint64_t broadcasting_task(uint64_t call_time, __attribute__((unused)) void *pri
           // here, we have the destination, so send it
 
           // if (clocks_private[i].family == AF_INET6) {
-          if (clocks_private[i].announcements_sent != 0) {
-            debug(1, "Warning: sending another Announce message to %" PRIx64 "at %s...",
-                  clocks_private[i].clock_id, clocks_private[i].ip);
-          } else {
-            debug(1, "Sending an Announce message to %" PRIx64 "at %s...",
-                  clocks_private[i].clock_id, clocks_private[i].ip);
-          }
           // debug_print_buffer(1, (char *)msg, msg_length);
           int ret = sendto(s, msg, msg_length, 0, res->ai_addr, res->ai_addrlen);
           if (ret == -1)
             debug(1, "result of sendto is %d.", ret);
-          clocks_private[i].announcements_sent++;
           debug(2, "message clock \"%" PRIx64 "\" at %s on %s.", clocks_private[i].clock_id,
                 clocks_private[i].ip, clocks_private[i].family == AF_INET6 ? "IPv6" : "IPv4");
 
