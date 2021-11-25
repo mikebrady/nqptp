@@ -476,9 +476,9 @@ uint64_t broadcasting_task(uint64_t call_time, __attribute__((unused)) void *pri
       if (s == 0) {
         debug(1, "sending socket not found for clock %" PRIx64 " at %s, family %s.",
               clocks_private[i].clock_id, clocks_private[i].ip,
-              clocks_private[i].family == AF_INET
-                  ? "IPv4"
-                  : clocks_private[i].family == AF_INET6 ? "IPv6" : "Unknown");
+              clocks_private[i].family == AF_INET    ? "IPv4"
+              : clocks_private[i].family == AF_INET6 ? "IPv6"
+                                                     : "Unknown");
       } else {
         // debug(1, "Send message from socket %d.", s);
 
