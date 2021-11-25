@@ -232,7 +232,6 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
 
   struct ptp_follow_up_message *msg = (struct ptp_follow_up_message *)buf;
 
-
   uint16_t seconds_hi = nctohs(&msg->follow_up.preciseOriginTimestamp[0]);
   uint32_t seconds_low = nctohl(&msg->follow_up.preciseOriginTimestamp[2]);
   uint32_t nanoseconds = nctohl(&msg->follow_up.preciseOriginTimestamp[6]);
@@ -374,12 +373,14 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
 
       jitter = offset - clock_private_info->previous_offset;
 
-     if (jitter > -10000000) {
+      if (jitter > -10000000) {
         // we take any positive or a limited negative jitter as a sync event
         if (jitter < 0)
-          offset = clock_private_info->previous_offset + jitter/32;
+          offset = clock_private_info->previous_offset + jitter / 32;
+        else if (clock_private_info->follow_up_number < (5 * 8)) // at the beginning...
+          offset = clock_private_info->previous_offset + jitter / 4;
         else
-          offset = clock_private_info->previous_offset + jitter/32;
+          offset = clock_private_info->previous_offset + jitter / 32;
         clock_private_info->last_sync_time = reception_time;
       } else {
         offset = clock_private_info->previous_offset; // forget the present sample...
@@ -399,7 +400,7 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
   clock_private_info->previous_offset_time = reception_time;
 
   if ((clock_private_info->flags & (1 << clock_is_master)) != 0) {
-      
+
     update_master_clock_info(clock_private_info->clock_id, (const char *)&clock_private_info->ip,
                              reception_time, offset, clock_private_info->mastership_start_time);
     debug(3, "clock: %" PRIx64 ", time: %" PRIu64 ", offset: %" PRId64 ", jitter: %+f ms.",
