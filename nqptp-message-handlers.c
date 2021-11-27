@@ -366,21 +366,32 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
     if (time_since_last_sync < sync_timeout) {
 
       // Do acceptance checking.
+
+      // Positive changes in the offset are much more likely to be 
+      // legitimate, since they could only occur due to a shorter
+      // propagation time. (Actually, this is not quite true --
+      // it is possible that the remote clock could be adjusted forward
+      // and this would increase the offset too.) 
+      // Anyway, when the clock is new, we give preferential weighting to
+      // positive changes in the offset.
+      
       // If the new offset is greater, by any amount, than the old offset,
       // or if it is less by up to 10 mS,
       // accept it.
-      // Otherwise, reject it
+      // Otherwise, drop it
+
+      // This seems to be quite stable
 
       jitter = offset - clock_private_info->previous_offset;
 
       if (jitter > -10000000) {
         // we take any positive or a limited negative jitter as a sync event
         if (jitter < 0)
-          offset = clock_private_info->previous_offset + jitter / 32;
-        else if (clock_private_info->follow_up_number < (5 * 8)) // at the beginning...
-          offset = clock_private_info->previous_offset + jitter / 4;
+          offset = clock_private_info->previous_offset + jitter / 16;
+        else if (clock_private_info->follow_up_number < (5 * 8)) // at the beginning (8 samples per second)
+          offset = clock_private_info->previous_offset + jitter / 2; // accept positive changes quickly
         else
-          offset = clock_private_info->previous_offset + jitter / 32;
+          offset = clock_private_info->previous_offset + jitter / 16;
         clock_private_info->last_sync_time = reception_time;
       } else {
         offset = clock_private_info->previous_offset; // forget the present sample...
