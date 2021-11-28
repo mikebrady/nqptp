@@ -22,7 +22,7 @@
 
 #define STORAGE_ID "/nqptp"
 #define MAX_CLOCKS 32
-#define NQPTP_SHM_STRUCTURES_VERSION 5
+#define NQPTP_SHM_STRUCTURES_VERSION 6
 #define NQPTP_CONTROL_PORT 9000
 
 // the control port will accept a UDP packet with the first letter being:

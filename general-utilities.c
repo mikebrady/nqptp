@@ -66,6 +66,6 @@ uint64_t timespec_to_ns(struct timespec *tn) {
 
 uint64_t get_time_now() {
   struct timespec tn;
-  clock_gettime(CLOCK_REALTIME, &tn); // this should be optionally CLOCK_MONOTONIC etc.
+  clock_gettime(CLOCK_MONOTONIC_RAW, &tn);
   return timespec_to_ns(&tn);
 }

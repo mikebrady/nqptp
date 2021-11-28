@@ -387,11 +387,11 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
       if (jitter > -10000000) {
         // we take any positive or a limited negative jitter as a sync event
         if (jitter < 0)
-          offset = clock_private_info->previous_offset + jitter / 16;
+          offset = clock_private_info->previous_offset + jitter / 32;
         else if (clock_private_info->follow_up_number < (5 * 8)) // at the beginning (8 samples per second)
           offset = clock_private_info->previous_offset + jitter / 2; // accept positive changes quickly
         else
-          offset = clock_private_info->previous_offset + jitter / 16;
+          offset = clock_private_info->previous_offset + jitter / 2;
         clock_private_info->last_sync_time = reception_time;
       } else {
         offset = clock_private_info->previous_offset; // forget the present sample...
