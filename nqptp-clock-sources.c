@@ -58,12 +58,11 @@ int find_clock_source_record(char *sender_string, clock_source_private_data *clo
 
 int create_clock_source_record(char *sender_string,
                                clock_source_private_data *clocks_private_info) {
-  // sometimes, the mutex will already be locked
-  // return the index of a clock entry in the clock information arrays or -1 if full
+   // return the index of a clock entry in the clock information arrays or -1 if full
   // initialise the entries in the shared and private arrays
   int response = -1;
   int i = 0;
-  int found = 0;
+  int found = 0; // trying to find an unused entry
   while ((found == 0) && (i < MAX_CLOCKS)) {
     if (clocks_private_info[i].in_use == 0)
       found = 1;
@@ -92,10 +91,10 @@ int create_clock_source_record(char *sender_string,
       debug(2, "create record for ip: %s, family: %s.", &clocks_private_info[i].ip,
             clocks_private_info[i].family == AF_INET6 ? "IPv6" : "IPv4");
     } else {
-      die("cannot getaddrinfo for ip: %s.", &clocks_private_info[i].ip);
+      debug(1, "cannot getaddrinfo for ip: %s.", &clocks_private_info[i].ip);
     }
   } else {
-    die("Clock tables full!");
+    debug(1, "Clock tables full!");
   }
   return response;
 }
