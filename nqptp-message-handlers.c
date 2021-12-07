@@ -393,13 +393,13 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
                  (5 * 8)) // at the beginning (8 samples per second)
             offset = clock_private_info->previous_offset + jitter / 16;
           else
-            offset = clock_private_info->previous_offset + jitter / 16;            
+            offset = clock_private_info->previous_offset + jitter / 64;            
         } else if (clock_private_info->follow_up_number <
                  (5 * 8)) // at the beginning (8 samples per second)
           offset =
-              clock_private_info->previous_offset + jitter / 2; // accept positive changes quickly
+              clock_private_info->previous_offset + jitter / 1; // accept positive changes quickly
         else
-          offset = clock_private_info->previous_offset + jitter / 2;
+          offset = clock_private_info->previous_offset + jitter / 64;
         clock_private_info->last_sync_time = reception_time;
       } else {
         offset = clock_private_info->previous_offset; // forget the present sample...
