@@ -30,6 +30,7 @@
 typedef struct {
   int number;
   uint16_t port;
+  int family; // AF_INET or AF_INET6
 } socket_info;
 
 typedef struct {

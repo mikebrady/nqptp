@@ -18,26 +18,27 @@
  */
 
 #include "nqptp-utilities.h"
+#include "general-utilities.h"
 #include <errno.h>
-#include <fcntl.h>           // fcntl etc.
-#include <ifaddrs.h>         // getifaddrs
+#include <fcntl.h>   // fcntl etc.
+#include <ifaddrs.h> // getifaddrs
 
 #ifdef CONFIG_FOR_LINUX
 #include <linux/if_packet.h> // sockaddr_ll
 #endif
 
 #ifdef CONFIG_FOR_FREEBSD
-#include <unistd.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <net/if_types.h>
 #include <net/if_dl.h>
+#include <net/if_types.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
 #endif
 
-#include <netdb.h>           // getaddrinfo etc.
-#include <stdio.h>           // snprintf
-#include <stdlib.h>          // malloc, free
-#include <string.h>          // memset strcpy, etc.
+#include <netdb.h>  // getaddrinfo etc.
+#include <stdio.h>  // snprintf
+#include <stdlib.h> // malloc, free
+#include <string.h> // memset strcpy, etc.
 
 #include "debug.h"
 
@@ -92,9 +93,11 @@ void open_sockets_at_port(uint16_t port, sockets_open_bundle *sockets_open_stuff
             p->ai_family == AF_INET6 ? "IPv6" : "IPv4", port, strerror(errno));
       } else {
 
-        debug(2, "listening on %s port %d.", p->ai_family == AF_INET6 ? "IPv6" : "IPv4", port);
+        debug(1, "socket %d is listening on %s port %d.", fd,
+              p->ai_family == AF_INET6 ? "IPv6" : "IPv4", port);
         sockets_open_stuff->sockets[sockets_open_stuff->sockets_open].number = fd;
         sockets_open_stuff->sockets[sockets_open_stuff->sockets_open].port = port;
+        sockets_open_stuff->sockets[sockets_open_stuff->sockets_open].family = p->ai_family;
         sockets_open_stuff->sockets_open++;
       }
     }
@@ -153,10 +156,9 @@ void debug_print_buffer(int level, char *buf, size_t buf_len) {
   }
 }
 
-
 uint64_t get_self_clock_id() {
   // make up a clock ID based on an interfaces' MAC
-  char local_clock_id[8];
+  unsigned char local_clock_id[8];
   int len = 0;
   struct ifaddrs *ifaddr = NULL;
   struct ifaddrs *ifa = NULL;
@@ -178,15 +180,15 @@ uint64_t get_self_clock_id() {
 #else
 // This AF_LINK stuff hasn't been tested!
 #ifdef AF_LINK
-       struct sockaddr_dl * sdl = (struct sockaddr_dl *) ifa->ifa_addr;
-       if ((sdl) && (sdl->sdl_family == AF_LINK)) {
+      struct sockaddr_dl *sdl = (struct sockaddr_dl *)ifa->ifa_addr;
+      if ((sdl) && (sdl->sdl_family == AF_LINK)) {
         if (sdl->sdl_type == IFT_ETHER) {
           char *s = LLADDR(sdl);
           int i;
           for (i = 0; i < sdl->sdl_alen; i++) {
-            debug(1,"char %d: \"%c\".", i, *s);
-            // *t++ = (uint8_t)*s++;   
-          }   
+            debug(1, "char %d: \"%c\".", i, *s);
+            // *t++ = (uint8_t)*s++;
+          }
           found = 1;
         }
       }
@@ -206,8 +208,6 @@ uint64_t get_self_clock_id() {
     local_clock_id[3] = 0xFF;
     local_clock_id[4] = 0xFE;
   }
-  // it's in Network Byte Order!
-  uint64_t result;
-  memcpy(&result, local_clock_id, sizeof(result));
-  return result;
+  // convert to host byte order
+  return nctoh64(local_clock_id);
 }

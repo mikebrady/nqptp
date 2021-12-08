@@ -42,6 +42,9 @@ typedef struct {
 // information about each clock source
 typedef struct {
   char ip[64]; // 64 is nicely aligned and bigger than INET6_ADDRSTRLEN (46)
+  int family;  // AF_INET or AF_INET6
+  int follow_up_number;
+  int announcements_without_followups; // add 1 for every announce, reset with a followup
   uint64_t clock_id;
   uint64_t local_time; // the local time when the offset was calculated
   uint64_t source_time;
@@ -66,7 +69,7 @@ typedef struct {
 
   // these are for finding the best clock to use
   // See Figure 27 and 27 pp 89 -- 90 for the Data set comparison algorithm
-
+  uint16_t clock_port_number; // used along with the clock_id as the portIdentity
   uint8_t grandmasterPriority1;
   uint32_t grandmasterQuality; // class/accuracy/variance -- lower is better
   uint8_t grandmasterClass;

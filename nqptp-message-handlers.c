@@ -16,7 +16,8 @@
  *
  * Commercial licensing is also available.
  */
-#include <string.h> //strsep
+#include <arpa/inet.h> // ntohl and ntohs
+#include <string.h>    //strsep
 
 #include "debug.h"
 #include "general-utilities.h"
@@ -28,7 +29,7 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
                                   clock_source_private_data *clock_private_info) {
   if (recv_len != -1) {
     buf[recv_len - 1] = 0; // make sure there's a null in it!
-    debug(1, "New timing peer list: \"%s\".", buf);
+    debug(2, "New timing peer list: \"%s\".", buf);
     if (buf[0] == 'T') {
 
       char *ip_list = buf + 1;
@@ -49,7 +50,9 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
           int t = find_clock_source_record(new_ip, clock_private_info);
           if (t == -1)
             t = create_clock_source_record(new_ip, clock_private_info);
-          clock_private_info[t].flags |= (1 << clock_is_a_timing_peer);
+          if (t != -1) // if the clock table is not full, show it's a timing peer
+            clock_private_info[t].flags |= (1 << clock_is_a_timing_peer);
+          // otherwise, drop it
         }
       }
 
@@ -62,7 +65,6 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
           debug(2, "%s.", &clock_private_info[i].ip);
       }
       debug(2, "Timing group end");
-
     } else {
       warn("Unrecognised string on the control port.");
     }
@@ -85,6 +87,16 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clo
       packet_clock_id = packet_clock_id << 32;
       packet_clock_id = packet_clock_id + packet_clock_id_low;
       clock_private_info->clock_id = packet_clock_id;
+      clock_private_info->grandmasterPriority1 =
+          msg->announce.grandmasterPriority1; // need this for possibly pinging it later...
+      clock_private_info->grandmasterPriority2 =
+          msg->announce.grandmasterPriority2; // need this for possibly pinging it later...
+
+      debug(2, "announcement seen from %" PRIx64 " at %s.", clock_private_info->clock_id,
+            clock_private_info->ip);
+
+      if (clock_private_info->announcements_without_followups < 5)
+        clock_private_info->announcements_without_followups++;
 
       int i;
       // number of elements in the array is 4, hence the 4-1 stuff
@@ -121,13 +133,15 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clo
         uint64_t grandmaster_clock_id_low = nctohl(&msg->announce.grandmasterIdentity[4]);
         grandmaster_clock_id = grandmaster_clock_id << 32;
         grandmaster_clock_id = grandmaster_clock_id + grandmaster_clock_id_low;
-        uint32_t clockQuality = msg->announce.grandmasterClockQuality;
+        uint32_t clockQuality = ntohl(msg->announce.grandmasterClockQuality);
         uint8_t clockClass = (clockQuality >> 24) & 0xff;
         uint8_t clockAccuracy = (clockQuality >> 16) & 0xff;
         uint16_t offsetScaledLogVariance = clockQuality & 0xffff;
+        uint16_t stepsRemoved = ntohs(msg->announce.stepsRemoved);
+        uint16_t sourcePortID = ntohs(msg->header.sourcePortID);
         int best_clock_update_needed = 0;
         if (((clock_private_info->flags & (1 << clock_is_qualified)) == 0) &&
-            (msg->announce.stepsRemoved < 255)) {
+            (stepsRemoved < 255)) {
           // if it's just becoming qualified
           clock_private_info->grandmasterIdentity = grandmaster_clock_id;
           clock_private_info->grandmasterPriority1 = msg->announce.grandmasterPriority1;
@@ -136,7 +150,8 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clo
           clock_private_info->grandmasterAccuracy = clockAccuracy;
           clock_private_info->grandmasterVariance = offsetScaledLogVariance;
           clock_private_info->grandmasterPriority2 = msg->announce.grandmasterPriority2;
-          clock_private_info->stepsRemoved = msg->announce.stepsRemoved;
+          clock_private_info->stepsRemoved = stepsRemoved;
+          clock_private_info->clock_port_number = sourcePortID;
           best_clock_update_needed = 1;
         } else {
           // otherwise, something in it might have changed, I guess, that
@@ -169,8 +184,8 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clo
             clock_private_info->grandmasterPriority2 = msg->announce.grandmasterPriority2;
             best_clock_update_needed = 1;
           }
-          if (clock_private_info->stepsRemoved != msg->announce.stepsRemoved) {
-            clock_private_info->stepsRemoved = msg->announce.stepsRemoved;
+          if (clock_private_info->stepsRemoved != stepsRemoved) {
+            clock_private_info->stepsRemoved = stepsRemoved;
             best_clock_update_needed = 1;
           }
         }
@@ -184,14 +199,15 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clo
                 clock_private_info->stepsRemoved < 255 ? "" : "not ");
           debug(2, "    grandmasterIdentity:         %" PRIx64 ".", grandmaster_clock_id);
           debug(2, "    grandmasterPriority1:        %u.", msg->announce.grandmasterPriority1);
-          debug(2, "    grandmasterClockQuality:     0x%x.", msg->announce.grandmasterClockQuality);
+          debug(2, "    grandmasterClockQuality:     0x%x.", clockQuality);
           debug(2, "        clockClass:              %u.", clockClass); // See 7.6.2.4 clockClass
           debug(2, "        clockAccuracy:           0x%x.",
                 clockAccuracy); // See 7.6.2.5 clockAccuracy
           debug(2, "        offsetScaledLogVariance: 0x%x.",
                 offsetScaledLogVariance); // See 7.6.3 PTP variance
           debug(2, "    grandmasterPriority2:        %u.", msg->announce.grandmasterPriority2);
-          debug(2, "    stepsRemoved:                %u.", msg->announce.stepsRemoved);
+          debug(2, "    stepsRemoved:                %u.", stepsRemoved);
+          debug(2, "    portNumber:                  %u.", sourcePortID);
 
           // now go and re-mark the best clock in the timing peer list
           if (clock_private_info->stepsRemoved >= 255) // 9.3.2.5 (d)
@@ -216,7 +232,6 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clo
 void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
                       clock_source_private_data *clock_private_info, uint64_t reception_time) {
 
-  clock_private_info->flags |= (1 << clock_is_valid); // valid because it has at least one follow_up
   struct ptp_follow_up_message *msg = (struct ptp_follow_up_message *)buf;
 
   uint16_t seconds_hi = nctohs(&msg->follow_up.preciseOriginTimestamp[0]);
@@ -229,6 +244,10 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
   preciseOriginTimestamp = preciseOriginTimestamp + nanoseconds;
 
   // update our sample information
+  if (clock_private_info->follow_up_number < 100)
+    clock_private_info->follow_up_number++;
+
+  clock_private_info->announcements_without_followups = 0; // we've seen a followup
 
   clock_private_info->samples[clock_private_info->next_sample_goes_here].local_time =
       reception_time;
@@ -245,142 +264,150 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
 
   debug(2, "FOLLOWUP from %" PRIx64 ", %s.", clock_private_info->clock_id, &clock_private_info->ip);
   uint64_t offset = preciseOriginTimestamp - reception_time;
-  
+
   clock_private_info->local_time = reception_time;
   clock_private_info->source_time = preciseOriginTimestamp;
   clock_private_info->local_to_source_time_offset = offset;
-  
+
   int64_t jitter = 0;
 
-    if ((clock_private_info->flags & (1 << clock_is_becoming_master)) != 0) {
-      // we definitely have at least one sample since the request was made to
-      // designate it a master, so we assume it is legitimate. That is, we assume
-      // that the clock originator knows that it a clock master by now.
-      uint64_t oldest_acceptable_master_clock_time =
-          clock_private_info->source_time + 1150000000; // ns.
+  if ((clock_private_info->flags & (1 << clock_is_becoming_master)) != 0) {
+    // we definitely have at least one sample since the request was made to
+    // designate it a master, so we assume it is legitimate. That is, we assume
+    // that the clock originator knows that it a clock master by now.
+    uint64_t oldest_acceptable_master_clock_time =
+        clock_private_info->source_time + 1150000000; // ns.
 
-      // we will try to improve on this present, definitive, local_to_source_time_offset we have
-      int changes_made = 0;
+    // we will try to improve on this present, definitive, local_to_source_time_offset we have
+    int changes_made = 0;
 
-      uint64_t best_offset_so_far = clock_private_info->local_to_source_time_offset;
-      uint64_t age_of_oldest_legitimate_sample = clock_private_info->local_time;
+    uint64_t best_offset_so_far = clock_private_info->local_to_source_time_offset;
+    uint64_t age_of_oldest_legitimate_sample = clock_private_info->local_time;
 
-      int number_of_samples = MAX_TIMING_SAMPLES - clock_private_info->vacant_samples;
-      int samples_checked = 0;
-      if (number_of_samples > 0) {
-        debug(3, "Number of samples: %d.", number_of_samples);
+    int number_of_samples = MAX_TIMING_SAMPLES - clock_private_info->vacant_samples;
+    int samples_checked = 0;
+    if (number_of_samples > 0) {
+      debug(3, "Number of samples: %d.", number_of_samples);
 
-        // Now we use the last few samples to calculate the best offset for the
-        // new master clock.
+      // Now we use the last few samples to calculate the best offset for the
+      // new master clock.
 
-        // The time of the oldest sample we use will become the time of the start of the
-        // mastership.
+      // The time of the oldest sample we use will become the time of the start of the
+      // mastership.
 
-        // We will accept samples that would make the local-to-clock offset greatest,
-        // provided they are not too old and that they don't push the current clock time
-        // more than, say, 1000 ms plus one sample interval (i.e about 1.125 seconds) in the future.
+      // We will accept samples that would make the local-to-clock offset greatest,
+      // provided they are not too old and that they don't push the current clock time
+      // more than, say, 1000 ms plus one sample interval (i.e about 1.125 seconds) in the future.
 
-        // This present sample is the only time estimate we have when the clock is definitely a
-        // master, so we use it to eliminate any previous time estimates, made when the clock wasn't
-        // designated a master, that would put it more than, say, a 1.15 seconds further into the
-        // future.
+      // This present sample is the only time estimate we have when the clock is definitely a
+      // master, so we use it to eliminate any previous time estimates, made when the clock wasn't
+      // designated a master, that would put it more than, say, a 1.15 seconds further into the
+      // future.
 
-        // Allow the samples to give a valid master clock time up to this much later than the
-        // present, definitive, sample:
+      // Allow the samples to give a valid master clock time up to this much later than the
+      // present, definitive, sample:
 
-        uint64_t oldest_acceptable_time = reception_time - 10000000000; // only go back this far (ns)
+      uint64_t oldest_acceptable_time = reception_time - 10000000000; // only go back this far (ns)
 
-        int64_t cko = age_of_oldest_legitimate_sample - oldest_acceptable_time;
-        if (cko < 0)
-          debug(1,"starting sample is too old: %" PRId64 " ns.", cko);
+      int64_t cko = age_of_oldest_legitimate_sample - oldest_acceptable_time;
+      if (cko < 0)
+        debug(1, "starting sample is too old: %" PRId64 " ns.", cko);
 
-        int i;
-        for (i = 0; i < number_of_samples; i++) {
-          int64_t age = reception_time - clock_private_info->samples[i].local_time;
-          int64_t age_relative_to_oldest_acceptable_time =
-              clock_private_info->samples[i].local_time - oldest_acceptable_time;
-          if (age_relative_to_oldest_acceptable_time > 0) {
-            debug(3, "sample accepted at %f seconds old.", 0.000000001 * age);
-            if (clock_private_info->samples[i].local_time <
-                age_of_oldest_legitimate_sample) {
-              age_of_oldest_legitimate_sample = clock_private_info->samples[i].local_time;
-            }
-            uint64_t possible_offset = clock_private_info->samples[i].clock_time -
-                                       clock_private_info->samples[i].local_time;
-            uint64_t possible_master_clock_time =
-                clock_private_info->local_time + possible_offset;
-            int64_t age_relative_to_oldest_acceptable_master_clock_time =
-                possible_master_clock_time - oldest_acceptable_master_clock_time;
-            if (age_relative_to_oldest_acceptable_master_clock_time <= 0) {
-              samples_checked++;
-              // so, the sample was not obtained too far in the past
-              // and it would not push the estimated master clock_time too far into the future
-              // so, if it is greater than the best_offset_so_far, then make it the new one
-              if (possible_offset > best_offset_so_far) {
-                debug(3, "new best offset");
-                best_offset_so_far = possible_offset;
-                changes_made++;
-              }
-            } else {
-              debug(3, "sample too far into the future");
+      int i;
+      for (i = 0; i < number_of_samples; i++) {
+        int64_t age = reception_time - clock_private_info->samples[i].local_time;
+        int64_t age_relative_to_oldest_acceptable_time =
+            clock_private_info->samples[i].local_time - oldest_acceptable_time;
+        if (age_relative_to_oldest_acceptable_time > 0) {
+          debug(3, "sample accepted at %f seconds old.", 0.000000001 * age);
+          if (clock_private_info->samples[i].local_time < age_of_oldest_legitimate_sample) {
+            age_of_oldest_legitimate_sample = clock_private_info->samples[i].local_time;
+          }
+          uint64_t possible_offset =
+              clock_private_info->samples[i].clock_time - clock_private_info->samples[i].local_time;
+          uint64_t possible_master_clock_time = clock_private_info->local_time + possible_offset;
+          int64_t age_relative_to_oldest_acceptable_master_clock_time =
+              possible_master_clock_time - oldest_acceptable_master_clock_time;
+          if (age_relative_to_oldest_acceptable_master_clock_time <= 0) {
+            samples_checked++;
+            // so, the sample was not obtained too far in the past
+            // and it would not push the estimated master clock_time too far into the future
+            // so, if it is greater than the best_offset_so_far, then make it the new one
+            if (possible_offset > best_offset_so_far) {
+              debug(3, "new best offset");
+              best_offset_so_far = possible_offset;
+              changes_made++;
             }
           } else {
-            debug(3, "sample too old at %f seconds old.", 0.000000001 * age);
+            debug(3, "sample too far into the future");
           }
+        } else {
+          debug(3, "sample too old at %f seconds old.", 0.000000001 * age);
         }
       }
-      clock_private_info->mastership_start_time = age_of_oldest_legitimate_sample;
-      int64_t offset_difference =
-          best_offset_so_far - clock_private_info->local_to_source_time_offset;
+    }
+    clock_private_info->mastership_start_time = age_of_oldest_legitimate_sample;
+    int64_t offset_difference =
+        best_offset_so_far - clock_private_info->local_to_source_time_offset;
 
-      debug(2, "Lookback difference: %f ms with %d samples checked of %d samples total.",
-            0.000001 * offset_difference, samples_checked, number_of_samples);
-      clock_private_info->local_to_source_time_offset = best_offset_so_far;
+    debug(2, "Lookback difference: %f ms with %d samples checked of %d samples total.",
+          0.000001 * offset_difference, samples_checked, number_of_samples);
+    clock_private_info->local_to_source_time_offset = best_offset_so_far;
 
-      debug(2, "Master sampling started %f ms before becoming master.",
-            0.000001 * (reception_time - age_of_oldest_legitimate_sample));
-      clock_private_info->flags &= ~(1 << clock_is_becoming_master);
-      clock_private_info->flags |= 1 << clock_is_master;
-      clock_private_info->previous_offset_time = 0;
-    } else if (clock_private_info->previous_offset_time != 0) {
-      // i.e. if it's not becoming a master and there has been a previous follow_up
+    debug(2, "Master sampling started %f ms before becoming master.",
+          0.000001 * (reception_time - age_of_oldest_legitimate_sample));
+    clock_private_info->flags &= ~(1 << clock_is_becoming_master);
+    clock_private_info->flags |= 1 << clock_is_master;
+    clock_private_info->previous_offset_time = 0;
+    debug_log_nqptp_status(2);
+  } else if (clock_private_info->previous_offset_time != 0) {
+    // i.e. if it's not becoming a master and there has been a previous follow_up
     int64_t time_since_last_sync = reception_time - clock_private_info->last_sync_time;
-    int64_t sync_timeout = 60000000000; // nanoseconds
+    int64_t sync_timeout = 15000000000; // nanoseconds
     debug(2, "Sync interval: %f seconds.", 0.000000001 * time_since_last_sync);
     if (time_since_last_sync < sync_timeout) {
 
       // Do acceptance checking.
-      // If the new offset is greater, by any amount, than the old offset,
-      // accept it.
-      // If it is less than the new offset by up to what a reasonable drift divergence would allow,
-      // accept it.
-      // Otherwise, reject it
 
-      // A drift divergence of 100 ppm would give 12.5 us per 125 ms.
+      // Positive changes in the offset are much more likely to be
+      // legitimate, since they could only occur due to a shorter
+      // propagation time. (Actually, this is not quite true --
+      // it is possible that the remote clock could be adjusted forward
+      // and this would increase the offset too.)
+      // Anyway, when the clock is new, we give preferential weighting to
+      // positive changes in the offset.
+
+      // If the new offset is greater, by any amount, than the old offset,
+      // or if it is less by up to 10 mS,
+      // accept it.
+      // Otherwise, drop it
+
+      // This seems to be quite stable
 
       jitter = offset - clock_private_info->previous_offset;
 
-      uint64_t jitter_timing_interval = reception_time - clock_private_info->previous_offset_time;
-      long double jitterppm = 0.0;
-      if (jitter_timing_interval != 0) {
-        jitterppm = (0.001 * (jitter * 1000000000)) / jitter_timing_interval;
-        debug(2, "jitter: %" PRId64 " in: %" PRId64 " ns, %+f ppm ", jitter, jitter_timing_interval,
-              jitterppm);
-      }
-      if (jitterppm >= -1000) {
-        // we take a positive or small negative jitter as a sync event
-        // as we have a new figure for the difference between the local clock and the
-        // remote clock which is almost the same or greater than our previous estimate
+      if (jitter > -10000000) {
+        // we take any positive or a limited negative jitter as a sync event
+        if (jitter < 0) {
+          if (clock_private_info->follow_up_number <
+                 (5 * 8)) // at the beginning (8 samples per second)
+            offset = clock_private_info->previous_offset + jitter / 16;
+          else
+            offset = clock_private_info->previous_offset + jitter / 64;            
+        } else if (clock_private_info->follow_up_number <
+                 (5 * 8)) // at the beginning (8 samples per second)
+          offset =
+              clock_private_info->previous_offset + jitter / 1; // accept positive changes quickly
+        else
+          offset = clock_private_info->previous_offset + jitter / 64;
         clock_private_info->last_sync_time = reception_time;
       } else {
-        // let our previous estimate drop fall back by this many nanoseconds
-        jitter = -10 * 1000; // this is nanoseconds in, supposedly, 125 milliseconds. 12.5 us /
-                             // 125 ms is 100 ppm.
-        offset = clock_private_info->previous_offset + jitter;
+        offset = clock_private_info->previous_offset; // forget the present sample...
       }
-    } else if ((clock_private_info->flags & (1 << clock_is_master)) != 0) {
-      debug(1, "Lost sync with clock %" PRIx64 " at %s. Resynchronising.", clock_private_info->clock_id,
-           clock_private_info->ip);
+    } else {
+      if ((clock_private_info->flags & (1 << clock_is_master)) != 0)
+        debug(1, "Resynchronising master clock %" PRIx64 " at %s.", clock_private_info->clock_id,
+              clock_private_info->ip);
       // leave the offset as it was coming in and take it as a sync time
       clock_private_info->last_sync_time = reception_time;
     }
@@ -388,13 +415,22 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
     clock_private_info->last_sync_time = reception_time;
   }
 
+  clock_private_info->previous_offset = offset;
+  clock_private_info->previous_offset_time = reception_time;
+
   if ((clock_private_info->flags & (1 << clock_is_master)) != 0) {
+
     update_master_clock_info(clock_private_info->clock_id, (const char *)&clock_private_info->ip,
                              reception_time, offset, clock_private_info->mastership_start_time);
     debug(3, "clock: %" PRIx64 ", time: %" PRIu64 ", offset: %" PRId64 ", jitter: %+f ms.",
           clock_private_info->clock_id, reception_time, offset, 0.000001 * jitter);
   }
 
-  clock_private_info->previous_offset = offset;
-  clock_private_info->previous_offset_time = reception_time;
+  if ((clock_private_info->flags & (1 << clock_is_valid)) == 0) {
+    debug(2, "follow_up seen from %" PRIx64 " at %s.", clock_private_info->clock_id,
+          clock_private_info->ip);
+    clock_private_info->flags |=
+        (1 << clock_is_valid); // valid because it has at least one follow_up
+    update_master();
+  }
 }
