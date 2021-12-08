@@ -1,3 +1,14 @@
+## Version: 1.1-dev-94-gbaf43f0
+#### Significant Changes
+* Change clock base to improve stability. You'll need to update Shairport Sync to correspond to it. If you forget to, Shairport Sync will not work properly and will leave a message in the log.
+* Improve the ability to maintain synchronisation on a noisy network.
+
+#### Changes
+* Don't die if the clock table is full or address list is malformed -- just ignore any extra clocks or invalid ip specs.
+* Move to using CLOCK_MONOLITHIC_RAW to avoid NTP effects. Bump interface version.
+* Allow a larger amount of negative jitter to be accepted. 
+* Only install a service file if there isn't one there already.
+
 ## Version: 1.1-dev-74-gf713183
 **Enhancement**
 * Add code to activate a PTP clock that has become effectively silent. This can happen to a PTP clock on an Apple Silicon Mac after it has been woken from sleep. It may happen elsewhere.
