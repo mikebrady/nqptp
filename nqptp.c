@@ -527,10 +527,12 @@ uint64_t broadcasting_task(uint64_t call_time, __attribute__((unused)) void *pri
     }
   }
 
+/*
   uint64_t announce_interval = 1;
   announce_interval = announce_interval << (8 + aPTPinitialLogAnnounceInterval);
   announce_interval = announce_interval * 1000000000;
   announce_interval = announce_interval >> 8; // nanoseconds
+  return call_time + announce_interval;
+*/
   return call_time + 50000000;
-  // return call_time + announce_interval;
 }

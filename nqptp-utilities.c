@@ -22,6 +22,7 @@
 #include <errno.h>
 #include <fcntl.h>   // fcntl etc.
 #include <ifaddrs.h> // getifaddrs
+#include <netinet/in.h>
 
 #ifdef CONFIG_FOR_LINUX
 #include <linux/if_packet.h> // sockaddr_ll
@@ -30,7 +31,6 @@
 #ifdef CONFIG_FOR_FREEBSD
 #include <net/if_dl.h>
 #include <net/if_types.h>
-#include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #endif
