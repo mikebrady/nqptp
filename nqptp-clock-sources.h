@@ -34,7 +34,8 @@ typedef enum {
 } clock_flags;
 
 // 8 samples per seconds
-#define MAX_TIMING_SAMPLES 47
+// #define MAX_TIMING_SAMPLES 47
+#define MAX_TIMING_SAMPLES 1
 typedef struct {
   uint64_t local_time, clock_time;
 } timing_samples;

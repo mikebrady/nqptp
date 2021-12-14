@@ -89,6 +89,8 @@ int epoll_fd;
 
 void update_master_clock_info(uint64_t master_clock_id, const char *ip, uint64_t local_time,
                               uint64_t local_to_master_offset, uint64_t mastership_start_time) {
+                              
+  //debug(1,"update_master_clock_info start");
   if (shared_memory->master_clock_id != master_clock_id)
     debug_log_nqptp_status(1);
   int rc = pthread_mutex_lock(&shared_memory->shm_mutex);
@@ -108,6 +110,7 @@ void update_master_clock_info(uint64_t master_clock_id, const char *ip, uint64_t
   rc = pthread_mutex_unlock(&shared_memory->shm_mutex);
   if (rc != 0)
     warn("Can't release mutex after updating master clock!");
+  //debug(1,"update_master_clock_info done");
 }
 
 void goodbye(void) {
@@ -515,7 +518,7 @@ uint64_t broadcasting_task(uint64_t call_time, __attribute__((unused)) void *pri
             msg->announce.grandmasterPriority1 = 250;
           }
 
-          msg->announce.grandmasterPriority1 = 250;
+          msg->announce.grandmasterPriority2 = clocks_private[i].grandmasterPriority2;
           ret = sendto(s, msg, msg_length, 0, res->ai_addr, res->ai_addrlen);
           if (ret == -1)
             debug(1, "result of second sendto is %d.", ret);
