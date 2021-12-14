@@ -1,3 +1,7 @@
+## Version: 1.1-dev-102-gf678f82
+**Enhancement**
+* Try to improve the reliability of restarting a "silent clock" device, e.g. an Apple Silicon Mac or an AppleTV. Also turn off history (mostly) to see if we can make things simpler.
+
 ## Version: 1.1-dev-74-gf713183
 **Enhancement**
 * Add code to activate a PTP clock that has become effectively silent. This can happen to a PTP clock on an Apple Silicon Mac after it has been woken from sleep. It may happen elsewhere.
