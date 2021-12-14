@@ -41,6 +41,7 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
       for (i = 0; i < MAX_CLOCKS; i++) {
         clock_private_info[i].flags &=
             ~(1 << clock_is_a_timing_peer); // turn off peer flag (but not the master flag!)
+        clock_private_info[i].announcements_without_followups = 0; // to allow a possibly silent clocks to be revisited when added to a timing peer list
       }
 
       while (ip_list != NULL) {
@@ -58,7 +59,7 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
 
       // now find and mark the best clock in the timing peer list as the master
       update_master();
-
+      
       debug(2, "Timing group start");
       for (i = 0; i < MAX_CLOCKS; i++) {
         if ((clock_private_info[i].flags & (1 << clock_is_a_timing_peer)) != 0)
@@ -270,6 +271,13 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
   clock_private_info->local_to_source_time_offset = offset;
 
   int64_t jitter = 0;
+  
+  int64_t time_since_previous_offset = 0;
+  
+  if (clock_private_info->previous_offset_time != 0) {
+    time_since_previous_offset = reception_time - clock_private_info->previous_offset_time;
+  }
+
 
   if ((clock_private_info->flags & (1 << clock_is_becoming_master)) != 0) {
     // we definitely have at least one sample since the request was made to
@@ -360,7 +368,7 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
     clock_private_info->flags |= 1 << clock_is_master;
     clock_private_info->previous_offset_time = 0;
     debug_log_nqptp_status(2);
-  } else if (clock_private_info->previous_offset_time != 0) {
+  } else if ((clock_private_info->previous_offset_time != 0) && (time_since_previous_offset < 5000000000)) {
     // i.e. if it's not becoming a master and there has been a previous follow_up
     int64_t time_since_last_sync = reception_time - clock_private_info->last_sync_time;
     int64_t sync_timeout = 15000000000; // nanoseconds
@@ -413,13 +421,17 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
     }
   } else {
     clock_private_info->last_sync_time = reception_time;
+    if (time_since_previous_offset >= 5000000000) {
+      debug(1,"Long interval: %f seconds since previous follow_up", time_since_previous_offset * 1E-9);
+      clock_private_info->mastership_start_time = reception_time; // mastership is reset to this time...
+      clock_private_info->previous_offset_time = 0;
+    }
   }
 
   clock_private_info->previous_offset = offset;
   clock_private_info->previous_offset_time = reception_time;
 
   if ((clock_private_info->flags & (1 << clock_is_master)) != 0) {
-
     update_master_clock_info(clock_private_info->clock_id, (const char *)&clock_private_info->ip,
                              reception_time, offset, clock_private_info->mastership_start_time);
     debug(3, "clock: %" PRIx64 ", time: %" PRIu64 ", offset: %" PRId64 ", jitter: %+f ms.",
