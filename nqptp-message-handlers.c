@@ -59,7 +59,7 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
 
       // now find and mark the best clock in the timing peer list as the master
       update_master();
-      
+
       debug(2, "Timing group start");
       for (i = 0; i < MAX_CLOCKS; i++) {
         if ((clock_private_info[i].flags & (1 << clock_is_a_timing_peer)) != 0)
@@ -271,9 +271,9 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
   clock_private_info->local_to_source_time_offset = offset;
 
   int64_t jitter = 0;
-  
+
   int64_t time_since_previous_offset = 0;
-  
+
   if (clock_private_info->previous_offset_time != 0) {
     time_since_previous_offset = reception_time - clock_private_info->previous_offset_time;
   }
@@ -368,10 +368,10 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
     clock_private_info->flags |= 1 << clock_is_master;
     clock_private_info->previous_offset_time = 0;
     debug_log_nqptp_status(2);
-  } else if ((clock_private_info->previous_offset_time != 0) && (time_since_previous_offset < 5000000000)) {
+  } else if ((clock_private_info->previous_offset_time != 0) && (time_since_previous_offset < 300000000000)) {
     // i.e. if it's not becoming a master and there has been a previous follow_up
     int64_t time_since_last_sync = reception_time - clock_private_info->last_sync_time;
-    int64_t sync_timeout = 15000000000; // nanoseconds
+    int64_t sync_timeout = 300000000000; // nanoseconds
     debug(2, "Sync interval: %f seconds.", 0.000000001 * time_since_last_sync);
     if (time_since_last_sync < sync_timeout) {
 
@@ -401,7 +401,7 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
                  (5 * 8)) // at the beginning (8 samples per second)
             offset = clock_private_info->previous_offset + jitter / 16;
           else
-            offset = clock_private_info->previous_offset + jitter / 64;            
+            offset = clock_private_info->previous_offset + jitter / 64;
         } else if (clock_private_info->follow_up_number <
                  (5 * 8)) // at the beginning (8 samples per second)
           offset =
@@ -421,7 +421,7 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
     }
   } else {
     clock_private_info->last_sync_time = reception_time;
-    if (time_since_previous_offset >= 5000000000) {
+    if (time_since_previous_offset >= 300000000000) {
       debug(1,"Long interval: %f seconds since previous follow_up", time_since_previous_offset * 1E-9);
       clock_private_info->mastership_start_time = reception_time; // mastership is reset to this time...
       clock_private_info->previous_offset_time = 0;
