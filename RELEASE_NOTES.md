@@ -1,3 +1,7 @@
+## Version: 1.1-dev-104-gd78c84a
+**Enhancement**
+* Make `nqptp` tolerant of longer gaps in the reception of messages from the master clock -- up to 300 seconds. This may be overkill, since messages are meant to arrive 8 times per second, but experience shows that rather long gaps can indeed occur.
+
 ## Version: 1.1-dev-102-gf678f82
 **Enhancement**
 * Try to improve the reliability of restarting a "silent clock" device, e.g. an Apple Silicon Mac or an AppleTV. Also turn off history (mostly) to see if we can make things simpler.
