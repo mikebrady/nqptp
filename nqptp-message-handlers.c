@@ -250,6 +250,7 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
 
   clock_private_info->announcements_without_followups = 0; // we've seen a followup
 
+#ifdef MAX_TIMING_SAMPLES
   clock_private_info->samples[clock_private_info->next_sample_goes_here].local_time =
       reception_time;
   clock_private_info->samples[clock_private_info->next_sample_goes_here].clock_time =
@@ -262,6 +263,7 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
   // if we have need to wrap.
   if (clock_private_info->next_sample_goes_here == MAX_TIMING_SAMPLES)
     clock_private_info->next_sample_goes_here = 0;
+#endif
 
   debug(2, "FOLLOWUP from %" PRIx64 ", %s.", clock_private_info->clock_id, &clock_private_info->ip);
   uint64_t offset = preciseOriginTimestamp - reception_time;
@@ -283,6 +285,7 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
     // we definitely have at least one sample since the request was made to
     // designate it a master, so we assume it is legitimate. That is, we assume
     // that the clock originator knows that it a clock master by now.
+#ifdef MAX_TIMING_SAMPLES
     uint64_t oldest_acceptable_master_clock_time =
         clock_private_info->source_time + 1150000000; // ns.
 
@@ -357,13 +360,14 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
     clock_private_info->mastership_start_time = age_of_oldest_legitimate_sample;
     int64_t offset_difference =
         best_offset_so_far - clock_private_info->local_to_source_time_offset;
-
     debug(2, "Lookback difference: %f ms with %d samples checked of %d samples total.",
           0.000001 * offset_difference, samples_checked, number_of_samples);
     clock_private_info->local_to_source_time_offset = best_offset_so_far;
-
     debug(2, "Master sampling started %f ms before becoming master.",
           0.000001 * (reception_time - age_of_oldest_legitimate_sample));
+#else
+    clock_private_info->mastership_start_time = clock_private_info->local_time;
+#endif
     clock_private_info->flags &= ~(1 << clock_is_becoming_master);
     clock_private_info->flags |= 1 << clock_is_master;
     clock_private_info->previous_offset_time = 0;
@@ -418,6 +422,8 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
               clock_private_info->ip);
       // leave the offset as it was coming in and take it as a sync time
       clock_private_info->last_sync_time = reception_time;
+      clock_private_info->mastership_start_time = reception_time; // mastership is reset to this time...
+      clock_private_info->previous_offset_time = 0;
     }
   } else {
     clock_private_info->last_sync_time = reception_time;

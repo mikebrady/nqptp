@@ -86,7 +86,9 @@ int create_clock_source_record(char *sender_string,
       strncpy((char *)&clocks_private_info[i].ip, sender_string,
               FIELD_SIZEOF(clock_source_private_data, ip) - 1);
       clocks_private_info[i].family = family;
+#ifdef MAX_TIMING_SAMPLES
       clocks_private_info[i].vacant_samples = MAX_TIMING_SAMPLES;
+#endif
       clocks_private_info[i].in_use = 1;
       debug(2, "create record for ip: %s, family: %s.", &clocks_private_info[i].ip,
             clocks_private_info[i].family == AF_INET6 ? "IPv6" : "IPv4");

@@ -89,7 +89,7 @@ int epoll_fd;
 
 void update_master_clock_info(uint64_t master_clock_id, const char *ip, uint64_t local_time,
                               uint64_t local_to_master_offset, uint64_t mastership_start_time) {
-                              
+
   //debug(1,"update_master_clock_info start");
   if (shared_memory->master_clock_id != master_clock_id)
     debug_log_nqptp_status(1);
@@ -105,6 +105,7 @@ void update_master_clock_info(uint64_t master_clock_id, const char *ip, uint64_t
             FIELD_SIZEOF(struct shm_structure, master_clock_ip) - 1);
   else
     shared_memory->master_clock_ip[0] = '\0';
+  shared_memory->master_clock_start_time = mastership_start_time;
   shared_memory->local_time = local_time;
   shared_memory->local_to_master_time_offset = local_to_master_offset;
   rc = pthread_mutex_unlock(&shared_memory->shm_mutex);

@@ -35,10 +35,13 @@ typedef enum {
 
 // 8 samples per seconds
 // #define MAX_TIMING_SAMPLES 47
-#define MAX_TIMING_SAMPLES 1
+// #define MAX_TIMING_SAMPLES 1
+
+#ifdef MAX_TIMING_SAMPLES
 typedef struct {
   uint64_t local_time, clock_time;
 } timing_samples;
+#endif
 
 // information about each clock source
 typedef struct {
@@ -63,10 +66,12 @@ typedef struct {
   uint64_t announce_times[4]; // we'll check qualification and currency using these
   int is_one_of_ours;         // true if it is one of our own clocks
 
+#ifdef MAX_TIMING_SAMPLES
   timing_samples samples[MAX_TIMING_SAMPLES];
   int vacant_samples; // the number of elements in the timing_samples array that are not yet used
   int next_sample_goes_here; // point to where in the timing samples array the next entries should
                              // go
+#endif
 
   // these are for finding the best clock to use
   // See Figure 27 and 27 pp 89 -- 90 for the Data set comparison algorithm
