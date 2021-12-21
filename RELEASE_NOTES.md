@@ -1,10 +1,10 @@
 ## Version: 1.1-dev-108-ga378f07
 **Enhancement**
-* Ensure the interface is updated when the mastership is removed.
+* Ensure the shared memory interface is updated when mastership is removed.
 
 ## Version: 1.1-dev-107-g811524b
 **Enhancement**
-* Further simplify things by turning off history completely and by discarding any mastership history prior to becoming part of a [possibly new] timing peer list.
+* Further simplify things by turning off history completely and by discarding any mastership history prior to becoming part of a (possibly new) timing peer list.
 
 ## Version: 1.1-dev-104-gd78c84a
 **Enhancement**
