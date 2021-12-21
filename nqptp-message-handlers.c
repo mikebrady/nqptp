@@ -42,6 +42,10 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
         clock_private_info[i].flags &=
             ~(1 << clock_is_a_timing_peer); // turn off peer flag (but not the master flag!)
         clock_private_info[i].announcements_without_followups = 0; // to allow a possibly silent clocks to be revisited when added to a timing peer list
+        if ((clock_private_info[i].flags &= ~(1 << clock_is_master)) != 0) {
+          clock_private_info[i].mastership_start_time = get_time_now(); // mastership is reset to this time...
+          clock_private_info[i].previous_offset_time = 0;
+        }
       }
 
       while (ip_list != NULL) {

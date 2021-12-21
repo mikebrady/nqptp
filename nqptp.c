@@ -96,18 +96,19 @@ void update_master_clock_info(uint64_t master_clock_id, const char *ip, uint64_t
   int rc = pthread_mutex_lock(&shared_memory->shm_mutex);
   if (rc != 0)
     warn("Can't acquire mutex to update master clock!");
-  if (shared_memory->master_clock_id != master_clock_id) {
-    shared_memory->master_clock_id = master_clock_id;
-    shared_memory->master_clock_start_time = mastership_start_time;
-  }
-  if (ip != NULL)
+  shared_memory->master_clock_id = master_clock_id;
+  if (ip != NULL) {
     strncpy((char *)&shared_memory->master_clock_ip, ip,
             FIELD_SIZEOF(struct shm_structure, master_clock_ip) - 1);
-  else
+    shared_memory->master_clock_start_time = mastership_start_time;
+    shared_memory->local_time = local_time;
+    shared_memory->local_to_master_time_offset = local_to_master_offset;
+  } else {
     shared_memory->master_clock_ip[0] = '\0';
-  shared_memory->master_clock_start_time = mastership_start_time;
-  shared_memory->local_time = local_time;
-  shared_memory->local_to_master_time_offset = local_to_master_offset;
+    shared_memory->master_clock_start_time = 0;
+    shared_memory->local_time = 0;
+    shared_memory->local_to_master_time_offset = 0;
+  }
   rc = pthread_mutex_unlock(&shared_memory->shm_mutex);
   if (rc != 0)
     warn("Can't release mutex after updating master clock!");
