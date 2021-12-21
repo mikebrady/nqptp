@@ -353,11 +353,11 @@ void update_master() {
   }
   if (best_so_far == -1) {
     // no master clock
-    if (old_master != -1) {
+    //if (old_master != -1) {
       // but there was a master clock, so remove it
-      debug(2, "Remove master clock.");
+      debug(1, "Remove master clock.");
       update_master_clock_info(0, NULL, 0, 0, 0);
-    }
+    //}
     if (timing_peer_count == 0)
       debug(2, "no valid qualified clocks ");
     else
