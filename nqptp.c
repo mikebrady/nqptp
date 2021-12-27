@@ -63,8 +63,6 @@
 
 sockets_open_bundle sockets_open_stuff;
 
-int master_clock_index = -1;
-
 typedef struct {
   uint64_t trigger_time;
   uint64_t (*task)(uint64_t nominal_call_time, void *private_data);
@@ -90,7 +88,7 @@ int epoll_fd;
 void update_master_clock_info(uint64_t master_clock_id, const char *ip, uint64_t local_time,
                               uint64_t local_to_master_offset, uint64_t mastership_start_time) {
 
-  //debug(1,"update_master_clock_info start");
+  // debug(1,"update_master_clock_info start");
   if (shared_memory->master_clock_id != master_clock_id)
     debug_log_nqptp_status(1);
   int rc = pthread_mutex_lock(&shared_memory->shm_mutex);
@@ -112,7 +110,7 @@ void update_master_clock_info(uint64_t master_clock_id, const char *ip, uint64_t
   rc = pthread_mutex_unlock(&shared_memory->shm_mutex);
   if (rc != 0)
     warn("Can't release mutex after updating master clock!");
-  //debug(1,"update_master_clock_info done");
+  // debug(1,"update_master_clock_info done");
 }
 
 void goodbye(void) {
@@ -120,6 +118,8 @@ void goodbye(void) {
   unsigned int i;
   for (i = 0; i < sockets_open_stuff.sockets_open; i++)
     close(sockets_open_stuff.sockets[i].number);
+  // close off shared memory interfaces
+
   if (shared_memory != NULL) {
     // mmap cleanup
     if (munmap(shared_memory, sizeof(struct shm_structure)) != 0)
@@ -128,6 +128,9 @@ void goodbye(void) {
     if (shm_unlink(STORAGE_ID) == -1)
       debug(1, "error unlinking shared memory \"%s\"", STORAGE_ID);
   }
+
+  delete_clients();
+
   if (epoll_fd != -1)
     close(epoll_fd);
 
@@ -431,7 +434,7 @@ uint64_t broadcasting_task(uint64_t call_time, __attribute__((unused)) void *pri
   int i;
   for (i = 0; i < MAX_CLOCKS; i++) {
     if ((clocks_private[i].announcements_without_followups == 3) &&
-        (clocks_private[i].is_one_of_ours == 0)) {
+        ((clocks_private[i].flags & (1 << clock_is_one_of_ours)) == 0)) {
       debug(1, "Found a silent clock %" PRIx64 " at %s.", clocks_private[i].clock_id,
             clocks_private[i].ip);
       // send an Announce message to attempt to waken this silent PTP clock by
@@ -532,12 +535,12 @@ uint64_t broadcasting_task(uint64_t call_time, __attribute__((unused)) void *pri
     }
   }
 
-/*
-  uint64_t announce_interval = 1;
-  announce_interval = announce_interval << (8 + aPTPinitialLogAnnounceInterval);
-  announce_interval = announce_interval * 1000000000;
-  announce_interval = announce_interval >> 8; // nanoseconds
-  return call_time + announce_interval;
-*/
+  /*
+    uint64_t announce_interval = 1;
+    announce_interval = announce_interval << (8 + aPTPinitialLogAnnounceInterval);
+    announce_interval = announce_interval * 1000000000;
+    announce_interval = announce_interval >> 8; // nanoseconds
+    return call_time + announce_interval;
+  */
   return call_time + 50000000;
 }

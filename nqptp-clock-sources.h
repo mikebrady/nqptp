@@ -22,10 +22,9 @@
 
 #include "nqptp.h"
 
-// transaction tracking
-enum stage { waiting_for_sync, sync_seen, follow_up_seen };
-
 typedef enum {
+  clock_is_in_use,
+  clock_is_one_of_ours,
   clock_is_valid,
   clock_is_a_timing_peer,
   clock_is_qualified,
@@ -33,15 +32,13 @@ typedef enum {
   clock_is_master
 } clock_flags;
 
-// 8 samples per seconds
-// #define MAX_TIMING_SAMPLES 47
-// #define MAX_TIMING_SAMPLES 1
-
-#ifdef MAX_TIMING_SAMPLES
-typedef struct {
-  uint64_t local_time, clock_time;
-} timing_samples;
-#endif
+/*
+typedef enum {
+  clock_is_a_timing_peer,
+  clock_is_becoming_master,
+  clock_is_master
+} client_flags;
+*/
 
 // information about each clock source
 typedef struct {
@@ -53,8 +50,6 @@ typedef struct {
   uint64_t local_time; // the local time when the offset was calculated
   uint64_t source_time;
   uint64_t local_to_source_time_offset; // add this to the local time to get source time
-  uint32_t flags;
-  uint16_t in_use;
   uint64_t previous_offset, previous_offset_time, last_sync_time;
   uint64_t mastership_start_time; // set to the time of the first sample used as master
 
@@ -63,15 +58,9 @@ typedef struct {
                              // timing peer group
   // (A member of the timing peer group could appear and disappear so will not be gc'ed.)
   // for Announce Qualification
-  uint64_t announce_times[4]; // we'll check qualification and currency using these
-  int is_one_of_ours;         // true if it is one of our own clocks
-
-#ifdef MAX_TIMING_SAMPLES
-  timing_samples samples[MAX_TIMING_SAMPLES];
-  int vacant_samples; // the number of elements in the timing_samples array that are not yet used
-  int next_sample_goes_here; // point to where in the timing samples array the next entries should
-                             // go
-#endif
+  uint64_t announce_times[4];        // we'll check qualification and currency using these
+  uint8_t flags;                     // stuff related specifically to the clock itself
+  uint8_t client_flags[MAX_CLIENTS]; // stuff related to membership of the clients' timing lists
 
   // these are for finding the best clock to use
   // See Figure 27 and 27 pp 89 -- 90 for the Data set comparison algorithm
@@ -87,6 +76,15 @@ typedef struct {
 
 } clock_source_private_data;
 
+// information on each client
+typedef struct {
+  int shm_fd;
+  struct shm_structure *shared_memory; // the client's individual smi interface
+  char shm_interface_name[64];         // it's name
+  int client_id; // the 1-based index number of clocks' client_flags field associated with this
+                 // interface
+} client_record;
+
 int find_clock_source_record(char *sender_string, clock_source_private_data *clocks_private_info);
 
 int create_clock_source_record(char *sender_string, clock_source_private_data *clocks_private_info);
@@ -95,9 +93,15 @@ void update_clock_self_identifications(clock_source_private_data *clocks_private
 
 void manage_clock_sources(uint64_t reception_time, clock_source_private_data *clocks_private_info);
 
+int find_client_id(char *client_shared_memory_interface_name);
+
+int get_client_id(char *client_shared_memory_interface_name);
+
+int delete_clients();
+
 extern clock_source_private_data clocks_private[MAX_CLOCKS];
 
-void update_master();
+void update_master(int client_id);
 
 void debug_log_nqptp_status(int level);
 

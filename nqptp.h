@@ -25,14 +25,20 @@
 
 #include "nqptp-shm-structures.h"
 
+#define STORAGE_ID "/nqptp"
+#define MAX_CLOCKS 64
+#define MAX_CLIENTS 16
 #define MAX_OPEN_SOCKETS 16
 
 // When a new timing peer group is created, one of the clocks in the
-// group becomes the master and its native time becomes the "master time".
+// group may become the master and its native time becomes the "master time".
 // This is what is provided to the client.
 
-extern int master_clock_index;
-extern struct shm_structure *shared_memory;
+// An NQPTP client interface communicates through a shared memory interface named by the
+// shm_interface_name It provides the shm_interface_name at the start of every control message it
+// sends through port 9000. Following the name, the client can specify the members -- the "PTP
+// Instances" -- of a "PTP Network" it wishes to monitor. This is a "timing group" in AirPlay 2
+// parlance, it seems.
 
 void update_master_clock_info(uint64_t master_clock_id, const char *ip, uint64_t local_time,
                               uint64_t local_to_master_offset, uint64_t mastership_start_time);

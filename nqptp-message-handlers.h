@@ -20,9 +20,9 @@
 #ifndef NQPTP_MESSAGE_HANDLERS_H
 #define NQPTP_MESSAGE_HANDLERS_H
 
-#include <sys/types.h>
 #include "general-utilities.h"
 #include "nqptp-clock-sources.h"
+#include <sys/types.h>
 
 void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clock_private_info,
                      uint64_t reception_time);

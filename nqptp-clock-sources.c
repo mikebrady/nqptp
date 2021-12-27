@@ -27,7 +27,13 @@
 #include <netdb.h>
 #include <string.h>
 #include <sys/socket.h>
-#include <sys/types.h>
+#include <sys/types.h> // for ftruncate and others
+#include <unistd.h>    // for ftruncate and others
+
+#include <fcntl.h>      /* For O_* constants */
+#include <sys/mman.h>   // for shared memory stuff
+#include <sys/select.h> // for fd_set
+#include <sys/stat.h>   // umask
 
 #ifdef CONFIG_FOR_FREEBSD
 #include <netinet/in.h>
@@ -38,6 +44,142 @@
 #endif
 
 clock_source_private_data clocks_private[MAX_CLOCKS];
+client_record clients[MAX_CLIENTS];
+
+int find_client_id(char *client_shared_memory_interface_name) {
+  int response = -1; // signify not found
+  if (client_shared_memory_interface_name != NULL) {
+    int i = 0;
+    // first, see if yu can find it anywhere
+    while ((response == -1) && (i < MAX_CLIENTS)) {
+      if (strcmp(clients[i].shm_interface_name, client_shared_memory_interface_name) == 0)
+        response = i;
+      else
+        i++;
+    }
+  }
+  return response;
+}
+
+int get_client_id(char *client_shared_memory_interface_name) {
+  int response = -1; // signify not found
+  if (client_shared_memory_interface_name != NULL) {
+    int i = 0;
+    // first, see if yu can find it anywhere
+    while ((response == -1) && (i < MAX_CLIENTS)) {
+      if (strcmp(clients[i].shm_interface_name, client_shared_memory_interface_name) == 0)
+        response = i;
+      else
+        i++;
+    }
+
+    if (response == -1) { // no match, so create one
+      i = 0;
+      while ((response == -1) && (i < MAX_CLIENTS)) {
+        if (clients[i].shm_interface_name[0] == '\0')
+          response = i;
+        else
+          i++;
+      }
+      if (response != -1) {
+        pthread_mutexattr_t shared;
+        int err;
+        strncpy(clients[i].shm_interface_name, client_shared_memory_interface_name,
+                sizeof(clients[i].shm_interface_name));
+        // creat the named smi interface
+
+        // open a shared memory interface.
+        clients[i].shm_fd = -1;
+
+        mode_t oldumask = umask(0);
+        clients[i].shm_fd = shm_open(client_shared_memory_interface_name, O_RDWR | O_CREAT, 0666);
+        if (clients[i].shm_fd == -1) {
+          die("cannot open shared memory \"%s\".", client_shared_memory_interface_name);
+        }
+        (void)umask(oldumask);
+
+        if (ftruncate(clients[i].shm_fd, sizeof(struct shm_structure)) == -1) {
+          die("failed to set size of shared memory \"%s\".", client_shared_memory_interface_name);
+        }
+
+#ifdef CONFIG_FOR_FREEBSD
+        clients[i].shared_memory =
+            (struct shm_structure *)mmap(NULL, sizeof(struct shm_structure), PROT_READ | PROT_WRITE,
+                                         MAP_SHARED, clients[i].shm_fd, 0);
+#endif
+
+#ifdef CONFIG_FOR_LINUX
+        clients[i].shared_memory =
+            (struct shm_structure *)mmap(NULL, sizeof(struct shm_structure), PROT_READ | PROT_WRITE,
+                                         MAP_LOCKED | MAP_SHARED, clients[i].shm_fd, 0);
+#endif
+
+        if (clients[i].shared_memory == (struct shm_structure *)-1) {
+          die("failed to mmap shared memory \"%s\".", client_shared_memory_interface_name);
+        }
+
+        if ((close(clients[i].shm_fd) == -1)) {
+          warn("error closing \"%s\" after mapping.", client_shared_memory_interface_name);
+        }
+
+        // zero it
+        memset(clients[i].shared_memory, 0, sizeof(struct shm_structure));
+        clients[i].shared_memory->version = NQPTP_SHM_STRUCTURES_VERSION;
+
+        /*create mutex attr */
+        err = pthread_mutexattr_init(&shared);
+        if (err != 0) {
+          die("mutex attribute initialization failed - %s.", strerror(errno));
+        }
+        pthread_mutexattr_setpshared(&shared, 1);
+        /*create a mutex */
+        err = pthread_mutex_init((pthread_mutex_t *)&clients[i].shared_memory->shm_mutex, &shared);
+        if (err != 0) {
+          die("mutex initialization failed - %s.", strerror(errno));
+        }
+
+        err = pthread_mutexattr_destroy(&shared);
+        if (err != 0) {
+          die("mutex attribute destruction failed - %s.", strerror(errno));
+        }
+
+        for (i = 0; i < MAX_CLOCKS; i++) {
+          clocks_private[i].client_flags[response] =
+              0; // turn off all client flags in every clock for this client
+        }
+      } else {
+        debug(1, "could not create a client record for client \"%s\".",
+              client_shared_memory_interface_name);
+      }
+    }
+  } else {
+    debug(1, "no client_shared_memory_interface_name");
+  }
+  return response;
+}
+
+int delete_clients() {
+  int response = 0; // okay unless something happens
+  int i;
+  for (i = 0; i < MAX_CLIENTS; i++) {
+    if (clients[i].shm_interface_name[0] != '\0') {
+      if (clients[i].shared_memory != NULL) {
+        // mmap cleanup
+        if (munmap(clients[i].shared_memory, sizeof(struct shm_structure)) != 0) {
+          debug(1, "error unmapping shared memory");
+          response = -1;
+        }
+        // shm_open cleanup
+        if (shm_unlink(clients[i].shm_interface_name) == -1) {
+          debug(1, "error unlinking shared memory \"%s\"", clients[i].shm_interface_name);
+          response = -1;
+        }
+      }
+      clients[i].shm_interface_name[0] = '\0'; // remove the name, just in case
+    }
+  }
+  return response;
+}
 
 int find_clock_source_record(char *sender_string, clock_source_private_data *clocks_private_info) {
   // return the index of the clock in the clock information arrays or -1
@@ -45,7 +187,7 @@ int find_clock_source_record(char *sender_string, clock_source_private_data *clo
   int i = 0;
   int found = 0;
   while ((found == 0) && (i < MAX_CLOCKS)) {
-    if ((clocks_private_info[i].in_use != 0) &&
+    if (((clocks_private_info[i].flags & (1 << clock_is_in_use)) != 0) &&
         (strcasecmp(sender_string, (const char *)&clocks_private_info[i].ip) == 0))
       found = 1;
     else
@@ -58,13 +200,13 @@ int find_clock_source_record(char *sender_string, clock_source_private_data *clo
 
 int create_clock_source_record(char *sender_string,
                                clock_source_private_data *clocks_private_info) {
-   // return the index of a clock entry in the clock information arrays or -1 if full
+  // return the index of a clock entry in the clock information arrays or -1 if full
   // initialise the entries in the shared and private arrays
   int response = -1;
   int i = 0;
   int found = 0; // trying to find an unused entry
   while ((found == 0) && (i < MAX_CLOCKS)) {
-    if (clocks_private_info[i].in_use == 0)
+    if ((clocks_private_info[i].flags & (1 << clock_is_in_use)) == 0)
       found = 1;
     else
       i++;
@@ -89,7 +231,7 @@ int create_clock_source_record(char *sender_string,
 #ifdef MAX_TIMING_SAMPLES
       clocks_private_info[i].vacant_samples = MAX_TIMING_SAMPLES;
 #endif
-      clocks_private_info[i].in_use = 1;
+      clocks_private_info[i].flags |= (1 << clock_is_in_use);
       debug(2, "create record for ip: %s, family: %s.", &clocks_private_info[i].ip,
             clocks_private_info[i].family == AF_INET6 ? "IPv6" : "IPv4");
     } else {
@@ -108,7 +250,7 @@ void manage_clock_sources(uint64_t reception_time, clock_source_private_data *cl
   // do a garbage collect for clock records no longer in use
   for (i = 0; i < MAX_CLOCKS; i++) {
     // only if its in use and not a timing peer... don't need a mutex to check
-    if ((clocks_private_info[i].in_use != 0) &&
+    if (((clocks_private_info[i].flags & (1 << clock_is_in_use)) != 0) &&
         ((clocks_private_info[i].flags & (1 << clock_is_a_timing_peer)) == 0)) {
       int64_t time_since_last_use = reception_time - clocks_private_info[i].time_of_last_use;
       // using a sync timeout to determine when to drop the record...
@@ -124,7 +266,7 @@ void manage_clock_sources(uint64_t reception_time, clock_source_private_data *cl
         debug(2, "delete record for: %s.", &clocks_private_info[i].ip);
         memset(&clocks_private_info[i], 0, sizeof(clock_source_private_data));
         if (old_flags != 0)
-          update_master();
+          update_master(0); // TODO
         else
           debug_log_nqptp_status(2);
       }
@@ -139,7 +281,7 @@ void update_clock_self_identifications(clock_source_private_data *clocks_private
   // first, turn off all the self-id flags
   int i;
   for (i = 0; i < MAX_CLOCKS; i++) {
-    clocks_private_info[i].is_one_of_ours = 0;
+    clocks_private_info[i].flags &= ~(1 << clock_is_one_of_ours);
   }
 
   struct ifaddrs *ifap, *ifa;
@@ -166,11 +308,11 @@ void update_clock_self_identifications(clock_source_private_data *clocks_private
         if (addr != NULL)
           inet_ntop(family, addr, ip_string, sizeof(ip_string));
         if (strlen(ip_string) != 0) {
-          // now set the is_one_of_ours flag of any clock with this ip
+          // now set the clock_is_one_of_ours flag of any clock with this ip
           for (i = 0; i < MAX_CLOCKS; i++) {
             if (strcasecmp(ip_string, clocks_private_info[i].ip) == 0) {
               debug(2, "found an entry for one of our clocks");
-              clocks_private_info[i].is_one_of_ours = 1;
+              clocks_private_info[i].flags |= (1 << clock_is_one_of_ours);
             }
           }
         }
@@ -188,7 +330,7 @@ void debug_log_nqptp_status(int level) {
   int records_in_use = 0;
   int i;
   for (i = 0; i < MAX_CLOCKS; i++)
-    if (clocks_private[i].in_use != 0)
+    if ((clocks_private[i].flags & (1 << clock_is_in_use)) != 0)
       records_in_use++;
   debug(level, "");
   if (records_in_use > 0) {
@@ -200,7 +342,7 @@ void debug_log_nqptp_status(int level) {
     uint32_t non_peer_clock_mask = (1 << clock_is_valid);
     uint32_t non_peer_master_mask = non_peer_clock_mask | (1 << clock_is_master);
     for (i = 0; i < MAX_CLOCKS; i++) {
-      if (clocks_private[i].in_use != 0) {
+      if ((clocks_private[i].flags & (1 << clock_is_in_use)) != 0) {
         if ((clocks_private[i].flags & peer_master_mask) == peer_master_mask) {
           debug(level, "  Peer Master:            %" PRIx64 "  %s.", clocks_private[i].clock_id,
                 clocks_private[i].ip);
@@ -256,7 +398,7 @@ int uint64_cmp(uint64_t a, uint64_t b, const char *cause) {
   }
 }
 
-void update_master() {
+void update_master(int client_id) {
 
   // This implements the IEEE 1588-2008 best master clock algorithm.
 
@@ -353,10 +495,10 @@ void update_master() {
   }
   if (best_so_far == -1) {
     // no master clock
-    //if (old_master != -1) {
-      // but there was a master clock, so remove it
-      debug(1, "Remove master clock.");
-      update_master_clock_info(0, NULL, 0, 0, 0);
+    // if (old_master != -1) {
+    // but there was a master clock, so remove it
+    debug(1, "Remove master clock.");
+    update_master_clock_info(0, NULL, 0, 0, 0);
     //}
     if (timing_peer_count == 0)
       debug(2, "no valid qualified clocks ");

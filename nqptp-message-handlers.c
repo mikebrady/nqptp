@@ -29,50 +29,96 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
                                   clock_source_private_data *clock_private_info) {
   if (recv_len != -1) {
     buf[recv_len - 1] = 0; // make sure there's a null in it!
-    debug(2, "New timing peer list: \"%s\".", buf);
-    if (buf[0] == 'T') {
+    debug(1, "New control port message: \"%s\".", buf);
+    // we need to get the client shared memory interface name from the front
+    char *ip_list = buf;
+    char *smi_name = strsep(&ip_list, " ");
+    char *command = NULL;
+    if (smi_name != NULL) {
+      debug(1, "SMI Name: \"%s\"", smi_name);
+      int client_id = 0;
+      if (ip_list != NULL)
+        command = strsep(&ip_list, " ");
+      if ((command == NULL) || ((strcmp(command, "T") == 0) && (ip_list == NULL))) {
+        // clear all the flags, but only if the client exists
+        client_id = find_client_id(smi_name); // don't create a record
+        if (client_id != -1) {
+          // turn off all is_timing_peer flags
+          int i;
+          for (i = 0; i < MAX_CLOCKS; i++) {
+            // e.g. (obsolete)
+            clock_private_info[i].flags &= ~(1 << clock_is_master);
+            clock_private_info[i].mastership_start_time = 0;
+            clock_private_info[i].previous_offset_time = 0;
 
-      char *ip_list = buf + 1;
-      if (*ip_list == ' ')
-        ip_list++;
+            // if a clock would now stop being a master everywhere
+            // it should drop mastership history and do a sync when it becomes master again
+            if ((clock_private_info[i].client_flags[client_id] & (1 << clock_is_master)) !=
+                0) { // if clock[i] is master for this client's timing group
+              int c;
+              int this_clock_is_master_elsewhere = 0;
+              for (c = 0; c < MAX_CLIENTS; c++) {
+                if ((c != client_id) &&
+                    ((clock_private_info[i].client_flags[c] & (1 << clock_is_master)) != 0))
+                  this_clock_is_master_elsewhere = 1;
+              }
+              if (this_clock_is_master_elsewhere == 0) {
+                clock_private_info[i].mastership_start_time = 0;
+                clock_private_info[i].previous_offset_time = 0;
+              }
+            }
+            clock_private_info[i].client_flags[client_id] = 0;
+          }
+        }
+      } else {
+        client_id = get_client_id(smi_name); // create the record if it doesn't exist
+        if (client_id != -1) {
+          if (strcmp(command, "T") == 0) {
+            // turn off all is_timing_peer flags
+            int i;
+            for (i = 0; i < MAX_CLOCKS; i++) {
+              clock_private_info[i].flags &=
+                  ~(1 << clock_is_a_timing_peer); // turn off peer flag (but not the master flag!)
+              clock_private_info[i].client_flags[client_id] &=
+                  ~(1 << clock_is_a_timing_peer); // turn off peer flag (but not the master flag!)
+              clock_private_info[i].announcements_without_followups =
+                  0; // to allow a possibly silent clock to be revisited when added to a timing
+                     // peer list
+            }
+            while (ip_list != NULL) {
+              char *new_ip = strsep(&ip_list, " ");
+              // look for the IP in the list of clocks, and create an inert entry if not there
+              if ((new_ip != NULL) && (new_ip[0] != 0)) {
+                int t = find_clock_source_record(new_ip, clock_private_info);
+                if (t == -1)
+                  t = create_clock_source_record(new_ip, clock_private_info);
+                if (t != -1) { // if the clock table is not full, show it's a timing peer
+                  clock_private_info[t].flags |= (1 << clock_is_a_timing_peer);
+                  clock_private_info[t].client_flags[client_id] |= (1 << clock_is_a_timing_peer);
+                }
+                // otherwise, drop it
+              }
+            }
 
-      // turn off all is_timing_peer flags
-      int i;
-      for (i = 0; i < MAX_CLOCKS; i++) {
-        clock_private_info[i].flags &=
-            ~(1 << clock_is_a_timing_peer); // turn off peer flag (but not the master flag!)
-        clock_private_info[i].announcements_without_followups = 0; // to allow a possibly silent clocks to be revisited when added to a timing peer list
-        if (strlen(buf) == 1) { // if it's giving an empty timing peer list, that means drop mastership from the past
-          clock_private_info[i].flags &= ~(1 << clock_is_master);
-          clock_private_info[i].mastership_start_time = 0;
-          clock_private_info[i].previous_offset_time = 0;
+            // now find and mark the best clock in the timing peer list as the master
+            update_master(client_id);
+
+            debug(2, "Timing group start");
+            for (i = 0; i < MAX_CLOCKS; i++) {
+              if ((clock_private_info[i].client_flags[client_id] & (1 << clock_is_a_timing_peer)) !=
+                  0)
+                debug(2, "%s.", &clock_private_info[i].ip);
+            }
+            debug(2, "Timing group end");
+          } else {
+            warn("Unrecognised string on the control port.");
+          }
+        } else {
+          warn("Could not find or create a record for SMI Interface \"%s\".", smi_name);
         }
       }
-
-      while (ip_list != NULL) {
-        char *new_ip = strsep(&ip_list, " ");
-        // look for the IP in the list of clocks, and create an inert entry if not there
-        if ((new_ip != NULL) && (new_ip[0] != 0)) {
-          int t = find_clock_source_record(new_ip, clock_private_info);
-          if (t == -1)
-            t = create_clock_source_record(new_ip, clock_private_info);
-          if (t != -1) // if the clock table is not full, show it's a timing peer
-            clock_private_info[t].flags |= (1 << clock_is_a_timing_peer);
-          // otherwise, drop it
-        }
-      }
-
-      // now find and mark the best clock in the timing peer list as the master
-      update_master();
-
-      debug(2, "Timing group start");
-      for (i = 0; i < MAX_CLOCKS; i++) {
-        if ((clock_private_info[i].flags & (1 << clock_is_a_timing_peer)) != 0)
-          debug(2, "%s.", &clock_private_info[i].ip);
-      }
-      debug(2, "Timing group end");
     } else {
-      warn("Unrecognised string on the control port.");
+      warn("SMI Interface Name not found on the control port.");
     }
   } else {
     warn("Bad packet on the control port.");
@@ -81,8 +127,8 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
 
 void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clock_private_info,
                      uint64_t reception_time) {
-  // reject Announce messages from self
-  if (clock_private_info->is_one_of_ours == 0) {
+  // only process Announce messages that do not come from self
+  if ((clock_private_info->flags & (1 << clock_is_one_of_ours)) == 0) {
     // debug_print_buffer(1, buf, (size_t) recv_len);
     // make way for the new time
     if ((size_t)recv_len >= sizeof(struct ptp_announce_message)) {
@@ -220,7 +266,7 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clo
             clock_private_info->flags &= ~(1 << clock_is_qualified);
           else
             clock_private_info->flags |= (1 << clock_is_qualified);
-          update_master();
+          update_master(0); // TODO -- use client_id here
         }
       } else {
         if ((clock_private_info->flags & (1 << clock_is_qualified)) !=
@@ -284,7 +330,6 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
   if (clock_private_info->previous_offset_time != 0) {
     time_since_previous_offset = reception_time - clock_private_info->previous_offset_time;
   }
-
 
   if ((clock_private_info->flags & (1 << clock_is_becoming_master)) != 0) {
     // we definitely have at least one sample since the request was made to
@@ -377,7 +422,8 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
     clock_private_info->flags |= 1 << clock_is_master;
     clock_private_info->previous_offset_time = 0;
     debug_log_nqptp_status(2);
-  } else if ((clock_private_info->previous_offset_time != 0) && (time_since_previous_offset < 300000000000)) {
+  } else if ((clock_private_info->previous_offset_time != 0) &&
+             (time_since_previous_offset < 300000000000)) {
     // i.e. if it's not becoming a master and there has been a previous follow_up
     int64_t time_since_last_sync = reception_time - clock_private_info->last_sync_time;
     int64_t sync_timeout = 300000000000; // nanoseconds
@@ -407,12 +453,12 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
         // we take any positive or a limited negative jitter as a sync event
         if (jitter < 0) {
           if (clock_private_info->follow_up_number <
-                 (5 * 8)) // at the beginning (8 samples per second)
+              (5 * 8)) // at the beginning (8 samples per second)
             offset = clock_private_info->previous_offset + jitter / 16;
           else
             offset = clock_private_info->previous_offset + jitter / 64;
         } else if (clock_private_info->follow_up_number <
-                 (5 * 8)) // at the beginning (8 samples per second)
+                   (5 * 8)) // at the beginning (8 samples per second)
           offset =
               clock_private_info->previous_offset + jitter / 1; // accept positive changes quickly
         else
@@ -427,14 +473,17 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
               clock_private_info->ip);
       // leave the offset as it was coming in and take it as a sync time
       clock_private_info->last_sync_time = reception_time;
-      clock_private_info->mastership_start_time = reception_time; // mastership is reset to this time...
+      clock_private_info->mastership_start_time =
+          reception_time; // mastership is reset to this time...
       clock_private_info->previous_offset_time = 0;
     }
   } else {
     clock_private_info->last_sync_time = reception_time;
     if (time_since_previous_offset >= 300000000000) {
-      debug(1,"Long interval: %f seconds since previous follow_up", time_since_previous_offset * 1E-9);
-      clock_private_info->mastership_start_time = reception_time; // mastership is reset to this time...
+      debug(1, "Long interval: %f seconds since previous follow_up",
+            time_since_previous_offset * 1E-9);
+      clock_private_info->mastership_start_time =
+          reception_time; // mastership is reset to this time...
       clock_private_info->previous_offset_time = 0;
     }
   }
@@ -454,6 +503,6 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
           clock_private_info->ip);
     clock_private_info->flags |=
         (1 << clock_is_valid); // valid because it has at least one follow_up
-    update_master();
+    update_master(0);          // TODO
   }
 }
