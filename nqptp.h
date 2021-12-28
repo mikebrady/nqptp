@@ -40,7 +40,7 @@
 // Instances" -- of a "PTP Network" it wishes to monitor. This is a "timing group" in AirPlay 2
 // parlance, it seems.
 
-void update_master_clock_info(uint64_t master_clock_id, const char *ip, uint64_t local_time,
-                              uint64_t local_to_master_offset, uint64_t mastership_start_time);
+void old_update_master_clock_info(uint64_t master_clock_id, const char *ip, uint64_t local_time,
+                                  uint64_t local_to_master_offset, uint64_t mastership_start_time);
 
 #endif

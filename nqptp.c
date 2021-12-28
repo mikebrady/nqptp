@@ -85,8 +85,8 @@ uint64_t sample_task(uint64_t call_time, __attribute__((unused)) void *private_d
 struct shm_structure *shared_memory = NULL; // this is where public clock info is available
 int epoll_fd;
 
-void update_master_clock_info(uint64_t master_clock_id, const char *ip, uint64_t local_time,
-                              uint64_t local_to_master_offset, uint64_t mastership_start_time) {
+void old_update_master_clock_info(uint64_t master_clock_id, const char *ip, uint64_t local_time,
+                                  uint64_t local_to_master_offset, uint64_t mastership_start_time) {
 
   // debug(1,"update_master_clock_info start");
   if (shared_memory->master_clock_id != master_clock_id)

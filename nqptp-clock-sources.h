@@ -25,7 +25,7 @@
 typedef enum {
   clock_is_in_use,
   clock_is_one_of_ours,
-  clock_is_valid,
+//  clock_is_valid,
   clock_is_a_timing_peer,
   clock_is_qualified,
   clock_is_becoming_master,
@@ -94,14 +94,17 @@ void update_clock_self_identifications(clock_source_private_data *clocks_private
 void manage_clock_sources(uint64_t reception_time, clock_source_private_data *clocks_private_info);
 
 int find_client_id(char *client_shared_memory_interface_name);
-
 int get_client_id(char *client_shared_memory_interface_name);
-
+const char *get_client_name(int id);
 int delete_clients();
 
 extern clock_source_private_data clocks_private[MAX_CLOCKS];
 
 void update_master(int client_id);
+
+void update_master_clock_info(int client_id, uint64_t master_clock_id, const char *ip,
+                              uint64_t local_time, uint64_t local_to_master_offset,
+                              uint64_t mastership_start_time);
 
 void debug_log_nqptp_status(int level);
 
