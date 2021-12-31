@@ -35,7 +35,6 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
     char *smi_name = strsep(&ip_list, " ");
     char *command = NULL;
     if (smi_name != NULL) {
-      debug(1, "SMI Name: \"%s\"", smi_name);
       int client_id = 0;
       if (ip_list != NULL)
         command = strsep(&ip_list, " ");
@@ -84,6 +83,7 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
               clock_private_info[i].announcements_without_followups =
                   0; // to allow a possibly silent clock to be revisited when added to a timing
                      // peer list
+              clock_private_info[i].follow_up_number = 0;
             }
             while (ip_list != NULL) {
               char *new_ip = strsep(&ip_list, " ");
@@ -147,7 +147,9 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clo
       debug(2, "announcement seen from %" PRIx64 " at %s.", clock_private_info->clock_id,
             clock_private_info->ip);
 
-      if (clock_private_info->announcements_without_followups < 5)
+      if (clock_private_info->announcements_without_followups < 5) // don't keep going forever
+        // a value of 4 means it's parked --
+        // it has seen three, poked the clock and doesn't want to do any more.
         clock_private_info->announcements_without_followups++;
 
       int i;
@@ -271,7 +273,10 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clo
           for (temp_client_id = 0; temp_client_id < MAX_CLIENTS; temp_client_id++) {
             if ((clock_private_info->client_flags[temp_client_id] &
                  (1 << clock_is_a_timing_peer)) != 0) {
-              debug(1, "clock_is_qualified -- updating clock mastership for client \"%s\"",
+              debug(1,
+                    "clock_is_qualified %" PRIx64
+                    " at %s -- updating clock mastership for client \"%s\"",
+                    clock_private_info->clock_id, clock_private_info->ip,
                     get_client_name(temp_client_id));
               update_master(temp_client_id);
             }
@@ -309,7 +314,8 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
   if (clock_private_info->follow_up_number < 100)
     clock_private_info->follow_up_number++;
 
-  clock_private_info->announcements_without_followups = 0; // we've seen a followup
+  if (clock_private_info->announcements_without_followups < 4) // if we haven't signalled already
+    clock_private_info->announcements_without_followups = 0;   // we've seen a followup
 
   debug(2, "FOLLOWUP from %" PRIx64 ", %s.", clock_private_info->clock_id, &clock_private_info->ip);
   uint64_t offset = preciseOriginTimestamp - reception_time;
@@ -326,40 +332,42 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
     time_since_previous_offset = reception_time - clock_private_info->previous_offset_time;
   }
 
-      int clock_is_becoming_master_somewhere = 0;
-      {
-        int temp_client_id;
-        for (temp_client_id = 0; temp_client_id < MAX_CLIENTS; temp_client_id++) {
-          if ((clock_private_info->client_flags[temp_client_id] & (1 << clock_is_becoming_master)) !=
-              0) {
-            clock_is_becoming_master_somewhere = 1;
-          }
-        }
-      }
-      if ((clock_private_info->flags & (1 << clock_is_becoming_master)) != 0)
+  int clock_is_becoming_master_somewhere = 0;
+  {
+    int temp_client_id;
+    for (temp_client_id = 0; temp_client_id < MAX_CLIENTS; temp_client_id++) {
+      if ((clock_private_info->client_flags[temp_client_id] & (1 << clock_is_becoming_master)) !=
+          0) {
         clock_is_becoming_master_somewhere = 1;
+      }
+    }
+  }
+  if ((clock_private_info->flags & (1 << clock_is_becoming_master)) != 0)
+    clock_is_becoming_master_somewhere = 1;
 
   if (clock_is_becoming_master_somewhere != 0) {
     // we now definitely have at least one sample since a request was made to
     // designate this clock a master, so we assume it is legitimate. That is, we assume
     // that the clock originator knows that it a clock master by now.
     clock_private_info->mastership_start_time = clock_private_info->local_time;
-    
+
     // designate the clock as master wherever is was becoming a master
     {
       int temp_client_id;
       for (temp_client_id = 0; temp_client_id < MAX_CLIENTS; temp_client_id++) {
-        if ((clock_private_info->client_flags[temp_client_id] & (1 << clock_is_becoming_master)) != 0) {
-          debug(1, "clock_is_becoming_master -- updating to clock_is_master for client \"%s\"",
+        if ((clock_private_info->client_flags[temp_client_id] & (1 << clock_is_becoming_master)) !=
+            0) {
+          debug(1,
+                "clock_is_becoming_master %" PRIx64
+                " at %s -- changing to clock_is_master for client \"%s\"",
+                clock_private_info->clock_id, clock_private_info->ip,
                 get_client_name(temp_client_id));
           clock_private_info->client_flags[temp_client_id] &= ~(1 << clock_is_becoming_master);
           clock_private_info->client_flags[temp_client_id] |= (1 << clock_is_master);
         }
       }
     }
-    
-    clock_private_info->flags &= ~(1 << clock_is_becoming_master); // won't need this
-    clock_private_info->flags |= 1 << clock_is_master; // won't need this
+
     clock_private_info->previous_offset_time = 0;
     debug_log_nqptp_status(2);
   } else if ((clock_private_info->previous_offset_time != 0) &&
@@ -367,8 +375,11 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
     // i.e. if it's not becoming a master and there has been a previous follow_up
     int64_t time_since_last_sync = reception_time - clock_private_info->last_sync_time;
     int64_t sync_timeout = 300000000000; // nanoseconds
-    debug(2, "Sync interval: %f seconds.", 0.000000001 * time_since_last_sync);
-    if (time_since_last_sync < sync_timeout) {
+    if (clock_private_info->last_sync_time == 0)
+      debug(2, "Never synced.");
+    else
+      debug(2, "Sync interval: %f seconds.", 0.000000001 * time_since_last_sync);
+    if ((clock_private_info->last_sync_time != 0) && (time_since_last_sync < sync_timeout)) {
 
       // Do acceptance checking.
 
@@ -411,13 +422,15 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
       int clock_is_a_master_somewhere = 0;
       int temp_client_id;
       for (temp_client_id = 0; temp_client_id < MAX_CLIENTS; temp_client_id++) {
-        if ((clock_private_info->client_flags[temp_client_id] & (1 << clock_is_master)) !=
-            0) {
+        if ((clock_private_info->client_flags[temp_client_id] & (1 << clock_is_master)) != 0) {
           clock_is_a_master_somewhere = 1;
         }
       }
 
-      if (clock_is_a_master_somewhere != 0)
+      if ((clock_is_a_master_somewhere != 0) && (clock_private_info->last_sync_time == 0))
+        debug(1, "Synchronising master clock %" PRIx64 " at %s.", clock_private_info->clock_id,
+              clock_private_info->ip);
+      if ((clock_is_a_master_somewhere != 0) && (clock_private_info->last_sync_time != 0))
         debug(1, "Resynchronising master clock %" PRIx64 " at %s.", clock_private_info->clock_id,
               clock_private_info->ip);
       // leave the offset as it was coming in and take it as a sync time
@@ -443,36 +456,11 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
   int temp_client_id;
   for (temp_client_id = 0; temp_client_id < MAX_CLIENTS; temp_client_id++) {
     if ((clock_private_info->client_flags[temp_client_id] & (1 << clock_is_master)) != 0) {
-      debug(1, "clock_is_master -- updating master clock info for client \"%s\"",
+      debug(2, "clock_is_master -- updating master clock info for client \"%s\"",
             get_client_name(temp_client_id));
       update_master_clock_info(temp_client_id, clock_private_info->clock_id,
                                (const char *)&clock_private_info->ip, reception_time, offset,
                                clock_private_info->mastership_start_time);
     }
   }
-
-  // TODO -- remove the following when we are done
-  if ((clock_private_info->flags & (1 << clock_is_master)) != 0) {
-    update_master_clock_info(0, clock_private_info->clock_id, (const char *)&clock_private_info->ip,
-                             reception_time, offset, clock_private_info->mastership_start_time);
-    debug(3, "clock: %" PRIx64 ", time: %" PRIu64 ", offset: %" PRId64 ", jitter: %+f ms.",
-          clock_private_info->clock_id, reception_time, offset, 0.000001 * jitter);
-  }
-  /*
-  if ((clock_private_info->flags & (1 << clock_is_valid)) == 0) {
-    debug(2, "follow_up seen from %" PRIx64 " at %s.", clock_private_info->clock_id,
-          clock_private_info->ip);
-    clock_private_info->flags |=
-        (1 << clock_is_valid); // valid because it has at least one follow_up
-
-    for (temp_client_id = 0; temp_client_id < MAX_CLIENTS; temp_client_id++) {
-      if ((clock_private_info->client_flags[temp_client_id] & (1 << clock_is_a_timing_peer)) != 0) {
-        debug(1, "clock_is_valid has become true -- updating clock mastership for client \"%s\"",
-              get_client_name(temp_client_id));
-        update_master(temp_client_id);
-      }
-    }
-    update_master(0); // TODO -- won't be needed
-  }
-  */
 }

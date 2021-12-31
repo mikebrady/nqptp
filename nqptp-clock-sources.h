@@ -25,20 +25,11 @@
 typedef enum {
   clock_is_in_use,
   clock_is_one_of_ours,
-//  clock_is_valid,
   clock_is_a_timing_peer,
   clock_is_qualified,
   clock_is_becoming_master,
   clock_is_master
 } clock_flags;
-
-/*
-typedef enum {
-  clock_is_a_timing_peer,
-  clock_is_becoming_master,
-  clock_is_master
-} client_flags;
-*/
 
 // information about each clock source
 typedef struct {
@@ -95,7 +86,8 @@ void manage_clock_sources(uint64_t reception_time, clock_source_private_data *cl
 
 int find_client_id(char *client_shared_memory_interface_name);
 int get_client_id(char *client_shared_memory_interface_name);
-const char *get_client_name(int id);
+const char *get_client_name(int client_id);
+int delete_client(int client_id);
 int delete_clients();
 
 extern clock_source_private_data clocks_private[MAX_CLOCKS];

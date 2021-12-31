@@ -82,36 +82,7 @@ uint64_t sample_task(uint64_t call_time, __attribute__((unused)) void *private_d
 }
 */
 
-struct shm_structure *shared_memory = NULL; // this is where public clock info is available
 int epoll_fd;
-
-void old_update_master_clock_info(uint64_t master_clock_id, const char *ip, uint64_t local_time,
-                                  uint64_t local_to_master_offset, uint64_t mastership_start_time) {
-
-  // debug(1,"update_master_clock_info start");
-  if (shared_memory->master_clock_id != master_clock_id)
-    debug_log_nqptp_status(1);
-  int rc = pthread_mutex_lock(&shared_memory->shm_mutex);
-  if (rc != 0)
-    warn("Can't acquire mutex to update master clock!");
-  shared_memory->master_clock_id = master_clock_id;
-  if (ip != NULL) {
-    strncpy((char *)&shared_memory->master_clock_ip, ip,
-            FIELD_SIZEOF(struct shm_structure, master_clock_ip) - 1);
-    shared_memory->master_clock_start_time = mastership_start_time;
-    shared_memory->local_time = local_time;
-    shared_memory->local_to_master_time_offset = local_to_master_offset;
-  } else {
-    shared_memory->master_clock_ip[0] = '\0';
-    shared_memory->master_clock_start_time = 0;
-    shared_memory->local_time = 0;
-    shared_memory->local_to_master_time_offset = 0;
-  }
-  rc = pthread_mutex_unlock(&shared_memory->shm_mutex);
-  if (rc != 0)
-    warn("Can't release mutex after updating master clock!");
-  // debug(1,"update_master_clock_info done");
-}
 
 void goodbye(void) {
   // close any open sockets
@@ -119,15 +90,6 @@ void goodbye(void) {
   for (i = 0; i < sockets_open_stuff.sockets_open; i++)
     close(sockets_open_stuff.sockets[i].number);
   // close off shared memory interfaces
-
-  if (shared_memory != NULL) {
-    // mmap cleanup
-    if (munmap(shared_memory, sizeof(struct shm_structure)) != 0)
-      debug(1, "error unmapping shared memory");
-    // shm_open cleanup
-    if (shm_unlink(STORAGE_ID) == -1)
-      debug(1, "error unlinking shared memory \"%s\"", STORAGE_ID);
-  }
 
   delete_clients();
 
@@ -192,7 +154,6 @@ int main(int argc, char **argv) {
   sockets_open_stuff.sockets_open = 0;
 
   epoll_fd = -1;
-  shared_memory = NULL;
 
   // control-c (SIGINT) cleanly
   struct sigaction act;
@@ -210,64 +171,12 @@ int main(int argc, char **argv) {
 
   char buf[BUFLEN];
 
-  pthread_mutexattr_t shared;
-  int err;
-
   // open sockets 319 and 320
 
   open_sockets_at_port(319, &sockets_open_stuff);
   open_sockets_at_port(320, &sockets_open_stuff);
   open_sockets_at_port(NQPTP_CONTROL_PORT,
                        &sockets_open_stuff); // this for messages from the client
-
-  // open a shared memory interface.
-  int shm_fd = -1;
-
-  mode_t oldumask = umask(0);
-  shm_fd = shm_open(STORAGE_ID, O_RDWR | O_CREAT, 0666);
-  if (shm_fd == -1) {
-    die("cannot open shared memory \"%s\".", STORAGE_ID);
-  }
-  (void)umask(oldumask);
-
-  if (ftruncate(shm_fd, sizeof(struct shm_structure)) == -1) {
-    die("failed to set size of shared memory \"%s\".", STORAGE_ID);
-  }
-
-#ifdef CONFIG_FOR_FREEBSD
-  shared_memory = (struct shm_structure *)mmap(NULL, sizeof(struct shm_structure),
-                                               PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
-#endif
-
-#ifdef CONFIG_FOR_LINUX
-  shared_memory =
-      (struct shm_structure *)mmap(NULL, sizeof(struct shm_structure), PROT_READ | PROT_WRITE,
-                                   MAP_LOCKED | MAP_SHARED, shm_fd, 0);
-#endif
-
-  if (shared_memory == (struct shm_structure *)-1) {
-    die("failed to mmap shared memory \"%s\".", STORAGE_ID);
-  }
-
-  if ((close(shm_fd) == -1)) {
-    warn("error closing \"/nqptp\" after mapping.");
-  }
-
-  // zero it
-  memset(shared_memory, 0, sizeof(struct shm_structure));
-  shared_memory->version = NQPTP_SHM_STRUCTURES_VERSION;
-
-  /*create mutex attr */
-  err = pthread_mutexattr_init(&shared);
-  if (err != 0) {
-    die("mutex attribute initialization failed - %s.", strerror(errno));
-  }
-  pthread_mutexattr_setpshared(&shared, 1);
-  /*create a mutex */
-  err = pthread_mutex_init((pthread_mutex_t *)&shared_memory->shm_mutex, &shared);
-  if (err != 0) {
-    die("mutex initialization failed - %s.", strerror(errno));
-  }
 
   // start the timed tasks
   uint64_t broadcasting_task(uint64_t call_time, void *private_data);
@@ -434,12 +343,15 @@ uint64_t broadcasting_task(uint64_t call_time, __attribute__((unused)) void *pri
   int i;
   for (i = 0; i < MAX_CLOCKS; i++) {
     if ((clocks_private[i].announcements_without_followups == 3) &&
+        (clocks_private[i].follow_up_number == 0) && // only check at the start
         ((clocks_private[i].flags & (1 << clock_is_one_of_ours)) == 0)) {
       debug(1, "Found a silent clock %" PRIx64 " at %s.", clocks_private[i].clock_id,
             clocks_private[i].ip);
       // send an Announce message to attempt to waken this silent PTP clock by
       // getting it to negotiate with an apparently better clock
-      // that then immediately sends another Announce message indicating that it's worse
+      // that then immediately sends another Announce message indicating that it's inferior
+
+      clocks_private[i].announcements_without_followups++; // set to 4 to indicate done/parked
 
       struct ptp_announce_message *msg;
       size_t msg_length = sizeof(struct ptp_announce_message);
