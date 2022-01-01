@@ -274,7 +274,7 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clo
                  (1 << clock_is_a_timing_peer)) != 0) {
               debug(1,
                     "best_clock_update_needed because %" PRIx64
-                    "%s has changed -- updating clock mastership for client \"%s\"",
+                    " on ip %s has changed -- updating clock mastership for client \"%s\"",
                     clock_private_info->clock_id, clock_private_info->ip,
                     get_client_name(temp_client_id));
               update_master(temp_client_id);
