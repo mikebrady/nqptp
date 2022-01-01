@@ -526,7 +526,7 @@ void update_master(int client_id) {
     // no master clock
     // if (old_master != -1) {
     // but there was a master clock, so remove it
-    debug(1, "Remove master clock information from interface %s.", get_client_name(client_id));
+    debug(2, "Remove master clock information from interface %s.", get_client_name(client_id));
     update_master_clock_info(client_id, 0, NULL, 0, 0, 0);
     //}
     if (timing_peer_count == 0)

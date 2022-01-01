@@ -93,7 +93,6 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
                 if (t == -1)
                   t = create_clock_source_record(new_ip, clock_private_info);
                 if (t != -1) { // if the clock table is not full, show it's a timing peer
-                  clock_private_info[t].flags |= (1 << clock_is_a_timing_peer);
                   clock_private_info[t].client_flags[client_id] |= (1 << clock_is_a_timing_peer);
                 }
                 // otherwise, drop it
@@ -274,19 +273,18 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clo
             if ((clock_private_info->client_flags[temp_client_id] &
                  (1 << clock_is_a_timing_peer)) != 0) {
               debug(1,
-                    "clock_is_qualified %" PRIx64
-                    " at %s -- updating clock mastership for client \"%s\"",
+                    "best_clock_update_needed because %" PRIx64
+                    "%s has changed -- updating clock mastership for client \"%s\"",
                     clock_private_info->clock_id, clock_private_info->ip,
                     get_client_name(temp_client_id));
               update_master(temp_client_id);
             }
           }
-          update_master(0); // TODO -- won't be needed
         }
       } else {
         if ((clock_private_info->flags & (1 << clock_is_qualified)) !=
             0) // if it was qualified, but now isn't
-          debug(2,
+          debug(1,
                 "clock_id %" PRIx64
                 " on ip: %s \"Announce\" message is not Qualified -- See 9.3.2.5.",
                 clock_private_info->clock_id, clock_private_info->ip);
@@ -357,7 +355,7 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
       for (temp_client_id = 0; temp_client_id < MAX_CLIENTS; temp_client_id++) {
         if ((clock_private_info->client_flags[temp_client_id] & (1 << clock_is_becoming_master)) !=
             0) {
-          debug(1,
+          debug(2,
                 "clock_is_becoming_master %" PRIx64
                 " at %s -- changing to clock_is_master for client \"%s\"",
                 clock_private_info->clock_id, clock_private_info->ip,
@@ -428,7 +426,7 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
       }
 
       if ((clock_is_a_master_somewhere != 0) && (clock_private_info->last_sync_time == 0))
-        debug(1, "Synchronising master clock %" PRIx64 " at %s.", clock_private_info->clock_id,
+        debug(2, "Synchronising master clock %" PRIx64 " at %s.", clock_private_info->clock_id,
               clock_private_info->ip);
       if ((clock_is_a_master_somewhere != 0) && (clock_private_info->last_sync_time != 0))
         debug(1, "Resynchronising master clock %" PRIx64 " at %s.", clock_private_info->clock_id,
