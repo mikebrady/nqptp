@@ -1,3 +1,7 @@
+## Version: 1.1-dev-117-g7e3c2b7
+**Dedicated client interfaces**
+NQPTP has gone multi-client. Clients now specify a named SMI interface through which they can specify their own timing peers and through which PTP information for that group of clock peers is returned. Thus, multiple clients (e.g. multiple instances of Shairport Sync) can maintain synchrnoisation with their own individual clock groups.
+
 ## Version: 1.1-dev-108-ga378f07
 **Enhancement**
 * Ensure the shared memory interface is updated when mastership is removed.
