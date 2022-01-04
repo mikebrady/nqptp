@@ -9,12 +9,11 @@ Information about the timing peer list's *master clock* is provided via a [POSIX
 Here are details of the interface:
 ```c
 struct shm_structure {
-  pthread_mutex_t shm_mutex; // for safely accessing the structure
-  uint16_t version;          // check this is equal to NQPTP_SHM_STRUCTURES_VERSION
-  uint32_t flags;            // unused
-  uint64_t master_clock_id;  // the current master clock
-  char master_clock_ip[64];  // the IP of the current master clock
-  uint64_t local_time;       // the time when the offset was calculated
+  pthread_mutex_t shm_mutex;            // for safely accessing the structure
+  uint16_t version;                     // check this is equal to NQPTP_SHM_STRUCTURES_VERSION
+  uint64_t master_clock_id;             // the current master clock
+  char master_clock_ip[64];             // where it's coming from
+  uint64_t local_time;                  // the time when the offset was calculated
   uint64_t local_to_master_time_offset; // add this to the local time to get master clock time
   uint64_t master_clock_start_time;     // this is when the master clock became master
 };
