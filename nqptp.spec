@@ -5,7 +5,7 @@ Summary:        Not-Quite PTP (Precision Time Protocol)
 # MIT licensed except for tinysvcmdns under BSD, 
 # FFTConvolver/ under GPLv3+ and audio_sndio.c 
 # under ISC
-License:        MIT and BSD and GPLv3+ and ISC
+License:        GPLv2
 URL:            https://github.com/mikebrady/nqptp
 Source0:        https://github.com/mikebrady/%{name}/archive/%{version}/%{name}-%{version}.tar.gz
 
