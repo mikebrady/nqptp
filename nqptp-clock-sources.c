@@ -46,21 +46,6 @@
 clock_source_private_data clocks_private[MAX_CLOCKS];
 client_record clients[MAX_CLIENTS];
 
-int find_client_id(char *client_shared_memory_interface_name) {
-  int response = -1; // signify not found
-  if (client_shared_memory_interface_name != NULL) {
-    int i = 0;
-    // first, see if yu can find it anywhere
-    while ((response == -1) && (i < MAX_CLIENTS)) {
-      if (strcmp(clients[i].shm_interface_name, client_shared_memory_interface_name) == 0)
-        response = i;
-      else
-        i++;
-    }
-  }
-  return response;
-}
-
 const char *get_client_name(int client_id) {
   if ((client_id >= 0) && (client_id < MAX_CLIENTS)) {
     return clients[client_id].shm_interface_name;
@@ -80,7 +65,7 @@ int get_client_id(char *client_shared_memory_interface_name) {
       else
         i++;
     }
-
+    
     if (response == -1) { // no match, so create one
       i = 0;
       while ((response == -1) && (i < MAX_CLIENTS)) {
@@ -94,9 +79,10 @@ int get_client_id(char *client_shared_memory_interface_name) {
         int err;
         strncpy(clients[i].shm_interface_name, client_shared_memory_interface_name,
                 sizeof(clients[i].shm_interface_name));
-        // creat the named smi interface
+        // create the named smi interface
 
         // open a shared memory interface.
+        debug(2, "Create a shm interface named \"%s\"", clients[i].shm_interface_name);
         clients[i].shm_fd = -1;
 
         mode_t oldumask = umask(0);
@@ -163,6 +149,7 @@ int get_client_id(char *client_shared_memory_interface_name) {
   } else {
     debug(1, "no client_shared_memory_interface_name");
   }
+  debug(2, "get_client_id \"%s\" response %d", client_shared_memory_interface_name, response);
   return response;
 }
 

@@ -29,7 +29,7 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
                                   clock_source_private_data *clock_private_info) {
   if (recv_len != -1) {
     buf[recv_len - 1] = 0; // make sure there's a null in it!
-    debug(1, "New control port message: \"%s\".", buf);
+    debug(2, "New control port message: \"%s\".", buf);
     // we need to get the client shared memory interface name from the front
     char *ip_list = buf;
     char *smi_name = strsep(&ip_list, " ");
@@ -40,7 +40,7 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
         command = strsep(&ip_list, " ");
       if ((command == NULL) || ((strcmp(command, "T") == 0) && (ip_list == NULL))) {
         // clear all the flags, but only if the client exists
-        client_id = find_client_id(smi_name); // don't create a record
+        client_id = get_client_id(smi_name); // create the record if it doesn't exist
         if (client_id != -1) {
           // turn off all is_timing_peer flags
           int i;
@@ -70,6 +70,7 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
           }
         }
       } else {
+        debug(2,"get or create new record for \"%s\".",smi_name);
         client_id = get_client_id(smi_name); // create the record if it doesn't exist
         if (client_id != -1) {
           if (strcmp(command, "T") == 0) {
