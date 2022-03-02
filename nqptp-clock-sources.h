@@ -84,7 +84,6 @@ void update_clock_self_identifications(clock_source_private_data *clocks_private
 
 void manage_clock_sources(uint64_t reception_time, clock_source_private_data *clocks_private_info);
 
-int find_client_id(char *client_shared_memory_interface_name);
 int get_client_id(char *client_shared_memory_interface_name);
 const char *get_client_name(int client_id);
 int delete_client(int client_id);
