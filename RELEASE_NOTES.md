@@ -1,3 +1,17 @@
+## Version: 1.1-dev-120-g6fd665d
+***Pesky Change You Can't Ignore***
+
+A change has been made the `nqptp` `systemd` service file, so before updating, please remove the existing service file with the following command:
+```
+# rm /usr/local/lib/systemd/system/nqptp.service
+```
+**Enhancement**
+* Always create a new SHM interface for every new shm address provided.
+* Remove redundant coded.
+* Add a few debug messages.
+* Enhance the service record to define the service provided.
+* Quieten some chatty debug messages.
+
 ## Version: 1.1-dev-117-g7e3c2b7
 **Dedicated client interfaces**
 NQPTP has gone multi-client. Clients now specify a named SMI interface through which they can specify their own timing peers and through which PTP information for that group of clock peers is returned. Thus, multiple clients (e.g. multiple instances of Shairport Sync) can maintain synchrnoisation with their own individual clock groups.
