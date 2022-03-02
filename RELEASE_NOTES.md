@@ -7,7 +7,7 @@ A change has been made the `nqptp` `systemd` service file, so before updating, p
 ```
 **Enhancement**
 * Always create a new SHM interface for every new shm address provided.
-* Remove redundant coded.
+* Remove redundant code.
 * Add a few debug messages.
 * Enhance the service record to define the service provided.
 * Quieten some chatty debug messages.
