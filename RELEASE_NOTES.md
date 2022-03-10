@@ -1,3 +1,13 @@
+## Version: 1.1-dev-131-g44d4086
+***Pesky Change You Can't Ignore***
+
+A change has been made the `nqptp` `systemd` service file, so before updating, please remove the existing service file with the following command:
+```
+# rm /usr/local/lib/systemd/system/nqptp.service
+```
+**Bug Fix**
+* Remove the invalid `Provides` entry. Thanks to [David Crook](https://github.com/idcrook) for bring this to notice for Shairport Sync. It also applies to NQPTP.
+
 ## Version: 1.1-dev-124-g9a57e77
 ***Pesky Change You Can't Ignore***
 
