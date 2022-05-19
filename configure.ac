@@ -44,6 +44,10 @@ AM_CONDITIONAL([USE_GIT_VERSION], [test -n "$GIT" && test -e ".git/index" ])
 AC_ARG_WITH([systemd-startup],[AS_HELP_STRING([--with-systemd-startup],[install a systemd startup script during a make install])])
 AM_CONDITIONAL([INSTALL_SYSTEMD_STARTUP], [test "x$with_systemd_startup" = "xyes"])
 
+# Check to see if we should include the systemd stuff to define it as a service
+AC_ARG_WITH([freebsd-startup],[AS_HELP_STRING([--with-freebsd-startup],[install a FreeBSD startup script during a make install])])
+AM_CONDITIONAL([INSTALL_FREEBSD_STARTUP], [test "x$with_freebsd_startup" = "xyes"])
+
 
 AC_CONFIG_SRCDIR([nqptp.c])
 AC_CONFIG_HEADERS([config.h])

@@ -1,0 +1,20 @@
+#!/bin/sh
+#
+
+# PROVIDE: nqptp
+# REQUIRE: FILESYSTEMS DAEMON hostname
+
+. /etc/rc.subr
+
+name="nqptp"
+rcvar="nqptp_enable"
+pidfile="/var/run/${name}.pid"
+apptodaemonise="/usr/local/bin/nqptp"
+
+command="/usr/sbin/daemon"
+# -S log to syslog; -P store the supervisor PID
+command_args="-S -P ${pidfile} ${apptodaemonise}"
+
+load_rc_config $name
+run_rc_command "$1"
+
