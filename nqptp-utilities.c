@@ -29,12 +29,13 @@
 #endif
 
 #ifdef CONFIG_FOR_FREEBSD
-#include <net/if_dl.h>
+#include <sys/types.h>
 #include <net/if_types.h>
+#include <net/if_dl.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #endif
-
+  
 #include <netdb.h>  // getaddrinfo etc.
 #include <stdio.h>  // snprintf
 #include <stdlib.h> // malloc, free
