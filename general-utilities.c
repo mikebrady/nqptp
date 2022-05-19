@@ -66,6 +66,10 @@ uint64_t timespec_to_ns(struct timespec *tn) {
 
 uint64_t get_time_now() {
   struct timespec tn;
+#ifdef CLOCK_MONOTONIC_RAW
   clock_gettime(CLOCK_MONOTONIC_RAW, &tn);
+#else
+  clock_gettime(CLOCK_MONOTONIC, &tn);
+#endif  
   return timespec_to_ns(&tn);
 }
