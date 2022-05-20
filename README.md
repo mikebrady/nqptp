@@ -1,5 +1,7 @@
 # NQPTP – Not Quite PTP
-`nqptp` is a daemon that monitors timing data from any [PTP](https://en.wikipedia.org/wiki/Precision_Time_Protocol) clocks – up to 32 – it sees on ports 319 and 320. It maintains records for each clock, identified by Clock ID and IP.
+`nqptp` is a daemon that monitors timing data from any [PTP](https://en.wikipedia.org/wiki/Precision_Time_Protocol) clocks – up to 64 – it sees on ports 319 and 320. It maintains records for each clock, identified by Clock ID and IP.
+
+It is a companion application to [Shairport Sync](https://github.com/mikebrady/shairport-sync) and provides timing information for AirPlay 2 operation.
 
 A _timing peer list_ can be sent to `nqptp` over port 9000. The list consists of the letter `T` followed by a space-separated list of the IP numbers of the timing peers. The list replaces any existing timing peer list.
 
@@ -21,7 +23,7 @@ struct shm_structure {
 
 # Installation
 
-This guide is for a recent Linux system with the `systemd` startup system.
+This guide is for recent Linux and FreeBSD systems.
 
 As usual, you should ensure everything is up to date.
 
@@ -37,16 +39,24 @@ Version without git build information:
 Version: 1.1-dev. Shared Memory Interface Version: 5.
 ```
 ### Remove Old Service Files
-If you are updating from a version older than 1.1-dev-51, remove the service file `nqptp.service` from the directory `/lib/systemd/system` (you'll need superuser privileges):
+#### Linux
+If you are updating from a version older than 1.1-dev-51, in Linux, remove the service file `nqptp.service` from the directory `/lib/systemd/system` (you'll need superuser privileges):
 ```
 # rm /lib/systemd/system/nqptp.service
 ```
+#### FreeBSD
+Remove the startup script file `nqptp` from the directory `/usr/local/etc/rc.d` (you'll need superuser privileges):
+```
+# rm /usr/local/etc/rc.d/nqptp
+```
+
 Don't worry if you get a message stating that the file doesn't exist -- no harm done.
 
 ### Build and Install
 
 Note that you will need superuser privileges to install, enable and start the daemon.
 
+#### Linux
 ```
 $ git clone https://github.com/mikebrady/nqptp.git
 $ cd nqptp
@@ -55,10 +65,20 @@ $ ./configure --with-systemd-startup
 $ make
 # make install
 ```
-The `make install` installs a `systemd` startup script as requested. You should enable it and start it in the normal way:
+#### FreeBSD
+```
+$ git clone https://github.com/mikebrady/nqptp.git
+$ cd nqptp
+$ autoreconf -fi
+$ ./configure --with-freebsd-startup
+$ make
+# make install
+```
+The `make install` installs a startup script as requested. You should enable it and start it in the normal way:
 
 ### First Install or Update?
-#### First Install
+#### Linux
+##### First Install
 If you are installing `nqptp` for the first time, enable it and start it:
 ```
 # systemctl enable nqptp
@@ -66,14 +86,36 @@ If you are installing `nqptp` for the first time, enable it and start it:
 ```
 If Shairport Sync is already running, you should you restart it after starting `nqptp`:
 ```
-# systemctl restart shairport-sync
+# systemctl start shairport-sync
 ```
-#### Update
+##### Update
 If you are updating an existing installation of `nqptp`, after installing it you should restart it. You should then also restart Shairport Sync:
 ```
 # systemctl restart nqptp
 # systemctl restart shairport-sync
 ```
+#### FreeBSD
+##### First Install
+If you are installing `nqptp` for the first time, add an automatic startup entry for it in `/etc/rc.local and start it:
+1. Edit `/etc/rc.conf` and add the following line:
+   ```
+   nqptp_enable="YES"
+   ```
+2. When you have finished editing `/etc/rc.conf`, you can start `nqptp` from the command line:
+   ```
+   # service nqptp restart
+   ```
+If Shairport Sync is already running, you should you restart it after starting `nqptp`:
+```
+# service shairport_sync restart
+```
+##### Update
+If you are updating an existing installation of `nqptp`, after installing it you should restart it. You should then also restart Shairport Sync:
+```
+# service nqptp restart
+# service shairport_sync restart
+```
+
 # Notes
 Please note that `nqptp` must run in `root` mode to be able to access ports 319 and 320.
 
