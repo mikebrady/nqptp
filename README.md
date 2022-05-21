@@ -97,14 +97,14 @@ If you are updating an existing installation of `nqptp`, after installing it you
 ```
 #### FreeBSD
 ##### First Install
-If you are installing `nqptp` for the first time, add an automatic startup entry for it in `/etc/rc.local and start it:
+If you are installing `nqptp` for the first time, add an automatic startup entry for it in `/etc/rc.local` and start it:
 1. Edit `/etc/rc.conf` and add the following line:
    ```
    nqptp_enable="YES"
    ```
 2. When you have finished editing `/etc/rc.conf`, you can start `nqptp` from the command line:
    ```
-   # service nqptp restart
+   # service nqptp start
    ```
 If Shairport Sync is already running, you should you restart it after starting `nqptp`:
 ```
