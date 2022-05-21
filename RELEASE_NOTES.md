@@ -1,3 +1,7 @@
+## Version: 1.1-dev-142-g15b01c1
+**Enhancement**
+* Support for FreeBSD
+
 ## Version: 1.1-dev-131-g44d4086
 ***Pesky Change You Can't Ignore***
 
