@@ -25,7 +25,7 @@ struct shm_structure {
 
 This guide is for recent Linux and FreeBSD systems.
 
-As usual, you should ensure everything is up to date.
+As usual, you should first ensure everything is up to date.
 
 #### Please use `git`!
 As you probably know, you can download the repository in two ways: (1) using `git` to clone it  -- recommended -- or (2) downloading the repository as a ZIP archive. Please us the `git` method. The reason it that when you use `git`,
@@ -40,17 +40,18 @@ Version: 1.1-dev. Shared Memory Interface Version: 5.
 ```
 ### Remove Old Service Files
 #### Linux
-If you are updating from a version older than 1.1-dev-51, in Linux, remove the service file `nqptp.service` from the directory `/lib/systemd/system` (you'll need superuser privileges):
+If you are updating from version 1.1-dev-51 or earlier in Linux, remove the service file `nqptp.service` from the directory `/lib/systemd/system` (you'll need superuser privileges):
 ```
 # rm /lib/systemd/system/nqptp.service
 ```
+Don't worry if you get a message stating that the file doesn't exist -- no harm done.
+
 #### FreeBSD
-Remove the startup script file `nqptp` from the directory `/usr/local/etc/rc.d` (you'll need superuser privileges):
+At present, there is no need to remove the old FreeBSD startup script, but should you wish to do so, 
+remove the startup script file `nqptp` from the directory `/usr/local/etc/rc.d` as follows (you'll need superuser privileges):
 ```
 # rm /usr/local/etc/rc.d/nqptp
 ```
-
-Don't worry if you get a message stating that the file doesn't exist -- no harm done.
 
 ### Build and Install
 
