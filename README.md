@@ -87,7 +87,7 @@ If you are installing `nqptp` for the first time, enable it and start it:
 ```
 If Shairport Sync is already running, you should you restart it after starting `nqptp`:
 ```
-# systemctl start shairport-sync
+# systemctl restart shairport-sync
 ```
 ##### Update
 If you are updating an existing installation of `nqptp`, after installing it you should restart it. You should then also restart Shairport Sync:
