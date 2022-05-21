@@ -14,7 +14,7 @@ apptodaemonise="/usr/local/bin/nqptp"
 
 command="/usr/sbin/daemon"
 # -S log to syslog; -P store the supervisor PID
-command_args="-S -T nqptp" -P ${pidfile} ${apptodaemonise}"
+command_args="-S -T nqptp -P ${pidfile} ${apptodaemonise}"
 
 load_rc_config $name
 run_rc_command "$1"
