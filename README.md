@@ -120,7 +120,7 @@ Please note that `nqptp` must run in `root` mode to be able to access ports 319 
 
 Since `nqptp` uses ports 319 and 320, it can not coexist with any other user of those ports, such as full PTP service daemons.
 
-If you wish to use the shared mutex to ensure records are not altered while you are accessing them, you should open your side of the shared memory interface with read-write permission. Be aware that while your program has the mutex lock, it is in a "critical region" where it can halt `nqptp`, so keep any activity while you have the lock very short and very simple, e.g. copying the contents of shared memory to local memory. 
+Programmatically, if you wish to use the shared mutex to ensure records are not altered while you are accessing them, you should open your side of the shared memory interface with read-write permission. Be aware that while your program has the mutex lock, it is in a "critical region" where it can halt `nqptp`, so keep any activity while you have the lock very short and very simple, e.g. copying the contents of shared memory to local memory. 
 
 Clock records that are not updated for a period are deleted.
 
