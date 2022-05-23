@@ -28,7 +28,7 @@ endif
  # no installer for FreeBSD yet
 if BUILD_FOR_FREEBSD
 if INSTALL_FREEBSD_STARTUP
-	[ -e /usr/local/etc/rc.d/nqptp ] || cp nqptp.freebsd /usr/local/etc/rc.d/nqptp
+	cp nqptp.freebsd /usr/local/etc/rc.d/nqptp
 	chmod 555 /usr/local/etc/rc.d/nqptp
 endif
 endif
