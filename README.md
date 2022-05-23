@@ -47,11 +47,9 @@ If you are updating from version 1.1-dev-51 or earlier in Linux, remove the serv
 Don't worry if you get a message stating that the file doesn't exist -- no harm done.
 
 #### FreeBSD
-At present, there is no need to remove the old FreeBSD startup script, but should you wish to do so, 
-remove the startup script file `nqptp` from the directory `/usr/local/etc/rc.d` as follows (you'll need superuser privileges):
-```
-# rm /usr/local/etc/rc.d/nqptp
-```
+At present, there is no need to remove the old startup script as (in FreeBSD only) it is always replaced during the `# make install` step.
+
+The startup script is at `/usr/local/etc/rc.d/nqptp`. 
 
 ### Build and Install
 
