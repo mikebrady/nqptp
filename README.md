@@ -3,7 +3,7 @@
 
 It is a companion application to [Shairport Sync](https://github.com/mikebrady/shairport-sync) and provides timing information for AirPlay 2 operation.
 
-# Installation
+## Installation
 
 This guide is for recent Linux and FreeBSD systems.
 
@@ -97,12 +97,12 @@ If you are updating an existing installation of `nqptp`, after installing it you
 # service shairport_sync restart
 ```
 
-# Notes
+## Notes
 Please note that `nqptp` must run in `root` mode to be able to access ports 319 and 320.
 
 Since `nqptp` uses ports 319 and 320, it can not coexist with any other user of those ports, such as full PTP service daemons.
 
-# Programming Notes
+## Programming Notes
 A _timing peer list_ can be sent to `nqptp` over port 9000. The list consists of the letter `T` followed by a space-separated list of the IP numbers of the timing peers. The list replaces any existing timing peer list.
 
 Information about the timing peer list's *master clock* is provided via a [POSIX shared memory](https://pubs.opengroup.org/onlinepubs/007908799/xsh/shm_open.html) interface. 
@@ -125,13 +125,13 @@ If you wish to use the shared mutex to ensure records are not altered while you 
 
 Clock records that are not updated for a period are deleted.
 
-# Known Issues
+## Known Issues
 * `nqptp` has not been checked or audited for security issues. Note that it must run in `root` mode.
 * It's probably buggy!
 * `nqptp` does not take advantage of hardware timestamping.
 
-# Things Can Change
+## Things Can Change
 The `nqptp` daemon is under active development and, consequently, everything here can change, possibly very radically.
 
-# NQPTP is not PTP!
+## NQPTP is not PTP!
 `nqptp` uses just a part of the [IEEE 1588-2008](https://standards.ieee.org/standard/1588-2008.html) protocol. It is not a PTP clock.
