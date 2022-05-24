@@ -3,24 +3,6 @@
 
 It is a companion application to [Shairport Sync](https://github.com/mikebrady/shairport-sync) and provides timing information for AirPlay 2 operation.
 
-A _timing peer list_ can be sent to `nqptp` over port 9000. The list consists of the letter `T` followed by a space-separated list of the IP numbers of the timing peers. The list replaces any existing timing peer list.
-
-Information about the timing peer list's *master clock* is provided via a [POSIX shared memory](https://pubs.opengroup.org/onlinepubs/007908799/xsh/shm_open.html) interface. 
-
-
-Here are details of the interface:
-```c
-struct shm_structure {
-  pthread_mutex_t shm_mutex;            // for safely accessing the structure
-  uint16_t version;                     // check this is equal to NQPTP_SHM_STRUCTURES_VERSION
-  uint64_t master_clock_id;             // the current master clock
-  char master_clock_ip[64];             // where it's coming from
-  uint64_t local_time;                  // the time when the offset was calculated
-  uint64_t local_to_master_time_offset; // add this to the local time to get master clock time
-  uint64_t master_clock_start_time;     // this is when the master clock became master
-};
-```
-
 # Installation
 
 This guide is for recent Linux and FreeBSD systems.
@@ -120,7 +102,26 @@ Please note that `nqptp` must run in `root` mode to be able to access ports 319 
 
 Since `nqptp` uses ports 319 and 320, it can not coexist with any other user of those ports, such as full PTP service daemons.
 
-Programmatically, if you wish to use the shared mutex to ensure records are not altered while you are accessing them, you should open your side of the shared memory interface with read-write permission. Be aware that while your program has the mutex lock, it is in a "critical region" where it can halt `nqptp`, so keep any activity while you have the lock very short and very simple, e.g. copying the contents of shared memory to local memory. 
+# Programming Notes
+A _timing peer list_ can be sent to `nqptp` over port 9000. The list consists of the letter `T` followed by a space-separated list of the IP numbers of the timing peers. The list replaces any existing timing peer list.
+
+Information about the timing peer list's *master clock* is provided via a [POSIX shared memory](https://pubs.opengroup.org/onlinepubs/007908799/xsh/shm_open.html) interface. 
+
+
+Here are details of the interface:
+```c
+struct shm_structure {
+  pthread_mutex_t shm_mutex;            // for safely accessing the structure
+  uint16_t version;                     // check this is equal to NQPTP_SHM_STRUCTURES_VERSION
+  uint64_t master_clock_id;             // the current master clock
+  char master_clock_ip[64];             // where it's coming from
+  uint64_t local_time;                  // the time when the offset was calculated
+  uint64_t local_to_master_time_offset; // add this to the local time to get master clock time
+  uint64_t master_clock_start_time;     // this is when the master clock became master
+};
+```
+
+If you wish to use the shared mutex to ensure records are not altered while you are accessing them, you should open your side of the shared memory interface with read-write permission. Be aware that while your program has the mutex lock, it is in a "critical region" where it can halt `nqptp`, so keep any activity while you have the lock very short and very simple, e.g. copying the contents of shared memory to local memory. 
 
 Clock records that are not updated for a period are deleted.
 
