@@ -325,8 +325,6 @@ void update_clock_self_identifications(clock_source_private_data *clocks_private
             }
           }
         }
-      } else {
-        debug(1, "NULL ifa->ifa_addr. Probably harmless.");
       }
     }
     freeifaddrs(ifap);
