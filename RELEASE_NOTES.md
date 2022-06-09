@@ -1,3 +1,7 @@
+## Version: 1.1-dev-150-g7af5673
+**Bug Fix**
+* Remove a noisy debug message that could fill the log. Thanks to [kevocl](https://github.com/kevocl) for the [report](https://github.com/mikebrady/shairport-sync/issues/1481).
+
 ## Version: 1.1-dev-142-g15b01c1
 **Enhancement**
 * Support for FreeBSD
