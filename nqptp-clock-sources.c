@@ -533,8 +533,9 @@ void update_master(int client_id) {
         }
       }
       if (clock_is_a_master_somewhere == 0) {
-        clocks_private[best_so_far].client_flags[client_id] |= (1 << clock_is_becoming_master);
-        clocks_private[best_so_far].last_sync_time = 0; // declare it was never synced before
+        clocks_private[best_so_far].client_flags[client_id] |= (1 << clock_is_master);
+//        clocks_private[best_so_far].client_flags[client_id] |= (1 << clock_is_becoming_master);
+//        clocks_private[best_so_far].last_sync_time = 0; // declare it was never synced before
 
       } else {
         clocks_private[best_so_far].client_flags[client_id] |= (1 << clock_is_master);

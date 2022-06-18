@@ -29,7 +29,7 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
                                   clock_source_private_data *clock_private_info) {
   if (recv_len != -1) {
     buf[recv_len - 1] = 0; // make sure there's a null in it!
-    debug(2, "New control port message: \"%s\".", buf);
+    debug(1, "New control port message: \"%s\".", buf);
     // we need to get the client shared memory interface name from the front
     char *ip_list = buf;
     char *smi_name = strsep(&ip_list, " ");
@@ -310,6 +310,7 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
   preciseOriginTimestamp = preciseOriginTimestamp + nanoseconds;
 
   // update our sample information
+  
   if (clock_private_info->follow_up_number < 100)
     clock_private_info->follow_up_number++;
 
@@ -326,11 +327,13 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
   int64_t jitter = 0;
 
   int64_t time_since_previous_offset = 0;
+  uint64_t smoothed_offset = offset;
 
   if (clock_private_info->previous_offset_time != 0) {
     time_since_previous_offset = reception_time - clock_private_info->previous_offset_time;
   }
 
+/*
   int clock_is_becoming_master_somewhere = 0;
   {
     int temp_client_id;
@@ -369,9 +372,13 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
 
     clock_private_info->previous_offset_time = 0;
     debug_log_nqptp_status(2);
-  } else if ((clock_private_info->previous_offset_time != 0) &&
+  } else
+  
+  
+  if ((clock_private_info->previous_offset_time != 0) &&
              (time_since_previous_offset < 300000000000)) {
     // i.e. if it's not becoming a master and there has been a previous follow_up
+    // i.e. if there has been a previous follow_up
     int64_t time_since_last_sync = reception_time - clock_private_info->last_sync_time;
     int64_t sync_timeout = 300000000000; // nanoseconds
     if (clock_private_info->last_sync_time == 0)
@@ -379,7 +386,7 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
     else
       debug(2, "Sync interval: %f seconds.", 0.000000001 * time_since_last_sync);
     if ((clock_private_info->last_sync_time != 0) && (time_since_last_sync < sync_timeout)) {
-
+*/
       // Do acceptance checking.
 
       // Positive changes in the offset are much more likely to be
@@ -396,28 +403,57 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
       // Otherwise, drop it
 
       // This seems to be quite stable
+      
+      if (clock_private_info->previous_offset_time != 0)
+        jitter = offset - clock_private_info->previous_offset;
+      
+      // We take any positive or a limited negative jitter as a sync event in
+      // a continuous synchronisation sequence.
+      // This works well with PTP sources that sleep, as when they sleep
+      // their clock stops. When they awaken, the offset from
+      // the local clock to them must be a lot smaller, triggering the
+      // timing discontinuity below and allowing a rapid readjustment
+      
+      // The full value of positive the offset jitter is accepted for a
+      // number of follow_ups at the start.
+      // After that, the weight of the jitter is reduced.
+      // Follow-ups don't always come in at 125 ms intervals, especially after a discontinuity
+      // Delays makes the offsets smaller than they should be, which is quickly
+      // allowed for.
 
-      jitter = offset - clock_private_info->previous_offset;
+      if ((clock_private_info->previous_offset_time != 0) && (jitter > -10000000)) {
 
-      if (jitter > -10000000) {
-        // we take any positive or a limited negative jitter as a sync event
         if (jitter < 0) {
           if (clock_private_info->follow_up_number <
               (5 * 8)) // at the beginning (8 samples per second)
-            offset = clock_private_info->previous_offset + jitter / 16;
+            smoothed_offset = clock_private_info->previous_offset + jitter / 16;
           else
-            offset = clock_private_info->previous_offset + jitter / 64;
+            smoothed_offset = clock_private_info->previous_offset + jitter / 64;
         } else if (clock_private_info->follow_up_number <
                    (5 * 8)) // at the beginning (8 samples per second)
-          offset =
+          smoothed_offset =
               clock_private_info->previous_offset + jitter / 1; // accept positive changes quickly
         else
-          offset = clock_private_info->previous_offset + jitter / 64;
+          smoothed_offset = clock_private_info->previous_offset + jitter / 64;
         clock_private_info->last_sync_time = reception_time;
       } else {
-        offset = clock_private_info->previous_offset; // forget the present sample...
-      }
+        // allow samples to disappear for up to a second
+        if ((time_since_previous_offset != 0) && (time_since_previous_offset < 1000000000)) {
+          smoothed_offset = clock_private_info->previous_offset; // if we have recent samples, forget the present sample...
+        } else {
+          if (clock_private_info->previous_offset_time == 0)
+            debug(1,"New clock %" PRIx64 " at %s.", clock_private_info->clock_id, clock_private_info->ip);
+          else
+            debug(1,"Timing discontinuity on clock %" PRIx64 " at %s: time_since_previous_offset: %.3f seconds.", clock_private_info->clock_id, clock_private_info->ip, 0.000000001 * time_since_previous_offset);
+          smoothed_offset = offset;
+          clock_private_info->follow_up_number = 0; 
+          clock_private_info->mastership_start_time =
+              reception_time; // mastership is reset to this time...
+        }
+      }      
+/*
     } else {
+      debug(1, "Time since last sync: %.3f seconds.", 0.000000001 * time_since_last_sync);
       int clock_is_a_master_somewhere = 0;
       int temp_client_id;
       for (temp_client_id = 0; temp_client_id < MAX_CLIENTS; temp_client_id++) {
@@ -448,8 +484,9 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
       clock_private_info->previous_offset_time = 0;
     }
   }
+*/
 
-  clock_private_info->previous_offset = offset;
+  clock_private_info->previous_offset = smoothed_offset;
   clock_private_info->previous_offset_time = reception_time;
 
   int temp_client_id;
@@ -457,8 +494,9 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
     if ((clock_private_info->client_flags[temp_client_id] & (1 << clock_is_master)) != 0) {
       debug(2, "clock_is_master -- updating master clock info for client \"%s\"",
             get_client_name(temp_client_id));
+      debug(1, "Clock %" PRIx64 " at %s. Offset: %" PRIx64 ", smoothed offset: %" PRIx64 ". Precise Origin Timestamp: %" PRIx64 ". Time since previous offset: %.3f milliseconds.", clock_private_info->clock_id, clock_private_info->ip, offset, smoothed_offset, preciseOriginTimestamp, 0.000001 * time_since_previous_offset);
       update_master_clock_info(temp_client_id, clock_private_info->clock_id,
-                               (const char *)&clock_private_info->ip, reception_time, offset,
+                               (const char *)&clock_private_info->ip, reception_time, smoothed_offset,
                                clock_private_info->mastership_start_time);
     }
   }
