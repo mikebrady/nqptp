@@ -26,8 +26,7 @@ typedef enum {
   clock_is_in_use,
   clock_is_one_of_ours,
   clock_is_a_timing_peer,
-  clock_is_qualified,
-  clock_is_becoming_master,
+  clock_is_announced,
   clock_is_master
 } clock_flags;
 
@@ -38,19 +37,13 @@ typedef struct {
   int follow_up_number;
   int announcements_without_followups; // add 1 for every announce, reset with a followup
   uint64_t clock_id;
-  uint64_t local_time; // the local time when the offset was calculated
-  uint64_t source_time;
-  uint64_t local_to_source_time_offset; // add this to the local time to get source time
-  uint64_t previous_offset, previous_offset_time, last_sync_time;
+  uint64_t previous_offset, previous_offset_time;
   uint64_t mastership_start_time; // set to the time of the first sample used as master
 
   // for garbage collection
   uint64_t time_of_last_use; // will be taken out of use if not used for a while and not in the
                              // timing peer group
-  // (A member of the timing peer group could appear and disappear so will not be gc'ed.)
-  // for Announce Qualification
-  uint64_t announce_times[4];        // we'll check qualification and currency using these
-  uint8_t flags;                     // stuff related specifically to the clock itself
+  uint8_t flags;             // stuff related specifically to the clock itself
   uint8_t client_flags[MAX_CLIENTS]; // stuff related to membership of the clients' timing lists
 
   // these are for finding the best clock to use
@@ -96,7 +89,5 @@ void update_master(int client_id);
 void update_master_clock_info(int client_id, uint64_t master_clock_id, const char *ip,
                               uint64_t local_time, uint64_t local_to_master_offset,
                               uint64_t mastership_start_time);
-
-void debug_log_nqptp_status(int level);
 
 #endif
