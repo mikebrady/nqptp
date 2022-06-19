@@ -1,6 +1,6 @@
 /*
  * This file is part of the nqptp distribution (https://github.com/mikebrady/nqptp).
- * Copyright (c) 2021 Mike Brady.
+ * Copyright (c) 2021-2022 Mike Brady.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -70,7 +70,7 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
           }
         }
       } else {
-        debug(2,"get or create new record for \"%s\".",smi_name);
+        debug(2, "get or create new record for \"%s\".", smi_name);
         client_id = get_client_id(smi_name); // create the record if it doesn't exist
         if (client_id != -1) {
           if (strcmp(command, "T") == 0) {
@@ -126,7 +126,7 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
 }
 
 void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clock_private_info,
-                     uint64_t reception_time) {
+                     __attribute__((unused)) uint64_t reception_time) {
   // only process Announce messages that do not come from self
   if ((clock_private_info->flags & (1 << clock_is_one_of_ours)) == 0) {
     // debug_print_buffer(1, buf, (size_t) recv_len);
@@ -138,6 +138,7 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clo
       uint64_t packet_clock_id_low = nctohl(&msg->header.clockIdentity[4]);
       packet_clock_id = packet_clock_id << 32;
       packet_clock_id = packet_clock_id + packet_clock_id_low;
+      clock_private_info->flags |= (1 << clock_is_announced);
       clock_private_info->clock_id = packet_clock_id;
       clock_private_info->grandmasterPriority1 =
           msg->announce.grandmasterPriority1; // need this for possibly pinging it later...
@@ -152,144 +153,84 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clo
         // it has seen three, poked the clock and doesn't want to do any more.
         clock_private_info->announcements_without_followups++;
 
-      int i;
-      // number of elements in the array is 4, hence the 4-1 stuff
-      for (i = 4 - 1; i > 1 - 1; i--) {
-        clock_private_info->announce_times[i] = clock_private_info->announce_times[i - 1];
-      };
-      clock_private_info->announce_times[0] = reception_time;
+      uint64_t grandmaster_clock_id = nctohl(&msg->announce.grandmasterIdentity[0]);
+      uint64_t grandmaster_clock_id_low = nctohl(&msg->announce.grandmasterIdentity[4]);
+      grandmaster_clock_id = grandmaster_clock_id << 32;
+      grandmaster_clock_id = grandmaster_clock_id + grandmaster_clock_id_low;
+      uint32_t clockQuality = ntohl(msg->announce.grandmasterClockQuality);
+      uint8_t clockClass = (clockQuality >> 24) & 0xff;
+      uint8_t clockAccuracy = (clockQuality >> 16) & 0xff;
+      uint16_t offsetScaledLogVariance = clockQuality & 0xffff;
+      uint16_t stepsRemoved = ntohs(msg->announce.stepsRemoved);
+      uint16_t sourcePortID = ntohs(msg->header.sourcePortID);
 
-      // so, we have added a new element and assumed that
-      // now we need to walk down the array checking that non of the elements are too old
-      i = 0;
-      int valid_count = 0;
-      int finished = 0;
-
-      // see 9.3.2.4.4 and 9.3.2.5
-      uint64_t foreign_master_time_window = 1;
-      foreign_master_time_window = foreign_master_time_window
-                                   << (32 + aPTPinitialLogAnnounceInterval);
-      foreign_master_time_window = foreign_master_time_window * 4;
-      foreign_master_time_window = foreign_master_time_window >> 32; // should be 4 seconds
-
-      uint64_t cutoff_time = reception_time + foreign_master_time_window;
-      int foreign_master_threshold = 2;
-      while ((i < 4) && (finished == 0)) {
-        int64_t delta = cutoff_time - clock_private_info->announce_times[i];
-        if (delta > 0)
-          valid_count++;
-        else
-          finished = 1;
-        i++;
+      // something in might have changed that
+      // affects its status as a possible master clock.
+      int best_clock_update_needed = 0;
+      if (clock_private_info->grandmasterIdentity != grandmaster_clock_id) {
+        clock_private_info->grandmasterIdentity = grandmaster_clock_id;
+        best_clock_update_needed = 1;
       }
-      if (valid_count >= foreign_master_threshold) {
-        uint64_t grandmaster_clock_id = nctohl(&msg->announce.grandmasterIdentity[0]);
-        uint64_t grandmaster_clock_id_low = nctohl(&msg->announce.grandmasterIdentity[4]);
-        grandmaster_clock_id = grandmaster_clock_id << 32;
-        grandmaster_clock_id = grandmaster_clock_id + grandmaster_clock_id_low;
-        uint32_t clockQuality = ntohl(msg->announce.grandmasterClockQuality);
-        uint8_t clockClass = (clockQuality >> 24) & 0xff;
-        uint8_t clockAccuracy = (clockQuality >> 16) & 0xff;
-        uint16_t offsetScaledLogVariance = clockQuality & 0xffff;
-        uint16_t stepsRemoved = ntohs(msg->announce.stepsRemoved);
-        uint16_t sourcePortID = ntohs(msg->header.sourcePortID);
-        int best_clock_update_needed = 0;
-        if (((clock_private_info->flags & (1 << clock_is_qualified)) == 0) &&
-            (stepsRemoved < 255)) {
-          // if it's just becoming qualified
-          clock_private_info->grandmasterIdentity = grandmaster_clock_id;
-          clock_private_info->grandmasterPriority1 = msg->announce.grandmasterPriority1;
-          clock_private_info->grandmasterQuality = clockQuality; // class/accuracy/variance
-          clock_private_info->grandmasterClass = clockClass;
-          clock_private_info->grandmasterAccuracy = clockAccuracy;
-          clock_private_info->grandmasterVariance = offsetScaledLogVariance;
-          clock_private_info->grandmasterPriority2 = msg->announce.grandmasterPriority2;
-          clock_private_info->stepsRemoved = stepsRemoved;
-          clock_private_info->clock_port_number = sourcePortID;
-          best_clock_update_needed = 1;
-        } else {
-          // otherwise, something in it might have changed, I guess, that
-          // affects its status as a possible master clock.
-          if (clock_private_info->grandmasterIdentity != grandmaster_clock_id) {
-            clock_private_info->grandmasterIdentity = grandmaster_clock_id;
-            best_clock_update_needed = 1;
-          }
-          if (clock_private_info->grandmasterPriority1 != msg->announce.grandmasterPriority1) {
-            clock_private_info->grandmasterPriority1 = msg->announce.grandmasterPriority1;
-            best_clock_update_needed = 1;
-          }
-          if (clock_private_info->grandmasterQuality != clockQuality) {
-            clock_private_info->grandmasterQuality = clockQuality;
-            best_clock_update_needed = 1;
-          }
-          if (clock_private_info->grandmasterClass != clockClass) {
-            clock_private_info->grandmasterClass = clockClass;
-            best_clock_update_needed = 1;
-          }
-          if (clock_private_info->grandmasterAccuracy != clockAccuracy) {
-            clock_private_info->grandmasterAccuracy = clockAccuracy;
-            best_clock_update_needed = 1;
-          }
-          if (clock_private_info->grandmasterVariance != offsetScaledLogVariance) {
-            clock_private_info->grandmasterVariance = offsetScaledLogVariance;
-            best_clock_update_needed = 1;
-          }
-          if (clock_private_info->grandmasterPriority2 != msg->announce.grandmasterPriority2) {
-            clock_private_info->grandmasterPriority2 = msg->announce.grandmasterPriority2;
-            best_clock_update_needed = 1;
-          }
-          if (clock_private_info->stepsRemoved != stepsRemoved) {
-            clock_private_info->stepsRemoved = stepsRemoved;
-            best_clock_update_needed = 1;
+      if (clock_private_info->grandmasterPriority1 != msg->announce.grandmasterPriority1) {
+        clock_private_info->grandmasterPriority1 = msg->announce.grandmasterPriority1;
+        best_clock_update_needed = 1;
+      }
+      if (clock_private_info->grandmasterQuality != clockQuality) {
+        clock_private_info->grandmasterQuality = clockQuality;
+        best_clock_update_needed = 1;
+      }
+      if (clock_private_info->grandmasterClass != clockClass) {
+        clock_private_info->grandmasterClass = clockClass;
+        best_clock_update_needed = 1;
+      }
+      if (clock_private_info->grandmasterAccuracy != clockAccuracy) {
+        clock_private_info->grandmasterAccuracy = clockAccuracy;
+        best_clock_update_needed = 1;
+      }
+      if (clock_private_info->grandmasterVariance != offsetScaledLogVariance) {
+        clock_private_info->grandmasterVariance = offsetScaledLogVariance;
+        best_clock_update_needed = 1;
+      }
+      if (clock_private_info->grandmasterPriority2 != msg->announce.grandmasterPriority2) {
+        clock_private_info->grandmasterPriority2 = msg->announce.grandmasterPriority2;
+        best_clock_update_needed = 1;
+      }
+      if (clock_private_info->stepsRemoved != stepsRemoved) {
+        clock_private_info->stepsRemoved = stepsRemoved;
+        best_clock_update_needed = 1;
+      }
+      if (clock_private_info->clock_port_number != sourcePortID) {
+        clock_private_info->clock_port_number = sourcePortID;
+        best_clock_update_needed = 1;
+      }
+
+      if (best_clock_update_needed) {
+        debug(2, "best clock update needed");
+        debug(2, "    grandmasterIdentity:         %" PRIx64 ".", grandmaster_clock_id);
+        debug(2, "    grandmasterPriority1:        %u.", msg->announce.grandmasterPriority1);
+        debug(2, "    grandmasterClockQuality:     0x%x.", clockQuality);
+        debug(2, "        clockClass:              %u.", clockClass); // See 7.6.2.4 clockClass
+        debug(2, "        clockAccuracy:           0x%x.",
+              clockAccuracy); // See 7.6.2.5 clockAccuracy
+        debug(2, "        offsetScaledLogVariance: 0x%x.",
+              offsetScaledLogVariance); // See 7.6.3 PTP variance
+        debug(2, "    grandmasterPriority2:        %u.", msg->announce.grandmasterPriority2);
+        debug(2, "    stepsRemoved:                %u.", stepsRemoved);
+        debug(2, "    portNumber:                  %u.", sourcePortID);
+
+        // check/update the mastership of any clients that might be affected
+        int temp_client_id;
+        for (temp_client_id = 0; temp_client_id < MAX_CLIENTS; temp_client_id++) {
+          if ((clock_private_info->client_flags[temp_client_id] & (1 << clock_is_a_timing_peer)) !=
+              0) {
+            debug(2,
+                  "best_clock_update_needed because %" PRIx64
+                  " on ip %s has changed -- updating clock mastership for client \"%s\"",
+                  clock_private_info->clock_id, clock_private_info->ip,
+                  get_client_name(temp_client_id));
+            update_master(temp_client_id);
           }
         }
-
-        if (best_clock_update_needed) {
-          debug(2, "best clock update needed");
-          debug(2,
-                "clock_id %" PRIx64
-                " at:    %s, \"Announce\" message is %sQualified -- See 9.3.2.5.",
-                clock_private_info->clock_id, clock_private_info->ip,
-                clock_private_info->stepsRemoved < 255 ? "" : "not ");
-          debug(2, "    grandmasterIdentity:         %" PRIx64 ".", grandmaster_clock_id);
-          debug(2, "    grandmasterPriority1:        %u.", msg->announce.grandmasterPriority1);
-          debug(2, "    grandmasterClockQuality:     0x%x.", clockQuality);
-          debug(2, "        clockClass:              %u.", clockClass); // See 7.6.2.4 clockClass
-          debug(2, "        clockAccuracy:           0x%x.",
-                clockAccuracy); // See 7.6.2.5 clockAccuracy
-          debug(2, "        offsetScaledLogVariance: 0x%x.",
-                offsetScaledLogVariance); // See 7.6.3 PTP variance
-          debug(2, "    grandmasterPriority2:        %u.", msg->announce.grandmasterPriority2);
-          debug(2, "    stepsRemoved:                %u.", stepsRemoved);
-          debug(2, "    portNumber:                  %u.", sourcePortID);
-
-          // now go and re-mark the best clock in the timing peer list
-          if (clock_private_info->stepsRemoved >= 255) // 9.3.2.5 (d)
-            clock_private_info->flags &= ~(1 << clock_is_qualified);
-          else
-            clock_private_info->flags |= (1 << clock_is_qualified);
-          // check/update the mastership of any clients that might be affected
-          int temp_client_id;
-          for (temp_client_id = 0; temp_client_id < MAX_CLIENTS; temp_client_id++) {
-            if ((clock_private_info->client_flags[temp_client_id] &
-                 (1 << clock_is_a_timing_peer)) != 0) {
-              debug(2,
-                    "best_clock_update_needed because %" PRIx64
-                    " on ip %s has changed -- updating clock mastership for client \"%s\"",
-                    clock_private_info->clock_id, clock_private_info->ip,
-                    get_client_name(temp_client_id));
-              update_master(temp_client_id);
-            }
-          }
-        }
-      } else {
-        if ((clock_private_info->flags & (1 << clock_is_qualified)) !=
-            0) // if it was qualified, but now isn't
-          debug(1,
-                "clock_id %" PRIx64
-                " on ip: %s \"Announce\" message is not Qualified -- See 9.3.2.5.",
-                clock_private_info->clock_id, clock_private_info->ip);
-        clock_private_info->flags &= ~(1 << clock_is_qualified);
       }
     }
   }
@@ -310,6 +251,7 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
   preciseOriginTimestamp = preciseOriginTimestamp + nanoseconds;
 
   // update our sample information
+
   if (clock_private_info->follow_up_number < 100)
     clock_private_info->follow_up_number++;
 
@@ -319,137 +261,88 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
   debug(2, "FOLLOWUP from %" PRIx64 ", %s.", clock_private_info->clock_id, &clock_private_info->ip);
   uint64_t offset = preciseOriginTimestamp - reception_time;
 
-  clock_private_info->local_time = reception_time;
-  clock_private_info->source_time = preciseOriginTimestamp;
-  clock_private_info->local_to_source_time_offset = offset;
-
   int64_t jitter = 0;
 
   int64_t time_since_previous_offset = 0;
+  uint64_t smoothed_offset = offset;
 
   if (clock_private_info->previous_offset_time != 0) {
     time_since_previous_offset = reception_time - clock_private_info->previous_offset_time;
   }
 
-  int clock_is_becoming_master_somewhere = 0;
-  {
-    int temp_client_id;
-    for (temp_client_id = 0; temp_client_id < MAX_CLIENTS; temp_client_id++) {
-      if ((clock_private_info->client_flags[temp_client_id] & (1 << clock_is_becoming_master)) !=
-          0) {
-        clock_is_becoming_master_somewhere = 1;
-      }
-    }
-  }
-  if ((clock_private_info->flags & (1 << clock_is_becoming_master)) != 0)
-    clock_is_becoming_master_somewhere = 1;
+  // Do acceptance checking and smoothing.
 
-  if (clock_is_becoming_master_somewhere != 0) {
-    // we now definitely have at least one sample since a request was made to
-    // designate this clock a master, so we assume it is legitimate. That is, we assume
-    // that the clock originator knows that it a clock master by now.
-    clock_private_info->mastership_start_time = clock_private_info->local_time;
+  // Positive changes in the offset are much more likely to be
+  // legitimate, since they could only occur due to a shorter
+  // propagation time or less of a delay sending or receiving the packet.
+  // (Actually, this is not quite true --
+  // it is possible that the remote clock could be adjusted forward
+  // and this would increase the offset too.)
+  // Anyway, when the clock is new, we give extra preferential weighting to
+  // positive changes in the offset.
 
-    // designate the clock as master wherever is was becoming a master
-    {
-      int temp_client_id;
-      for (temp_client_id = 0; temp_client_id < MAX_CLIENTS; temp_client_id++) {
-        if ((clock_private_info->client_flags[temp_client_id] & (1 << clock_is_becoming_master)) !=
-            0) {
-          debug(2,
-                "clock_is_becoming_master %" PRIx64
-                " at %s -- changing to clock_is_master for client \"%s\"",
-                clock_private_info->clock_id, clock_private_info->ip,
-                get_client_name(temp_client_id));
-          clock_private_info->client_flags[temp_client_id] &= ~(1 << clock_is_becoming_master);
-          clock_private_info->client_flags[temp_client_id] |= (1 << clock_is_master);
-        }
-      }
-    }
+  // If the new offset is greater, by any amount, than the old offset,
+  // or if it is less by up to 10 mS, accept it.
+  // Otherwise, drop it if the last sample was fairly recent
+  // If the last sample was long ago, take this as a discontinuity and
+  // accept it as the start of a new period of mastership.
 
-    clock_private_info->previous_offset_time = 0;
-    debug_log_nqptp_status(2);
-  } else if ((clock_private_info->previous_offset_time != 0) &&
-             (time_since_previous_offset < 300000000000)) {
-    // i.e. if it's not becoming a master and there has been a previous follow_up
-    int64_t time_since_last_sync = reception_time - clock_private_info->last_sync_time;
-    int64_t sync_timeout = 300000000000; // nanoseconds
-    if (clock_private_info->last_sync_time == 0)
-      debug(2, "Never synced.");
+  // This seems to be quite stable
+
+  if (clock_private_info->previous_offset_time != 0)
+    jitter = offset - clock_private_info->previous_offset;
+
+  // We take any positive or a limited negative jitter as a sync event in
+  // a continuous synchronisation sequence.
+  // This works well with PTP sources that sleep, as when they sleep
+  // their clock stops. When they awaken, the offset from
+  // the local clock to them must be smaller than before, triggering the
+  // timing discontinuity below and allowing an immediate readjustment.
+
+  // The full value of a positive offset jitter is accepted for a
+  // number of follow_ups at the start.
+  // After that, the weight of the jitter is reduced.
+  // Follow-ups don't always come in at 125 ms intervals, especially after a discontinuity
+  // Delays makes the offsets smaller than they should be, which is quickly
+  // allowed for.
+
+  if ((clock_private_info->previous_offset_time != 0) && (jitter > -10000000)) {
+
+    if (jitter < 0) {
+      if (clock_private_info->follow_up_number < (5 * 8)) // at the beginning (8 samples per second)
+        smoothed_offset = clock_private_info->previous_offset + jitter / 16;
+      else
+        smoothed_offset = clock_private_info->previous_offset + jitter / 64;
+    } else if (clock_private_info->follow_up_number <
+               (5 * 8)) // at the beginning (8 samples per second)
+      smoothed_offset =
+          clock_private_info->previous_offset + jitter / 1; // accept positive changes quickly
     else
-      debug(2, "Sync interval: %f seconds.", 0.000000001 * time_since_last_sync);
-    if ((clock_private_info->last_sync_time != 0) && (time_since_last_sync < sync_timeout)) {
-
-      // Do acceptance checking.
-
-      // Positive changes in the offset are much more likely to be
-      // legitimate, since they could only occur due to a shorter
-      // propagation time. (Actually, this is not quite true --
-      // it is possible that the remote clock could be adjusted forward
-      // and this would increase the offset too.)
-      // Anyway, when the clock is new, we give preferential weighting to
-      // positive changes in the offset.
-
-      // If the new offset is greater, by any amount, than the old offset,
-      // or if it is less by up to 10 mS,
-      // accept it.
-      // Otherwise, drop it
-
-      // This seems to be quite stable
-
-      jitter = offset - clock_private_info->previous_offset;
-
-      if (jitter > -10000000) {
-        // we take any positive or a limited negative jitter as a sync event
-        if (jitter < 0) {
-          if (clock_private_info->follow_up_number <
-              (5 * 8)) // at the beginning (8 samples per second)
-            offset = clock_private_info->previous_offset + jitter / 16;
-          else
-            offset = clock_private_info->previous_offset + jitter / 64;
-        } else if (clock_private_info->follow_up_number <
-                   (5 * 8)) // at the beginning (8 samples per second)
-          offset =
-              clock_private_info->previous_offset + jitter / 1; // accept positive changes quickly
-        else
-          offset = clock_private_info->previous_offset + jitter / 64;
-        clock_private_info->last_sync_time = reception_time;
-      } else {
-        offset = clock_private_info->previous_offset; // forget the present sample...
-      }
-    } else {
-      int clock_is_a_master_somewhere = 0;
-      int temp_client_id;
-      for (temp_client_id = 0; temp_client_id < MAX_CLIENTS; temp_client_id++) {
-        if ((clock_private_info->client_flags[temp_client_id] & (1 << clock_is_master)) != 0) {
-          clock_is_a_master_somewhere = 1;
-        }
-      }
-
-      if ((clock_is_a_master_somewhere != 0) && (clock_private_info->last_sync_time == 0))
-        debug(2, "Synchronising master clock %" PRIx64 " at %s.", clock_private_info->clock_id,
-              clock_private_info->ip);
-      if ((clock_is_a_master_somewhere != 0) && (clock_private_info->last_sync_time != 0))
-        debug(1, "Resynchronising master clock %" PRIx64 " at %s.", clock_private_info->clock_id,
-              clock_private_info->ip);
-      // leave the offset as it was coming in and take it as a sync time
-      clock_private_info->last_sync_time = reception_time;
-      clock_private_info->mastership_start_time =
-          reception_time; // mastership is reset to this time...
-      clock_private_info->previous_offset_time = 0;
-    }
+      smoothed_offset = clock_private_info->previous_offset + jitter / 64;
   } else {
-    clock_private_info->last_sync_time = reception_time;
-    if (time_since_previous_offset >= 300000000000) {
-      debug(1, "Long interval: %f seconds since previous follow_up",
-            time_since_previous_offset * 1E-9);
+    // allow samples to disappear for up to a second
+    if ((time_since_previous_offset != 0) && (time_since_previous_offset < 1000000000)) {
+      smoothed_offset =
+          clock_private_info
+              ->previous_offset; // if we have recent samples, forget the present sample...
+    } else {
+      if (clock_private_info->previous_offset_time == 0)
+        debug(2, "New clock %" PRIx64 " at %s.", clock_private_info->clock_id,
+              clock_private_info->ip);
+      else
+        debug(2,
+              "Timing discontinuity on clock %" PRIx64
+              " at %s: time_since_previous_offset: %.3f seconds.",
+              clock_private_info->clock_id, clock_private_info->ip,
+              0.000000001 * time_since_previous_offset);
+      smoothed_offset = offset;
+      clock_private_info->follow_up_number = 0;
       clock_private_info->mastership_start_time =
           reception_time; // mastership is reset to this time...
-      clock_private_info->previous_offset_time = 0;
     }
   }
 
-  clock_private_info->previous_offset = offset;
+  clock_private_info->previous_offset = smoothed_offset;
   clock_private_info->previous_offset_time = reception_time;
 
   int temp_client_id;
@@ -457,9 +350,15 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
     if ((clock_private_info->client_flags[temp_client_id] & (1 << clock_is_master)) != 0) {
       debug(2, "clock_is_master -- updating master clock info for client \"%s\"",
             get_client_name(temp_client_id));
+      debug(2,
+            "Clock %" PRIx64 " at %s. Offset: %" PRIx64 ", smoothed offset: %" PRIx64
+            ". Precise Origin Timestamp: %" PRIx64
+            ". Time since previous offset: %.3f milliseconds.",
+            clock_private_info->clock_id, clock_private_info->ip, offset, smoothed_offset,
+            preciseOriginTimestamp, 0.000001 * time_since_previous_offset);
       update_master_clock_info(temp_client_id, clock_private_info->clock_id,
-                               (const char *)&clock_private_info->ip, reception_time, offset,
-                               clock_private_info->mastership_start_time);
+                               (const char *)&clock_private_info->ip, reception_time,
+                               smoothed_offset, clock_private_info->mastership_start_time);
     }
   }
 }

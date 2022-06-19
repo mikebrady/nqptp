@@ -65,7 +65,7 @@ int get_client_id(char *client_shared_memory_interface_name) {
       else
         i++;
     }
-    
+
     if (response == -1) { // no match, so create one
       i = 0;
       while ((response == -1) && (i < MAX_CLIENTS)) {
@@ -274,8 +274,6 @@ void manage_clock_sources(uint64_t reception_time, clock_source_private_data *cl
           memset(&clocks_private_info[i], 0, sizeof(clock_source_private_data));
           if (old_flags != 0) {
             update_master(0); // TODO -- won't be needed
-          } else {
-            debug_log_nqptp_status(2);
           }
         }
       }
@@ -331,53 +329,6 @@ void update_clock_self_identifications(clock_source_private_data *clocks_private
   } else {
     debug(1, "getifaddrs error - %s.", strerror(errno));
   }
-}
-
-void debug_log_nqptp_status(__attribute__((unused)) int level) {
-  /*
-    int records_in_use = 0;
-    int i;
-    for (i = 0; i < MAX_CLOCKS; i++)
-      if ((clocks_private[i].flags & (1 << clock_is_in_use)) != 0)
-        records_in_use++;
-    debug(level, "");
-    if (records_in_use > 0) {
-      debug(level, "Current NQPTP Status:");
-      uint32_t peer_mask = (1 << clock_is_a_timing_peer);
-      uint32_t peer_clock_mask = peer_mask | (1 << clock_is_valid);
-      uint32_t peer_master_mask = peer_clock_mask | (1 << clock_is_master);
-      uint32_t peer_becoming_master_mask = peer_clock_mask | (1 << clock_is_becoming_master);
-      uint32_t non_peer_clock_mask = (1 << clock_is_valid);
-      uint32_t non_peer_master_mask = non_peer_clock_mask | (1 << clock_is_master);
-      for (i = 0; i < MAX_CLOCKS; i++) {
-        if ((clocks_private[i].flags & (1 << clock_is_in_use)) != 0) {
-          if ((clocks_private[i].flags & peer_master_mask) == peer_master_mask) {
-            debug(level, "  Peer Master:            %" PRIx64 "  %s.", clocks_private[i].clock_id,
-                  clocks_private[i].ip);
-          } else if ((clocks_private[i].flags & peer_becoming_master_mask) ==
-                     peer_becoming_master_mask) {
-            debug(level, "  Peer Becoming Master:   %" PRIx64 "  %s.", clocks_private[i].clock_id,
-                  clocks_private[i].ip);
-          } else if ((clocks_private[i].flags & peer_clock_mask) == peer_clock_mask) {
-            debug(level, "  Peer Clock:             %" PRIx64 "  %s.", clocks_private[i].clock_id,
-                  clocks_private[i].ip);
-          } else if ((clocks_private[i].flags & peer_mask) == peer_mask) {
-            debug(level, "  Peer:                                     %s.", clocks_private[i].ip);
-          } else if ((clocks_private[i].flags & non_peer_master_mask) == non_peer_master_mask) {
-            debug(level, "  Non Peer Master:        %" PRIx64 "  %s.", clocks_private[i].clock_id,
-                  clocks_private[i].ip);
-          } else if ((clocks_private[i].flags & non_peer_clock_mask) == non_peer_clock_mask) {
-            debug(level, "  Non Peer Clock:         %16" PRIx64 "  %s.", clocks_private[i].clock_id,
-                  clocks_private[i].ip);
-          } else {
-            debug(level, "  Non Peer Record:                          %s.", clocks_private[i].ip);
-          }
-        }
-      }
-    } else {
-      debug(level, "Current NQPTP Status: no records in use.");
-    }
-  */
 }
 
 int uint32_cmp(uint32_t a, uint32_t b, const char *cause) {
@@ -436,14 +387,11 @@ void update_master(int client_id) {
       if (old_master == -1)
         old_master = i;                                                   // find old master
     clocks_private[i].client_flags[client_id] &= ~(1 << clock_is_master); // turn them all off
-    clocks_private[i].client_flags[client_id] &=
-        ~(1 << clock_is_becoming_master); // turn them all off
   }
 
   int best_so_far = -1;
   int timing_peer_count = 0;
-  //  uint32_t clock_specific_acceptance_mask = (1 << clock_is_qualified) | (1 << clock_is_valid);
-  uint32_t clock_specific_acceptance_mask = (1 << clock_is_qualified);
+  uint32_t clock_specific_acceptance_mask = (1 << clock_is_announced);
   uint32_t client_specific_acceptance_mask = (1 << clock_is_a_timing_peer);
   for (i = 0; i < MAX_CLOCKS; i++) {
     if (((clocks_private[i].flags & clock_specific_acceptance_mask) ==
@@ -515,36 +463,13 @@ void update_master(int client_id) {
     update_master_clock_info(client_id, 0, NULL, 0, 0, 0);
     //}
     if (timing_peer_count == 0)
-      debug(2, "no valid qualified clocks ");
+      debug(2, "empty timing peer group ");
     else
       debug(1, "no master clock!");
   } else {
-    // we found a master clock
-
-    if (old_master != best_so_far) {
-      // if the master is a new one
-      // now, if it's already a master somewhere, it doesn't need to resync
-      int clock_is_a_master_somewhere = 0;
-      int temp_client_id;
-      for (temp_client_id = 0; temp_client_id < MAX_CLIENTS; temp_client_id++) {
-        if ((clocks_private[best_so_far].client_flags[temp_client_id] & (1 << clock_is_master)) !=
-            0) {
-          clock_is_a_master_somewhere = 1;
-        }
-      }
-      if (clock_is_a_master_somewhere == 0) {
-        clocks_private[best_so_far].client_flags[client_id] |= (1 << clock_is_becoming_master);
-        clocks_private[best_so_far].last_sync_time = 0; // declare it was never synced before
-
-      } else {
-        clocks_private[best_so_far].client_flags[client_id] |= (1 << clock_is_master);
-      }
-    } else {
-      // if it's the same one as before
-      clocks_private[best_so_far].client_flags[client_id] |= (1 << clock_is_master);
-    }
+    // we mark the master clock we found
+    clocks_private[best_so_far].client_flags[client_id] |= (1 << clock_is_master);
   }
-  debug_log_nqptp_status(2);
 }
 
 void update_master_clock_info(int client_id, uint64_t master_clock_id, const char *ip,
@@ -552,8 +477,6 @@ void update_master_clock_info(int client_id, uint64_t master_clock_id, const cha
                               uint64_t mastership_start_time) {
   if (clients[client_id].shm_interface_name[0] != '\0') {
     // debug(1,"update_master_clock_info start");
-    if (clients[client_id].shared_memory->master_clock_id != master_clock_id)
-      debug_log_nqptp_status(1);
     int rc = pthread_mutex_lock(&clients[client_id].shared_memory->shm_mutex);
     if (rc != 0)
       warn("Can't acquire mutex to update master clock!");
