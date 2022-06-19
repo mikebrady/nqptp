@@ -1,3 +1,7 @@
+## Version: 1.1-dev-154-g608980e
+**Bug Fix**
+* Some times, if a PTP clock went to sleep and then woke up, NQPTP would not recognise the new timing data, and, literally, get stuck in the past (!). Getting the problem to manifest itself was difficult -- the clock in the source device (e.g. an iPhone) had to sleep and restart at just the wrong time to cause the problem. Thanks to [Kristian Dimitrov](https://github.com/Kristian8606), [vision4u2](https://github.com/vision4u2) and others.
+
 ## Version: 1.1-dev-150-g7af5673
 **Bug Fix**
 * Remove a noisy debug message that could fill the log. Thanks to [kevocl](https://github.com/kevocl) for the [report](https://github.com/mikebrady/shairport-sync/issues/1481).
