@@ -249,7 +249,7 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
   preciseOriginTimestamp = preciseOriginTimestamp + seconds_low;
   preciseOriginTimestamp = preciseOriginTimestamp * 1000000000L;
   preciseOriginTimestamp = preciseOriginTimestamp + nanoseconds;
-
+  
   // update our sample information
 
   if (clock_private_info->follow_up_number < 100)
@@ -265,6 +265,15 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
 
   int64_t time_since_previous_offset = 0;
   uint64_t smoothed_offset = offset;
+  
+  // This is a bit hacky.
+  // Basically, the idea is that if the grandmaster has changed, then acceptance checking and smoothing
+  // should start as it it's a new clock. This is because the preciseOriginTimestamp, which is part of
+  // the data that is being smoothed, refers to the grandmaster, so when the grandmaster changes
+  // any previous calculations are no longer valid.
+  // The hacky bit is to signal this condition by zeroing the previous_offset_time.
+  if (clock_private_info->previous_offset_grandmaster != clock_private_info->grandmasterIdentity)
+    clock_private_info->previous_offset_time = 0; // the preciseOriginTimestamp always (?) refers to the grandmaster
 
   if (clock_private_info->previous_offset_time != 0) {
     time_since_previous_offset = reception_time - clock_private_info->previous_offset_time;
@@ -324,10 +333,10 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
     if ((time_since_previous_offset != 0) && (time_since_previous_offset < 1000000000)) {
       smoothed_offset =
           clock_private_info
-              ->previous_offset; // if we have recent samples, forget the present sample...
+              ->previous_offset + 1; // if we have recent samples, forget the present sample...
     } else {
       if (clock_private_info->previous_offset_time == 0)
-        debug(2, "New clock %" PRIx64 " at %s.", clock_private_info->clock_id,
+        debug(2, "Clock %" PRIx64 " record (re)starting at %s.", clock_private_info->clock_id,
               clock_private_info->ip);
       else
         debug(2,
@@ -342,20 +351,24 @@ void handle_follow_up(char *buf, __attribute__((unused)) ssize_t recv_len,
     }
   }
 
+  clock_private_info->previous_offset_grandmaster = clock_private_info->grandmasterIdentity;
   clock_private_info->previous_offset = smoothed_offset;
   clock_private_info->previous_offset_time = reception_time;
+    
+/*
+  debug(1,
+      "Clock %" PRIx64 ", grandmaster %" PRIx64 " at %s. Offset: %" PRIx64 ", smoothed offset: %" PRIx64
+      ". Precise Origin Timestamp: %" PRIx64
+      ". Time since previous offset: %.3f milliseconds.",
+      clock_private_info->clock_id, clock_private_info->grandmasterIdentity, clock_private_info->ip, offset, smoothed_offset,
+      preciseOriginTimestamp, 0.000001 * time_since_previous_offset);
+*/
 
   int temp_client_id;
   for (temp_client_id = 0; temp_client_id < MAX_CLIENTS; temp_client_id++) {
     if ((clock_private_info->client_flags[temp_client_id] & (1 << clock_is_master)) != 0) {
       debug(2, "clock_is_master -- updating master clock info for client \"%s\"",
             get_client_name(temp_client_id));
-      debug(2,
-            "Clock %" PRIx64 " at %s. Offset: %" PRIx64 ", smoothed offset: %" PRIx64
-            ". Precise Origin Timestamp: %" PRIx64
-            ". Time since previous offset: %.3f milliseconds.",
-            clock_private_info->clock_id, clock_private_info->ip, offset, smoothed_offset,
-            preciseOriginTimestamp, 0.000001 * time_since_previous_offset);
       update_master_clock_info(temp_client_id, clock_private_info->clock_id,
                                (const char *)&clock_private_info->ip, reception_time,
                                smoothed_offset, clock_private_info->mastership_start_time);
