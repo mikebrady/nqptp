@@ -147,8 +147,8 @@ int main(int argc, char **argv) {
   }
 
   debug_init(debug_level, 0, 1, 1);
-  debug(1, "startup. self clock id: \"%" PRIx64 "\".", get_self_clock_id());
-  debug(1, "size of a clock entry is %u bytes.", sizeof(clock_source_private_data));
+  debug(1, "Startup. Clock ID: \"%" PRIx64 "\".", get_self_clock_id());
+  // debug(1, "size of a clock entry is %u bytes.", sizeof(clock_source_private_data));
   atexit(goodbye);
 
   sockets_open_stuff.sockets_open = 0;
