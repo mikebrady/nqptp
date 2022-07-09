@@ -476,7 +476,7 @@ void update_master_clock_info(int client_id, uint64_t master_clock_id, const cha
                               uint64_t local_time, uint64_t local_to_master_offset,
                               uint64_t mastership_start_time) {
   if (clients[client_id].shm_interface_name[0] != '\0') {
-    // debug(1,"update_master_clock_info start");
+    // debug(1,"update_master_clock_info clock: % " PRIx64 ", offset: %" PRIx64 ".", master_clock_id, local_to_master_offset);
     int rc = pthread_mutex_lock(&clients[client_id].shared_memory->shm_mutex);
     if (rc != 0)
       warn("Can't acquire mutex to update master clock!");
