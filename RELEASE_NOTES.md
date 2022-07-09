@@ -1,3 +1,7 @@
+## Version: 1.1-dev-161-g353093a
+**Bug Fix**
+* If a player (e.g. a HomePod mini) that was providing the master clock was removed from the set of devices playing, the new master clock retained out-of-date information about the old master clock. This could cause problems going to the next track or to a previous one, causing them not to be heard. Thanks (again!) to [Kristian Dimitrov](https://github.com/Kristian8606), [vision4u2](https://github.com/vision4u2) for a precise description of how to cause the problem.
+
 ## Version: 1.1-dev-154-g608980e
 **Bug Fix**
 * Some times, if a PTP clock went to sleep and then woke up, NQPTP would not recognise the new timing data, and, literally, get stuck in the past (!). Getting the problem to manifest itself was difficult -- the clock in the source device (e.g. an iPhone) had to sleep and restart at just the wrong time to cause the problem. Thanks to [Kristian Dimitrov](https://github.com/Kristian8606), [vision4u2](https://github.com/vision4u2) and others.
