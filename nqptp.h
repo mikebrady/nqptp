@@ -39,4 +39,10 @@
 // Instances" -- of a "PTP Network" it wishes to monitor. This is a "timing group" in AirPlay 2
 // parlance, it seems.
 
+
+void send_awakening_announcement_sequence(const uint64_t clock_id, const char *clock_ip,
+                                          const int ip_family, const uint8_t priority1,
+                                          const uint8_t priority2);
+
+
 #endif
