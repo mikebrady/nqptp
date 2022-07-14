@@ -1,3 +1,9 @@
+## Version: 1.1-dev-164-g086a123
+**Enhancements**
+* Improve the accuracy of the clock by including data from the `correctionField` part of a PTP message. Most of the time, this is a fraction of a millisecond, but sometimes it can be larger.
+* If a clock timing sample is more than four seconds slow, treat it as the start of a new timing sequence rather than as an error in the current timing sequence.
+* Try to restart a clock that stops incrementing towards the start of a timing sequence.
+
 ## Version: 1.1-dev-154-g608980e
 **Bug Fix**
 * Some times, if a PTP clock went to sleep and then woke up, NQPTP would not recognise the new timing data, and, literally, get stuck in the past (!). Getting the problem to manifest itself was difficult -- the clock in the source device (e.g. an iPhone) had to sleep and restart at just the wrong time to cause the problem. Thanks to [Kristian Dimitrov](https://github.com/Kristian8606), [vision4u2](https://github.com/vision4u2) and others.
