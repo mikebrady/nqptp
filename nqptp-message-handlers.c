@@ -271,7 +271,7 @@ void handle_follow_up(char *buf, ssize_t recv_len, clock_source_private_data *cl
                                             clock_private_info->grandmasterPriority2);
         }
       } else {
-        if (clock_private_info->identical_previous_preciseOriginTimestamp_count >= 20) {
+        if (clock_private_info->identical_previous_preciseOriginTimestamp_count >= 5) {
           debug(1,"Clock %" PRIx64 "'s grandmaster clock has started again...", clock_private_info->clock_id);
           clock_private_info->identical_previous_preciseOriginTimestamp_count = 0;
         }
