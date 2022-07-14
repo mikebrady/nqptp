@@ -45,4 +45,6 @@ uint16_t nctohs(const uint8_t *p);
 uint64_t timespec_to_ns(struct timespec *tn);
 uint64_t get_time_now();
 
+uint64_t ntoh64(const uint64_t n);
+
 #endif
