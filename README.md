@@ -69,8 +69,6 @@ If Shairport Sync is already running, you should you restart it after starting `
 ```
 # systemctl restart shairport-sync
 ```
-If a firewall is running, ensure it does not block ports 319 and 320 to UDP traffic.
-
 ##### Update
 If you are updating an existing installation of `nqptp`, after installing it you should restart it. You should then also restart Shairport Sync:
 ```
@@ -92,7 +90,6 @@ If Shairport Sync is already running, you should you restart it after starting `
 ```
 # service shairport_sync restart
 ```
-If a firewall is running, ensure it does not block ports 319 and 320 to UDP traffic.
 
 ##### Update
 If you are updating an existing installation of `nqptp`, after installing it you should restart it. You should then also restart Shairport Sync:
@@ -102,7 +99,11 @@ If you are updating an existing installation of `nqptp`, after installing it you
 ```
 
 ## Firewall
-If your system runs a firewall, ensure that ports 319 and 320 are open for UDP traffic in both directions. These ports are associated with PTP service and may be referred to as "PTP" in firewall rules.
+If your system runs a firewall, ensure that ports 319 and 320 are open for UDP traffic in both directions. These ports are associated with PTP service and may be referred to as "PTP" in firewall rules. For example, the following would open ports 319 and 320 for Fedora, which uses `firewalld`:
+```
+# firewall-cmd --permanent --add-service=ptp
+```
+
 
 ## Notes
 Please note that `nqptp` must run in `root` mode to be able to access ports 319 and 320.
