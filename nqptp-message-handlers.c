@@ -260,10 +260,10 @@ void handle_follow_up(char *buf, ssize_t recv_len, clock_source_private_data *cl
         clock_private_info->identical_previous_preciseOriginTimestamp_count++;
         
         if ((clock_private_info->identical_previous_preciseOriginTimestamp_count == 5) && (clock_private_info->follow_up_number < 100)){
-          debug(1,"Clock %" PRIx64 "'s grandmaster clock has stopped or may not have been read.", clock_private_info->clock_id);
+          debug(2,"Clock %" PRIx64 "'s grandmaster clock has stopped or may not have been read.", clock_private_info->clock_id);
 
         
-          debug(1, "Attempt to start a stopped clock %" PRIx64 ", at follow_up_number %u at IP %s.",
+          debug(2, "Attempt to start a stopped clock %" PRIx64 ", at follow_up_number %u at IP %s.",
             clock_private_info->clock_id, clock_private_info->follow_up_number,
             clock_private_info->ip);
           send_awakening_announcement_sequence(clock_private_info->clock_id, clock_private_info->ip,
@@ -272,7 +272,7 @@ void handle_follow_up(char *buf, ssize_t recv_len, clock_source_private_data *cl
         }
       } else {
         if (clock_private_info->identical_previous_preciseOriginTimestamp_count >= 5) {
-          debug(1,"Clock %" PRIx64 "'s grandmaster clock has started again...", clock_private_info->clock_id);
+          debug(2,"Clock %" PRIx64 "'s grandmaster clock has started again...", clock_private_info->clock_id);
           clock_private_info->identical_previous_preciseOriginTimestamp_count = 0;
         }
       }
@@ -388,10 +388,10 @@ void handle_follow_up(char *buf, ssize_t recv_len, clock_source_private_data *cl
                             1; // if we have recent samples, forget the present sample...
         } else {
           if (clock_private_info->previous_offset_time == 0)
-            debug(1, "Clock %" PRIx64 " record (re)starting at %s.", clock_private_info->clock_id,
+            debug(2, "Clock %" PRIx64 " record (re)starting at %s.", clock_private_info->clock_id,
                   clock_private_info->ip);
           else
-            debug(1,
+            debug(2,
                   "Timing discontinuity on clock %" PRIx64
                   " at %s: time_since_previous_offset: %.3f seconds.",
                   clock_private_info->clock_id, clock_private_info->ip,
