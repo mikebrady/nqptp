@@ -37,7 +37,8 @@ typedef struct {
   int follow_up_number;
   int announcements_without_followups; // add 1 for every announce, reset with a followup
   uint64_t clock_id;
-  uint64_t previous_offset, previous_offset_time, previous_offset_grandmaster, previous_preciseOriginTimestamp;
+  uint64_t previous_offset, previous_offset_time, previous_offset_grandmaster,
+      previous_preciseOriginTimestamp;
   uint64_t mastership_start_time; // set to the time of the first sample used as master
 
   // for garbage collection

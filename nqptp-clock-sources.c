@@ -455,6 +455,7 @@ void update_master(int client_id) {
       }
     }
   }
+//  if ((best_so_far == -1) || (best_so_far != old_master)) {
   if (best_so_far == -1) {
     // no master clock
     // if (old_master != -1) {
@@ -462,6 +463,8 @@ void update_master(int client_id) {
     debug(2, "Remove master clock information from interface %s.", get_client_name(client_id));
     update_master_clock_info(client_id, 0, NULL, 0, 0, 0);
     //}
+  }
+  if (best_so_far == -1) {
     if (timing_peer_count == 0)
       debug(2, "empty timing peer group ");
     else
@@ -476,7 +479,8 @@ void update_master_clock_info(int client_id, uint64_t master_clock_id, const cha
                               uint64_t local_time, uint64_t local_to_master_offset,
                               uint64_t mastership_start_time) {
   if (clients[client_id].shm_interface_name[0] != '\0') {
-    // debug(1,"update_master_clock_info clock: % " PRIx64 ", offset: %" PRIx64 ".", master_clock_id, local_to_master_offset);
+    // debug(1,"update_master_clock_info clock: % " PRIx64 ", offset: %" PRIx64 ".",
+    // master_clock_id, local_to_master_offset);
     int rc = pthread_mutex_lock(&clients[client_id].shared_memory->shm_mutex);
     if (rc != 0)
       warn("Can't acquire mutex to update master clock!");

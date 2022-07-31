@@ -410,8 +410,8 @@ void send_awakening_announcement_sequence(const uint64_t clock_id, const char *c
       int ret = sendto(s, msg, msg_length, 0, res->ai_addr, res->ai_addrlen);
       if (ret == -1)
         debug(1, "result of sendto is %d.", ret);
-      debug(2, "Send awaken Announce message to clock \"%" PRIx64 "\" at %s on %s.", clock_id, clock_ip,
-            ip_family == AF_INET6 ? "IPv6" : "IPv4");
+      debug(2, "Send awaken Announce message to clock \"%" PRIx64 "\" at %s on %s.", clock_id,
+            clock_ip, ip_family == AF_INET6 ? "IPv6" : "IPv4");
 
       if (priority1 < 254) {
         msg->announce.grandmasterPriority1 =
@@ -437,20 +437,21 @@ uint64_t broadcasting_task(uint64_t call_time, __attribute__((unused)) void *pri
   clock_source_private_data *clocks_private = (clock_source_private_data *)private_data;
   int i;
   for (i = 0; i < MAX_CLOCKS; i++) {
-  
+
     int is_a_master = 0;
     int temp_client_id;
-  
+
     for (temp_client_id = 0; temp_client_id < MAX_CLIENTS; temp_client_id++)
-      if ((clocks_private->client_flags[temp_client_id] & (1 << clock_is_master)) != 0) 
+      if ((clocks_private->client_flags[temp_client_id] & (1 << clock_is_master)) != 0)
         is_a_master = 1;
-    
+
     // only process it if it's a master somewhere...
-    if ((is_a_master != 0) && 
-        (clocks_private[i].announcements_without_followups == 3) &&
+    if ((is_a_master != 0) && (clocks_private[i].announcements_without_followups == 3) &&
         // (clocks_private[i].follow_up_number == 0) && // only check at the start
         ((clocks_private[i].flags & (1 << clock_is_one_of_ours)) == 0)) {
-      debug(1, "Attempt to awaken a silent clock %" PRIx64 ", index %u, at follow_up_number %u at IP %s.",
+      debug(2,
+            "Attempt to awaken a silent clock %" PRIx64
+            ", index %u, at follow_up_number %u at IP %s.",
             clocks_private[i].clock_id, i, clocks_private[i].follow_up_number,
             clocks_private[i].ip);
 

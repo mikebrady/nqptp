@@ -83,6 +83,6 @@ uint64_t get_time_now() {
   clock_gettime(CLOCK_MONOTONIC_RAW, &tn);
 #else
   clock_gettime(CLOCK_MONOTONIC, &tn);
-#endif  
+#endif
   return timespec_to_ns(&tn);
 }

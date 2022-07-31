@@ -28,7 +28,7 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clo
                      uint64_t reception_time);
 
 void handle_sync(char *buf, ssize_t recv_len, clock_source_private_data *clock_private_info,
-                      uint64_t reception_time);
+                 uint64_t reception_time);
 
 void handle_follow_up(char *buf, ssize_t recv_len, clock_source_private_data *clock_private_info,
                       uint64_t reception_time);

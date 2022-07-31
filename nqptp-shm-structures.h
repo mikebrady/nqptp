@@ -41,7 +41,6 @@
 // (In future version of NQPTP the SMI interface may also be deleted at this point.)
 // SMI interfaces are not currently deleted or garbage collected.
 
-
 #include <inttypes.h>
 #include <pthread.h>
 
