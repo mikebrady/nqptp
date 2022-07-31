@@ -68,6 +68,7 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
             }
             clock_private_info[i].client_flags[client_id] = 0;
           }
+          update_master_clock_info(client_id, 0, NULL, 0, 0, 0); // it may have obsolete stuff in it
         }
       } else {
         debug(2, "get or create new record for \"%s\".", smi_name);
@@ -236,12 +237,67 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clo
   }
 }
 
+void handle_sync(char *buf, ssize_t recv_len, clock_source_private_data *clock_private_info,
+                      uint64_t reception_time) {
+  if (clock_private_info->clock_id == 0) {
+    debug(2,"Sync received before announcement -- discarded.");
+  } else {
+    if ((recv_len >= 0) && ((size_t)recv_len >= sizeof(struct ptp_sync_message))) {
+      int is_a_master = 0;
+      int temp_client_id;
+      for (temp_client_id = 0; temp_client_id < MAX_CLIENTS; temp_client_id++)
+        if ((clock_private_info->client_flags[temp_client_id] & (1 << clock_is_master)) != 0) 
+          is_a_master = 1;
+    
+      // only process it if it's a master somewhere...
+      
+      if (is_a_master) {
+      // debug_print_buffer(1, buf, recv_len);
+      struct ptp_sync_message *msg = (struct ptp_sync_message *)buf;
+      
+      // clang-format off
+      
+      // actually the precision timestamp needs to be corrected by the Follow_Up Correction_Field contents.
+      // According to IEEE Std 802.1AS-2020, paragraph 11.4.4.2.1:
+      /*
+      The value of the preciseOriginTimestamp field is the sourceTime of the ClockMaster entity of the Grandmaster PTP Instance,
+      when the associated Sync message was sent by that Grandmaster PTP Instance, with any fractional nanoseconds truncated (see 10.2.9).
+      The sum of the correctionFields in the Follow_Up and associated Sync messages, added to the preciseOriginTimestamp field of the Follow_Up message,
+      is the value of the synchronized time corresponding to the syncEventEgressTimestamp at the PTP Instance that sent the associated Sync message,
+      including any fractional nanoseconds.
+      */
+      
+      // clang-format on
+      
+      int64_t correction_field = ntoh64(msg->header.correctionField);
+      
+      if (correction_field != 0)
+        debug(1,"Sync correction field is notzero: %" PRId64 " ns.", correction_field);
+      
+      correction_field = correction_field / 65536; //might be signed
+      }
+    } else {
+      debug(1, "Sync message is too small to be valid.");
+    }
+  }
+}
+
 void handle_follow_up(char *buf, ssize_t recv_len, clock_source_private_data *clock_private_info,
                       uint64_t reception_time) {
   if (clock_private_info->clock_id == 0) {
     debug(2,"Follow_Up received before announcement -- discarded.");
   } else {
+    clock_private_info->announcements_without_followups = 0;
     if ((recv_len >= 0) && ((size_t)recv_len >= sizeof(struct ptp_follow_up_message))) {
+      int is_a_master = 0;
+      int temp_client_id;
+      for (temp_client_id = 0; temp_client_id < MAX_CLIENTS; temp_client_id++)
+        if ((clock_private_info->client_flags[temp_client_id] & (1 << clock_is_master)) != 0) 
+          is_a_master = 1;
+    
+      // only process it if it's a master somewhere...
+      
+      if (is_a_master) {
       // debug_print_buffer(1, buf, recv_len);
       struct ptp_follow_up_message *msg = (struct ptp_follow_up_message *)buf;
       uint16_t seconds_hi = nctohs(&msg->follow_up.preciseOriginTimestamp[0]);
@@ -259,20 +315,25 @@ void handle_follow_up(char *buf, ssize_t recv_len, clock_source_private_data *cl
       if (clock_private_info->previous_preciseOriginTimestamp == preciseOriginTimestamp) {
         clock_private_info->identical_previous_preciseOriginTimestamp_count++;
         
-        if ((clock_private_info->identical_previous_preciseOriginTimestamp_count == 5) && (clock_private_info->follow_up_number < 100)){
-          debug(2,"Clock %" PRIx64 "'s grandmaster clock has stopped or may not have been read.", clock_private_info->clock_id);
-
-        
-          debug(2, "Attempt to start a stopped clock %" PRIx64 ", at follow_up_number %u at IP %s.",
-            clock_private_info->clock_id, clock_private_info->follow_up_number,
-            clock_private_info->ip);
-          send_awakening_announcement_sequence(clock_private_info->clock_id, clock_private_info->ip,
-                                            clock_private_info->family, clock_private_info->grandmasterPriority1,
-                                            clock_private_info->grandmasterPriority2);
+        if (clock_private_info->identical_previous_preciseOriginTimestamp_count == 8 * 60) {
+          int64_t duration_of_mastership = reception_time - clock_private_info->mastership_start_time;
+          if (clock_private_info->mastership_start_time == 0)
+            duration_of_mastership = 0;
+          debug(1,"Clock %" PRIx64 "'s grandmaster clock has stopped after %f seconds of mastership.", clock_private_info->clock_id, 0.000000001 * duration_of_mastership);
+          int64_t wait_limit = 62;
+          wait_limit = wait_limit * 1000000000;
+          if (duration_of_mastership <= wait_limit) {
+            debug(1, "Attempt to start a stopped clock %" PRIx64 ", at follow_up_number %u at IP %s.",
+              clock_private_info->clock_id, clock_private_info->follow_up_number,
+              clock_private_info->ip);
+            send_awakening_announcement_sequence(clock_private_info->clock_id, clock_private_info->ip,
+                                              clock_private_info->family, clock_private_info->grandmasterPriority1,
+                                              clock_private_info->grandmasterPriority2);
+          }
         }
       } else {
-        if (clock_private_info->identical_previous_preciseOriginTimestamp_count >= 5) {
-          debug(2,"Clock %" PRIx64 "'s grandmaster clock has started again...", clock_private_info->clock_id);
+        if (clock_private_info->identical_previous_preciseOriginTimestamp_count >= 8 * 60) {
+          debug(1,"Clock %" PRIx64 "'s grandmaster clock has started again...", clock_private_info->clock_id);
           clock_private_info->identical_previous_preciseOriginTimestamp_count = 0;
         }
       }
@@ -397,7 +458,7 @@ void handle_follow_up(char *buf, ssize_t recv_len, clock_source_private_data *cl
                   clock_private_info->clock_id, clock_private_info->ip,
                   0.000000001 * time_since_previous_offset);
           smoothed_offset = offset;
-          clock_private_info->follow_up_number = 0;
+          // clock_private_info->follow_up_number = 0;
           clock_private_info->mastership_start_time =
               reception_time; // mastership is reset to this time...
         }
@@ -410,7 +471,7 @@ void handle_follow_up(char *buf, ssize_t recv_len, clock_source_private_data *cl
       int temp_client_id;
       for (temp_client_id = 0; temp_client_id < MAX_CLIENTS; temp_client_id++) {
         if ((clock_private_info->client_flags[temp_client_id] & (1 << clock_is_master)) != 0) {
-        debug(2,
+        debug(1,
               "Clock %" PRIx64 ", grandmaster %" PRIx64 ". Offset: %" PRIx64
               ", smoothed offset: %" PRIx64 ". Raw Precise Origin Timestamp: %" PRIx64
               ". Time since previous offset: %8.3f milliseconds. ID: %5u, Follow_Up Number: %u. Source: %s",
@@ -424,6 +485,7 @@ void handle_follow_up(char *buf, ssize_t recv_len, clock_source_private_data *cl
                                    (const char *)&clock_private_info->ip, reception_time,
                                    smoothed_offset, clock_private_info->mastership_start_time);
         }
+      }
       }
     } else {
       debug(1, "Follow_Up message is too small to be valid.");
