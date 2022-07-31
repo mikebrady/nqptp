@@ -306,9 +306,12 @@ int main(int argc, char **argv) {
                     update_clock_self_identifications((clock_source_private_data *)&clocks_private);
                     handle_announce(buf, recv_len, &clocks_private[the_clock], reception_time);
                     break;
-                  case Follow_Up: {
+                  case Follow_Up:
                     handle_follow_up(buf, recv_len, &clocks_private[the_clock], reception_time);
-                  } break;
+                    break;
+                  case Sync:
+                    handle_sync(buf, recv_len, &clocks_private[the_clock], reception_time);
+                    break;
                   default:
                     debug_print_buffer(2, buf,
                                        recv_len); // unusual messages will have debug level 1.
@@ -420,7 +423,7 @@ void send_awakening_announcement_sequence(const uint64_t clock_id, const char *c
       }
 
       msg->announce.grandmasterPriority2 = priority2;
-      usleep(500000);
+      usleep(150000);
       ret = sendto(s, msg, msg_length, 0, res->ai_addr, res->ai_addrlen);
       if (ret == -1)
         debug(1, "result of second sendto is %d.", ret);
@@ -434,10 +437,20 @@ uint64_t broadcasting_task(uint64_t call_time, __attribute__((unused)) void *pri
   clock_source_private_data *clocks_private = (clock_source_private_data *)private_data;
   int i;
   for (i = 0; i < MAX_CLOCKS; i++) {
-    if ((clocks_private[i].announcements_without_followups == 3) &&
+  
+    int is_a_master = 0;
+    int temp_client_id;
+  
+    for (temp_client_id = 0; temp_client_id < MAX_CLIENTS; temp_client_id++)
+      if ((clocks_private->client_flags[temp_client_id] & (1 << clock_is_master)) != 0) 
+        is_a_master = 1;
+    
+    // only process it if it's a master somewhere...
+    if ((is_a_master != 0) && 
+        (clocks_private[i].announcements_without_followups == 3) &&
         // (clocks_private[i].follow_up_number == 0) && // only check at the start
         ((clocks_private[i].flags & (1 << clock_is_one_of_ours)) == 0)) {
-      debug(2, "Attempt to awaken a silent clock %" PRIx64 ", index %u, at follow_up_number %u at IP %s.",
+      debug(1, "Attempt to awaken a silent clock %" PRIx64 ", index %u, at follow_up_number %u at IP %s.",
             clocks_private[i].clock_id, i, clocks_private[i].follow_up_number,
             clocks_private[i].ip);
 
