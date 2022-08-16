@@ -1,3 +1,6 @@
+## Version: 1.1-dev-166-g46a9f1b
+* Update the wording in the INSTALL document to match the wording generated at the `autoreconf -fi` stage, so that `git` doesn't flag an altered document. Thanks to [David Leibovic](https://github.com/dasl-) for bringing this to notice.
+
 ## Version: 1.1-dev-161-g353093a
 **Bug Fix**
 * If a player (e.g. a HomePod mini) that was providing the master clock was removed from the set of devices playing, the new master clock retained out-of-date information about the old master clock. This could cause problems going to the next track or to a previous one, causing them not to be heard. Thanks (again!) to [Kristian Dimitrov](https://github.com/Kristian8606) for a precise description of how to cause the problem.
