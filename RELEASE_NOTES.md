@@ -1,3 +1,7 @@
+## Version: 1.1-dev-186-g4e54f1b
+**Bug Fixes**
+* Reorder system header files includes to fix a compilation error.
+
 ## Version: 1.1-dev-164-g086a123
 **Enhancements**
 * Improve the accuracy of the clock by including data from the `correctionField` part of a PTP message. Most of the time, this is a fraction of a millisecond, but sometimes it can be larger.
