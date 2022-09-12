@@ -19,11 +19,28 @@
 #include <arpa/inet.h> // ntohl and ntohs
 #include <string.h>    //strsep
 
+#include <stdio.h> // snprintf
+
 #include "debug.h"
 #include "general-utilities.h"
 #include "nqptp-message-handlers.h"
 #include "nqptp-ptp-definitions.h"
 #include "nqptp-utilities.h"
+
+char hexcharbuffer[16384];
+
+char *hex_string(void *buf, size_t buf_len) {
+  char *tbuf = (char *)buf;
+  char *obfp = hexcharbuffer;
+  size_t obfc;
+  for (obfc = 0; obfc < buf_len; obfc++) {
+    snprintf(obfp, 3, "%02X", *tbuf);
+    obfp += 2;
+    tbuf = tbuf+1;
+  };
+  *obfp = 0;
+  return hexcharbuffer;
+}
 
 void handle_control_port_messages(char *buf, ssize_t recv_len,
                                   clock_source_private_data *clock_private_info) {
@@ -38,11 +55,18 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
       int client_id = 0;
       if (ip_list != NULL)
         command = strsep(&ip_list, " ");
+      debug(2,"Clear timing peer group.");
+      // dirty experimental hack -- delete all the clocks
+      int gc;
+      for (gc = 0; gc < MAX_CLOCKS; gc++) {
+        memset(&clock_private_info[gc], 0, sizeof(clock_source_private_data));
+      }
       if ((command == NULL) || ((strcmp(command, "T") == 0) && (ip_list == NULL))) {
-        // clear all the flags, but only if the client exists
-        client_id = get_client_id(smi_name); // create the record if it doesn't exist
+        
+        // clear all the flags
+        int client_id = get_client_id(smi_name); // create the record if it doesn't exist
         if (client_id != -1) {
-          // turn off all is_timing_peer flags
+          /*
           int i;
           for (i = 0; i < MAX_CLOCKS; i++) {
             // e.g. (obsolete)
@@ -67,26 +91,46 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
               }
             }
             clock_private_info[i].client_flags[client_id] = 0;
+            
           }
+          */
           update_master_clock_info(client_id, 0, NULL, 0, 0, 0); // it may have obsolete stuff in it
         }
+        new_update_master_clock_info(0, NULL, 0, 0, 0); // it may have obsolete stuff in it
       } else {
         debug(2, "get or create new record for \"%s\".", smi_name);
         client_id = get_client_id(smi_name); // create the record if it doesn't exist
         if (client_id != -1) {
           if (strcmp(command, "T") == 0) {
-            // turn off all is_timing_peer flags
             int i;
             for (i = 0; i < MAX_CLOCKS; i++) {
-              clock_private_info[i].flags &=
-                  ~(1 << clock_is_a_timing_peer); // turn off peer flag (but not the master flag!)
-              clock_private_info[i].client_flags[client_id] &=
-                  ~(1 << clock_is_a_timing_peer); // turn off peer flag (but not the master flag!)
               clock_private_info[i].announcements_without_followups =
                   0; // to allow a possibly silent clock to be revisited when added to a timing
                      // peer list
               clock_private_info[i].follow_up_number = 0;
             }
+
+            // take the first ip and make it the master, permanently
+            
+            
+            if (ip_list != NULL) {
+              char *new_ip = strsep(&ip_list, " ");
+              // look for the IP in the list of clocks, and create an inert entry if not there
+              if ((new_ip != NULL) && (new_ip[0] != 0)) {
+                int t = find_clock_source_record(new_ip, clock_private_info);
+                if (t == -1)
+                  t = create_clock_source_record(new_ip, clock_private_info);
+                if (t != -1) { // if the clock table is not full, show it's a timing peer
+                  clock_private_info[t].client_flags[client_id] |= (1 << clock_is_master);
+                }
+                // otherwise, drop it
+              }
+              
+              
+            }
+
+
+/*
             while (ip_list != NULL) {
               char *new_ip = strsep(&ip_list, " ");
               // look for the IP in the list of clocks, and create an inert entry if not there
@@ -100,17 +144,7 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
                 // otherwise, drop it
               }
             }
-
-            // now find and mark the best clock in the timing peer list as the master
-            update_master(client_id);
-
-            debug(2, "Timing group start");
-            for (i = 0; i < MAX_CLOCKS; i++) {
-              if ((clock_private_info[i].client_flags[client_id] & (1 << clock_is_a_timing_peer)) !=
-                  0)
-                debug(2, "%s.", &clock_private_info[i].ip);
-            }
-            debug(2, "Timing group end");
+*/
           } else {
             warn("Unrecognised string on the control port.");
           }
@@ -128,112 +162,49 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
 
 void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clock_private_info,
                      __attribute__((unused)) uint64_t reception_time) {
-  // only process Announce messages that do not come from self
-  if ((clock_private_info->flags & (1 << clock_is_one_of_ours)) == 0) {
-    // debug_print_buffer(1, buf, (size_t) recv_len);
-    // make way for the new time
-    if ((size_t)recv_len >= sizeof(struct ptp_announce_message)) {
-      struct ptp_announce_message *msg = (struct ptp_announce_message *)buf;
+  // debug_print_buffer(1, buf, (size_t) recv_len);
+  // make way for the new time
+  if ((size_t)recv_len >= sizeof(struct ptp_announce_message)) {
+    struct ptp_announce_message *msg = (struct ptp_announce_message *)buf;
 
-      uint64_t packet_clock_id = nctohl(&msg->header.clockIdentity[0]);
-      uint64_t packet_clock_id_low = nctohl(&msg->header.clockIdentity[4]);
-      packet_clock_id = packet_clock_id << 32;
-      packet_clock_id = packet_clock_id + packet_clock_id_low;
-      clock_private_info->flags |= (1 << clock_is_announced);
-      clock_private_info->clock_id = packet_clock_id;
-      clock_private_info->grandmasterPriority1 =
-          msg->announce.grandmasterPriority1; // need this for possibly pinging it later...
-      clock_private_info->grandmasterPriority2 =
-          msg->announce.grandmasterPriority2; // need this for possibly pinging it later...
+    uint64_t packet_clock_id = nctohl(&msg->header.clockIdentity[0]);
+    uint64_t packet_clock_id_low = nctohl(&msg->header.clockIdentity[4]);
+    packet_clock_id = packet_clock_id << 32;
+    packet_clock_id = packet_clock_id + packet_clock_id_low;
+    clock_private_info->clock_id = packet_clock_id;
+    clock_private_info->grandmasterPriority1 =
+        msg->announce.grandmasterPriority1; // need this for possibly pinging it later...
+    clock_private_info->grandmasterPriority2 =
+        msg->announce.grandmasterPriority2; // need this for possibly pinging it later...
 
-      debug(2, "announcement seen from %" PRIx64 " at %s.", clock_private_info->clock_id,
-            clock_private_info->ip);
+    debug(2, "announcement seen from %" PRIx64 " at %s.", clock_private_info->clock_id,
+          clock_private_info->ip);
 
-      if (clock_private_info->announcements_without_followups < 5) // don't keep going forever
-        // a value of 4 means it's parked --
-        // it has seen three, poked the clock and doesn't want to do any more.
-        clock_private_info->announcements_without_followups++;
+    if (clock_private_info->announcements_without_followups < 5) // don't keep going forever
+      // a value of 4 means it's parked --
+      // it has seen three, poked the clock and doesn't want to do any more.
+      clock_private_info->announcements_without_followups++;
 
-      uint64_t grandmaster_clock_id = nctohl(&msg->announce.grandmasterIdentity[0]);
-      uint64_t grandmaster_clock_id_low = nctohl(&msg->announce.grandmasterIdentity[4]);
-      grandmaster_clock_id = grandmaster_clock_id << 32;
-      grandmaster_clock_id = grandmaster_clock_id + grandmaster_clock_id_low;
-      uint32_t clockQuality = ntohl(msg->announce.grandmasterClockQuality);
-      uint8_t clockClass = (clockQuality >> 24) & 0xff;
-      uint8_t clockAccuracy = (clockQuality >> 16) & 0xff;
-      uint16_t offsetScaledLogVariance = clockQuality & 0xffff;
-      uint16_t stepsRemoved = ntohs(msg->announce.stepsRemoved);
-      uint16_t sourcePortID = ntohs(msg->header.sourcePortID);
+    uint64_t grandmaster_clock_id = nctohl(&msg->announce.grandmasterIdentity[0]);
+    uint64_t grandmaster_clock_id_low = nctohl(&msg->announce.grandmasterIdentity[4]);
+    grandmaster_clock_id = grandmaster_clock_id << 32;
+    grandmaster_clock_id = grandmaster_clock_id + grandmaster_clock_id_low;
+    uint32_t clockQuality = ntohl(msg->announce.grandmasterClockQuality);
+    uint8_t clockClass = (clockQuality >> 24) & 0xff;
+    uint8_t clockAccuracy = (clockQuality >> 16) & 0xff;
+    uint16_t offsetScaledLogVariance = clockQuality & 0xffff;
+    uint16_t stepsRemoved = ntohs(msg->announce.stepsRemoved);
+    uint16_t sourcePortID = ntohs(msg->header.sourcePortID);
 
-      // something in might have changed that
-      // affects its status as a possible master clock.
-      int best_clock_update_needed = 0;
-      if (clock_private_info->grandmasterIdentity != grandmaster_clock_id) {
-        clock_private_info->grandmasterIdentity = grandmaster_clock_id;
-        best_clock_update_needed = 1;
-      }
-      if (clock_private_info->grandmasterPriority1 != msg->announce.grandmasterPriority1) {
-        clock_private_info->grandmasterPriority1 = msg->announce.grandmasterPriority1;
-        best_clock_update_needed = 1;
-      }
-      if (clock_private_info->grandmasterQuality != clockQuality) {
-        clock_private_info->grandmasterQuality = clockQuality;
-        best_clock_update_needed = 1;
-      }
-      if (clock_private_info->grandmasterClass != clockClass) {
-        clock_private_info->grandmasterClass = clockClass;
-        best_clock_update_needed = 1;
-      }
-      if (clock_private_info->grandmasterAccuracy != clockAccuracy) {
-        clock_private_info->grandmasterAccuracy = clockAccuracy;
-        best_clock_update_needed = 1;
-      }
-      if (clock_private_info->grandmasterVariance != offsetScaledLogVariance) {
-        clock_private_info->grandmasterVariance = offsetScaledLogVariance;
-        best_clock_update_needed = 1;
-      }
-      if (clock_private_info->grandmasterPriority2 != msg->announce.grandmasterPriority2) {
-        clock_private_info->grandmasterPriority2 = msg->announce.grandmasterPriority2;
-        best_clock_update_needed = 1;
-      }
-      if (clock_private_info->stepsRemoved != stepsRemoved) {
-        clock_private_info->stepsRemoved = stepsRemoved;
-        best_clock_update_needed = 1;
-      }
-      if (clock_private_info->clock_port_number != sourcePortID) {
-        clock_private_info->clock_port_number = sourcePortID;
-        best_clock_update_needed = 1;
-      }
-
-      if (best_clock_update_needed) {
-        debug(2, "best clock update needed");
-        debug(2, "    grandmasterIdentity:         %" PRIx64 ".", grandmaster_clock_id);
-        debug(2, "    grandmasterPriority1:        %u.", msg->announce.grandmasterPriority1);
-        debug(2, "    grandmasterClockQuality:     0x%x.", clockQuality);
-        debug(2, "        clockClass:              %u.", clockClass); // See 7.6.2.4 clockClass
-        debug(2, "        clockAccuracy:           0x%x.",
-              clockAccuracy); // See 7.6.2.5 clockAccuracy
-        debug(2, "        offsetScaledLogVariance: 0x%x.",
-              offsetScaledLogVariance); // See 7.6.3 PTP variance
-        debug(2, "    grandmasterPriority2:        %u.", msg->announce.grandmasterPriority2);
-        debug(2, "    stepsRemoved:                %u.", stepsRemoved);
-        debug(2, "    portNumber:                  %u.", sourcePortID);
-
-        // check/update the mastership of any clients that might be affected
-        int temp_client_id;
-        for (temp_client_id = 0; temp_client_id < MAX_CLIENTS; temp_client_id++) {
-          if ((clock_private_info->client_flags[temp_client_id] & (1 << clock_is_a_timing_peer)) !=
-              0) {
-            debug(2,
-                  "best_clock_update_needed because %" PRIx64
-                  " on ip %s has changed -- updating clock mastership for client \"%s\"",
-                  clock_private_info->clock_id, clock_private_info->ip,
-                  get_client_name(temp_client_id));
-            update_master(temp_client_id);
-          }
-        }
-      }
-    }
+    clock_private_info->grandmasterIdentity = grandmaster_clock_id;
+    clock_private_info->grandmasterPriority1 = msg->announce.grandmasterPriority1;
+    clock_private_info->grandmasterQuality = clockQuality;
+    clock_private_info->grandmasterClass = clockClass;
+    clock_private_info->grandmasterAccuracy = clockAccuracy;
+    clock_private_info->grandmasterVariance = offsetScaledLogVariance;
+    clock_private_info->grandmasterPriority2 = msg->announce.grandmasterPriority2;
+    clock_private_info->stepsRemoved = stepsRemoved;
+    clock_private_info->clock_port_number = sourcePortID;
   }
 }
 
@@ -243,15 +214,6 @@ void handle_sync(char *buf, ssize_t recv_len, clock_source_private_data *clock_p
     debug(2, "Sync received before announcement -- discarded.");
   } else {
     if ((recv_len >= 0) && ((size_t)recv_len >= sizeof(struct ptp_sync_message))) {
-      int is_a_master = 0;
-      int temp_client_id;
-      for (temp_client_id = 0; temp_client_id < MAX_CLIENTS; temp_client_id++)
-        if ((clock_private_info->client_flags[temp_client_id] & (1 << clock_is_master)) != 0)
-          is_a_master = 1;
-
-      // only process it if it's a master somewhere...
-
-      if (is_a_master) {
         // debug_print_buffer(1, buf, recv_len);
         struct ptp_sync_message *msg = (struct ptp_sync_message *)buf;
 
@@ -275,7 +237,6 @@ void handle_sync(char *buf, ssize_t recv_len, clock_source_private_data *clock_p
           debug(1, "Sync correction field is non-zero: %" PRId64 " ns.", correction_field);
 
         correction_field = correction_field / 65536; // might be signed
-      }
     } else {
       debug(1, "Sync message is too small to be valid.");
     }
@@ -289,15 +250,6 @@ void handle_follow_up(char *buf, ssize_t recv_len, clock_source_private_data *cl
   } else {
     clock_private_info->announcements_without_followups = 0;
     if ((recv_len >= 0) && ((size_t)recv_len >= sizeof(struct ptp_follow_up_message))) {
-      int is_a_master = 0;
-      int temp_client_id;
-      for (temp_client_id = 0; temp_client_id < MAX_CLIENTS; temp_client_id++)
-        if ((clock_private_info->client_flags[temp_client_id] & (1 << clock_is_master)) != 0)
-          is_a_master = 1;
-
-      // only process it if it's a master somewhere...
-
-      if (is_a_master) {
         // debug_print_buffer(1, buf, recv_len);
         struct ptp_follow_up_message *msg = (struct ptp_follow_up_message *)buf;
         uint16_t seconds_hi = nctohs(&msg->follow_up.preciseOriginTimestamp[0]);
@@ -325,8 +277,9 @@ void handle_follow_up(char *buf, ssize_t recv_len, clock_source_private_data *cl
                   clock_private_info->clock_id, 0.000000001 * duration_of_mastership);
             int64_t wait_limit = 62;
             wait_limit = wait_limit * 1000000000;
-            if (duration_of_mastership <= wait_limit) {
-              debug(2,
+            // only try to restart a grandmaster clock on the clock itself.
+            if ((duration_of_mastership <= wait_limit) && (clock_private_info->clock_id == clock_private_info->grandmasterIdentity)) {
+              debug(1,
                     "Attempt to start a stopped clock %" PRIx64
                     ", at follow_up_number %u at IP %s.",
                     clock_private_info->clock_id, clock_private_info->follow_up_number,
@@ -435,17 +388,19 @@ void handle_follow_up(char *buf, ssize_t recv_len, clock_source_private_data *cl
         // Follow-ups don't always come in at 125 ms intervals, especially after a discontinuity
         // Delays makes the offsets smaller than they should be, which is quickly
         // allowed for.
+        
+        int64_t mastership_time = reception_time - clock_private_info->mastership_start_time;
+        if (clock_private_info->mastership_start_time == 0)
+          mastership_time = 0;
 
         if ((clock_private_info->previous_offset_time != 0) && (jitter > -10000000)) {
 
           if (jitter < 0) {
-            if (clock_private_info->follow_up_number <
-                (5 * 8)) // at the beginning (8 samples per second)
+            if (mastership_time < 1000000000) // at the beginning
               smoothed_offset = clock_private_info->previous_offset + jitter / 16;
             else
               smoothed_offset = clock_private_info->previous_offset + jitter / 64;
-          } else if (clock_private_info->follow_up_number <
-                     (5 * 8)) // at the beginning (8 samples per second)
+          } else if (mastership_time < 1000000000) // at the beginning
             smoothed_offset =
                 clock_private_info->previous_offset + jitter / 1; // accept positive changes quickly
           else
@@ -480,24 +435,57 @@ void handle_follow_up(char *buf, ssize_t recv_len, clock_source_private_data *cl
         int temp_client_id;
         for (temp_client_id = 0; temp_client_id < MAX_CLIENTS; temp_client_id++) {
           if ((clock_private_info->client_flags[temp_client_id] & (1 << clock_is_master)) != 0) {
-            debug(2,
-                  "Clock %" PRIx64 ", grandmaster %" PRIx64 ". Offset: %" PRIx64
-                  ", smoothed offset: %" PRIx64 ". Raw Precise Origin Timestamp: %" PRIx64
-                  ". Time since previous offset: %8.3f milliseconds. ID: %5u, Follow_Up Number: "
-                  "%u. Source: %s",
-                  clock_private_info->clock_id, clock_private_info->grandmasterIdentity, offset,
-                  smoothed_offset, preciseOriginTimestamp, 0.000001 * time_since_previous_offset,
-                  ntohs(msg->header.sequenceId), clock_private_info->follow_up_number,
-                  clock_private_info->ip);
+            // recalculate mastership_time because it might have been zeroed.
+            mastership_time = reception_time - clock_private_info->mastership_start_time;
+            if (clock_private_info->mastership_start_time == 0)
+              mastership_time = 0;
+            if (mastership_time > 200000000) {
+              int64_t delta = smoothed_offset - offset;
+              debug(2,
+                    "Clock %" PRIx64 ", grandmaster %" PRIx64 ". Offset: %" PRIx64
+                    ", smoothed offset: %" PRIx64 ". Smoothed Offset - Offset: %10.3f. Raw Precise Origin Timestamp: %" PRIx64
+                    ". Time since previous offset: %8.3f milliseconds. ID: %5u, Follow_Up Number: "
+                    "%u. Source: %s",
+                    clock_private_info->clock_id, clock_private_info->grandmasterIdentity, offset,
+                    smoothed_offset, 0.000001 * delta, preciseOriginTimestamp, 0.000001 * time_since_previous_offset,
+                    ntohs(msg->header.sequenceId), clock_private_info->follow_up_number,
+                    clock_private_info->ip);
 
-            debug(2, "clock_is_master -- updating master clock info for client \"%s\"",
-                  get_client_name(temp_client_id));
-            update_master_clock_info(temp_client_id, clock_private_info->clock_id,
-                                     (const char *)&clock_private_info->ip, reception_time,
-                                     smoothed_offset, clock_private_info->mastership_start_time);
+              debug(2, "clock_is_master -- updating master clock info for client \"%s\"",
+                    get_client_name(temp_client_id));
+              update_master_clock_info(temp_client_id, clock_private_info->grandmasterIdentity,
+                                       (const char *)&clock_private_info->ip, reception_time,
+                                       smoothed_offset, clock_private_info->mastership_start_time);
+            }
           }
         }
-      }
+
+        int64_t delta = smoothed_offset - offset;
+        debug(2,
+              "Clock %" PRIx64 ", grandmaster %" PRIx64 ". Offset: %" PRIx64
+              ", smoothed offset: %" PRIx64 ". Smoothed Offset - Offset: %10.3f. Raw Precise Origin Timestamp: %" PRIx64
+              ". Time since previous offset: %8.3f milliseconds. ID: %5u, Follow_Up Number: "
+              "%u. Source: %s",
+              clock_private_info->clock_id, clock_private_info->grandmasterIdentity, offset,
+              smoothed_offset, 0.000001 * delta, preciseOriginTimestamp, 0.000001 * time_since_previous_offset,
+              ntohs(msg->header.sequenceId), clock_private_info->follow_up_number,
+              clock_private_info->ip);
+
+        new_update_master_clock_info(clock_private_info->grandmasterIdentity,
+                         (const char *)&clock_private_info->ip, reception_time,
+                         smoothed_offset, clock_private_info->mastership_start_time);
+        
+        // now do some quick calculations on the possible "Universal Time"
+        // debug_print_buffer(1, "", buf, recv_len);
+        uint8_t *tlv = (uint8_t *)&msg->follow_up.tlvs[0];
+        uint8_t *lastGmPhaseChange = tlv + 16;
+        uint64_t lpt = nctoh64(lastGmPhaseChange + 4);
+        uint64_t last_tlv_clock = nctoh64((uint8_t *)buf + 86);
+        uint64_t huh = offset - lpt;
+        debug_print_buffer(2, buf, (size_t) recv_len);
+        debug(2, "%" PRIx64 ", %" PRIx64 ", %s, Origin: %016" PRIx64 ", LPT: %016" PRIx64 ", Offset: %016" PRIx64 ", Universal Offset: %016" PRIx64 ", packet length: %u.", clock_private_info->clock_id, last_tlv_clock,  hex_string(lastGmPhaseChange,12), preciseOriginTimestamp, lpt, offset, huh, recv_len);
+        // debug(1,"Clock: %" PRIx64 ", UT: %016" PRIx64 ", correctedPOT: %016" PRIx64 ", part of lastGMPhaseChange: %016" PRIx64 ".", packet_clock_id, correctedPOT - lpt, correctedPOT, lpt);
+
     } else {
       debug(1, "Follow_Up message is too small to be valid.");
     }

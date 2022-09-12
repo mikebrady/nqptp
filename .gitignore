@@ -10,6 +10,7 @@ configure~
 
 # http://www.gnu.org/software/autoconf
 
+INSTALL
 autom4te.cache
 /autoscan.log
 /autoscan-*.log

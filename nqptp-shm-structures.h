@@ -20,7 +20,9 @@
 #ifndef NQPTP_SHM_STRUCTURES_H
 #define NQPTP_SHM_STRUCTURES_H
 
-#define NQPTP_SHM_STRUCTURES_VERSION 7
+#define NQPTP_INTERFACE_NAME "/nqptp"
+
+#define NQPTP_SHM_STRUCTURES_VERSION 8
 #define NQPTP_CONTROL_PORT 9000
 
 // The control port expects a UDP packet with the first space-delimited string

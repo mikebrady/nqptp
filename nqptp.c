@@ -1,6 +1,6 @@
 /*
  * This file is part of the nqptp distribution (https://github.com/mikebrady/nqptp).
- * Copyright (c) 2021 Mike Brady.
+ * Copyright (c) 2021-2022 Mike Brady.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -89,9 +89,23 @@ void goodbye(void) {
   unsigned int i;
   for (i = 0; i < sockets_open_stuff.sockets_open; i++)
     close(sockets_open_stuff.sockets[i].number);
-  // close off shared memory interfaces
+    
 
+  // close off shared memory interface
   delete_clients();
+  
+  // close off new smi
+  // mmap cleanup
+  if (munmap(shared_memory, sizeof(struct shm_structure)) != 0) {
+    debug(1, "error unmapping shared memory");
+  }
+  // shm_open cleanup
+  if (shm_unlink(NQPTP_INTERFACE_NAME) == -1) {
+    debug(1, "error unlinking shared memory \"%s\"", NQPTP_INTERFACE_NAME);
+  }
+  
+  if (shm_fd != -1)
+    close(shm_fd);
 
   if (epoll_fd != -1)
     close(epoll_fd);
@@ -145,7 +159,7 @@ int main(int argc, char **argv) {
       }
     }
   }
-
+  
   debug_init(debug_level, 0, 1, 1);
   debug(1, "Startup. Clock ID: \"%" PRIx64 "\".", get_self_clock_id());
   // debug(1, "size of a clock entry is %u bytes.", sizeof(clock_source_private_data));
@@ -166,6 +180,65 @@ int main(int argc, char **argv) {
   memset(&act2, 0, sizeof(struct sigaction));
   act2.sa_handler = termHandler;
   sigaction(SIGTERM, &act2, NULL);
+  
+  // open the SMI
+
+  pthread_mutexattr_t shared;
+  int err;
+
+  shm_fd = -1;
+
+  mode_t oldumask = umask(0);
+  shm_fd = shm_open(NQPTP_INTERFACE_NAME, O_RDWR | O_CREAT, 0666);
+  if (shm_fd == -1) {
+    die("cannot open shared memory \"%s\".", NQPTP_INTERFACE_NAME);
+  }
+  (void)umask(oldumask);
+
+  if (ftruncate(shm_fd, sizeof(struct shm_structure)) == -1) {
+    die("failed to set size of shared memory \"%s\".", NQPTP_INTERFACE_NAME);
+  }
+
+#ifdef CONFIG_FOR_FREEBSD
+  shared_memory =
+      (struct shm_structure *)mmap(NULL, sizeof(struct shm_structure), PROT_READ | PROT_WRITE,
+                                   MAP_SHARED, shm_fd, 0);
+#endif
+
+#ifdef CONFIG_FOR_LINUX
+  shared_memory =
+      (struct shm_structure *)mmap(NULL, sizeof(struct shm_structure), PROT_READ | PROT_WRITE,
+                                   MAP_LOCKED | MAP_SHARED, shm_fd, 0);
+#endif
+
+  if (shared_memory == (struct shm_structure *)-1) {
+    die("failed to mmap shared memory \"%s\".", NQPTP_INTERFACE_NAME);
+  }
+
+  if (shm_fd == -1) {
+    warn("error closing \"%s\" after mapping.", shm_fd);
+  }
+
+  // zero it
+  memset(shared_memory, 0, sizeof(struct shm_structure));
+  shared_memory->version = NQPTP_SHM_STRUCTURES_VERSION;
+
+  /*create mutex attr */
+  err = pthread_mutexattr_init(&shared);
+  if (err != 0) {
+    die("mutex attribute initialization failed - %s.", strerror(errno));
+  }
+  pthread_mutexattr_setpshared(&shared, 1);
+  /*create a mutex */
+  err = pthread_mutex_init((pthread_mutex_t *)&shared_memory->shm_mutex, &shared);
+  if (err != 0) {
+    die("mutex initialization failed - %s.", strerror(errno));
+  }
+
+  err = pthread_mutexattr_destroy(&shared);
+  if (err != 0) {
+    die("mutex attribute destruction failed - %s.", strerror(errno));
+  }
 
   ssize_t recv_len;
 
@@ -288,22 +361,22 @@ int main(int argc, char **argv) {
                 char sender_string[256];
                 memset(sender_string, 0, sizeof(sender_string));
                 inet_ntop(connection_ip_family, sender_addr, sender_string, sizeof(sender_string));
-                // now, find or create a record for this ip
+                // now, find the record for this ip
                 int the_clock = find_clock_source_record(
                     sender_string, (clock_source_private_data *)&clocks_private);
                 // not sure about requiring a Sync before creating it...
                 // if ((the_clock == -1) && ((buf[0] & 0xF) == Sync)) {
+                /*
                 if (the_clock == -1) {
                   the_clock = create_clock_source_record(
                       sender_string, (clock_source_private_data *)&clocks_private);
                 }
+                */
                 if (the_clock != -1) {
                   clocks_private[the_clock].time_of_last_use =
                       reception_time; // for garbage collection
                   switch (buf[0] & 0xF) {
                   case Announce:
-                    // needed to reject messages coming from self
-                    update_clock_self_identifications((clock_source_private_data *)&clocks_private);
                     handle_announce(buf, recv_len, &clocks_private[the_clock], reception_time);
                     break;
                   case Follow_Up:
@@ -323,8 +396,8 @@ int main(int argc, char **argv) {
           }
         }
       }
-      if (retval >= 0)
-        manage_clock_sources(reception_time, (clock_source_private_data *)&clocks_private);
+      //if (retval >= 0)
+      //  manage_clock_sources(reception_time, (clock_source_private_data *)&clocks_private);
       int i;
       for (i = 0; i < TIMED_TASKS; i++) {
         if (timed_tasks[i].trigger_time != 0) {
@@ -356,7 +429,7 @@ void send_awakening_announcement_sequence(const uint64_t clock_id, const char *c
   msg->header.flags = htons(0x0408);
   hcton64(my_clock_id, &msg->header.clockIdentity[0]);
   msg->header.sourcePortID = htons(32776);
-  msg->header.controlOtherMessage = 0x05;
+  msg->header.controlField = 0x05;
   msg->header.logMessagePeriod = 0xFE;
   msg->announce.currentUtcOffset = htons(37);
   hcton64(my_clock_id, &msg->announce.grandmasterIdentity[0]);
@@ -446,10 +519,8 @@ uint64_t broadcasting_task(uint64_t call_time, __attribute__((unused)) void *pri
         is_a_master = 1;
 
     // only process it if it's a master somewhere...
-    if ((is_a_master != 0) && (clocks_private[i].announcements_without_followups == 3) &&
-        // (clocks_private[i].follow_up_number == 0) && // only check at the start
-        ((clocks_private[i].flags & (1 << clock_is_one_of_ours)) == 0)) {
-      debug(2,
+    if ((is_a_master != 0) && (clocks_private[i].announcements_without_followups == 3)) {
+      debug(1,
             "Attempt to awaken a silent clock %" PRIx64
             ", index %u, at follow_up_number %u at IP %s.",
             clocks_private[i].clock_id, i, clocks_private[i].follow_up_number,

@@ -1,6 +1,6 @@
 /*
  * This file is part of the nqptp distribution (https://github.com/mikebrady/nqptp).
- * Copyright (c) 2021 Mike Brady.
+ * Copyright (c) 2021-2022 Mike Brady.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -98,10 +98,46 @@ enum messageType {
 // Table 34, part of
 enum tlvTypeValue {
   Reserved,
+  // Standard TLVs
   MANAGEMENT,
   MANAGEMENT_ERROR_STATUS,
-  ORGANIZATION_EXTENSION
+  ORGANIZATION_EXTENSION,
+  // Optional unicast message negotiation TLVs
+  REQUEST_UNICAST_TRANSMISSION,
+  GRANT_UNICAST_TRANSMISSION,
+  CANCEL_UNICAST_TRANSMISSION,
+  ACKNOWLEDGE_CANCEL_UNICAST_TRANSMISSION,
+  // Optional path trace mechanism TLV
+  PATH_TRACE,
+  // Optional alternate timescale TLV
+  ALTERNATE_TIME_OFFSET_INDICATOR
   // there are more, but not needed yet
+};
+
+// Table 23
+enum controlFieldValue {
+  Control_Field_Value_Sync,
+  Control_Field_Value_Delay_Req,
+  Control_Field_Value_Follow_Up,
+  Control_Field_Value_Delay_Resp,
+  Control_Field_Value_Management,
+  Control_Field_Value_Other
+};
+
+// this is the structure of a PATH_TRACE TLV (16.2, Table 78, pp 164) without any space for the data
+struct __attribute__((__packed__)) ptp_path_trace_tlv {
+  uint16_t tlvType;
+  uint16_t lengthField;
+  uint8_t pathSequence[0];
+};
+
+// this is the structure of a TLV (14.3, Table 35, pp 135) without any space for the data
+struct __attribute__((__packed__)) ptp_tlv {
+  uint16_t tlvType;
+  uint16_t lengthField;
+  uint8_t organizationId[3];
+  uint8_t organizationSubType[3];
+  uint8_t dataField[0];
 };
 
 // this is the Common Message Header
@@ -117,7 +153,7 @@ struct __attribute__((__packed__)) ptp_common_message_header {
   uint8_t clockIdentity[8];    // MAC
   uint16_t sourcePortID;       // 1
   uint16_t sequenceId;         // increments
-  uint8_t controlOtherMessage; // 5
+  uint8_t controlField; // 5
   uint8_t logMessagePeriod;    // 0
 };
 
@@ -132,6 +168,7 @@ struct __attribute__((__packed__)) ptp_announce {
   uint8_t grandmasterIdentity[8];
   uint16_t stepsRemoved;
   uint8_t timeSource;
+  struct ptp_path_trace_tlv path_trace[0];
 };
 
 // this is the extra part for a Sync or Delay_Req message
@@ -147,6 +184,8 @@ struct __attribute__((__packed__)) ptp_delay_req {
 // this is the extra part for a Follow_Up message
 struct __attribute__((__packed__)) ptp_follow_up {
   uint8_t preciseOriginTimestamp[10];
+  // to be followed by zero or more TLVs
+  struct ptp_tlv tlvs[0];
 };
 
 // this is the extra part for a Delay_Resp message
@@ -165,15 +204,6 @@ struct __attribute__((__packed__)) ptp_pdelay_req {
 struct __attribute__((__packed__)) ptp_pdelay_resp {
   uint8_t requestReceiptTimestamp[10];
   uint8_t requestingPortIdentity[10];
-};
-
-// this is the structure of a TLV (14.3, Table 35, pp 135) without any space for the data
-struct __attribute__((__packed__)) ptp_tlv {
-  uint16_t tlvType;
-  uint16_t lengthField;
-  uint8_t organizationId[3];
-  uint8_t organizationSubType[3];
-  uint8_t dataField[0];
 };
 
 // this is the extra part for a Signaling message (13.12, pp 132) without any TLVs
