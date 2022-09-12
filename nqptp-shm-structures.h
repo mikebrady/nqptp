@@ -20,7 +20,9 @@
 #ifndef NQPTP_SHM_STRUCTURES_H
 #define NQPTP_SHM_STRUCTURES_H
 
-#define NQPTP_SHM_STRUCTURES_VERSION 7
+#define NQPTP_INTERFACE_NAME "/nqptp"
+
+#define NQPTP_SHM_STRUCTURES_VERSION 8
 #define NQPTP_CONTROL_PORT 9000
 
 // The control port expects a UDP packet with the first space-delimited string
@@ -40,7 +42,6 @@
 // If no timing list is provided, the existing timing list is deleted.
 // (In future version of NQPTP the SMI interface may also be deleted at this point.)
 // SMI interfaces are not currently deleted or garbage collected.
-
 
 #include <inttypes.h>
 #include <pthread.h>

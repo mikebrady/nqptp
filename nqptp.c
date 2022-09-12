@@ -1,6 +1,6 @@
 /*
  * This file is part of the nqptp distribution (https://github.com/mikebrady/nqptp).
- * Copyright (c) 2021 Mike Brady.
+ * Copyright (c) 2021-2022 Mike Brady.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -89,9 +89,23 @@ void goodbye(void) {
   unsigned int i;
   for (i = 0; i < sockets_open_stuff.sockets_open; i++)
     close(sockets_open_stuff.sockets[i].number);
-  // close off shared memory interfaces
+    
 
+  // close off shared memory interface
   delete_clients();
+  
+  // close off new smi
+  // mmap cleanup
+  if (munmap(shared_memory, sizeof(struct shm_structure)) != 0) {
+    debug(1, "error unmapping shared memory");
+  }
+  // shm_open cleanup
+  if (shm_unlink(NQPTP_INTERFACE_NAME) == -1) {
+    debug(1, "error unlinking shared memory \"%s\"", NQPTP_INTERFACE_NAME);
+  }
+  
+  if (shm_fd != -1)
+    close(shm_fd);
 
   if (epoll_fd != -1)
     close(epoll_fd);
@@ -145,7 +159,7 @@ int main(int argc, char **argv) {
       }
     }
   }
-
+  
   debug_init(debug_level, 0, 1, 1);
   debug(1, "Startup. Clock ID: \"%" PRIx64 "\".", get_self_clock_id());
   // debug(1, "size of a clock entry is %u bytes.", sizeof(clock_source_private_data));
@@ -166,6 +180,65 @@ int main(int argc, char **argv) {
   memset(&act2, 0, sizeof(struct sigaction));
   act2.sa_handler = termHandler;
   sigaction(SIGTERM, &act2, NULL);
+  
+  // open the SMI
+
+  pthread_mutexattr_t shared;
+  int err;
+
+  shm_fd = -1;
+
+  mode_t oldumask = umask(0);
+  shm_fd = shm_open(NQPTP_INTERFACE_NAME, O_RDWR | O_CREAT, 0666);
+  if (shm_fd == -1) {
+    die("cannot open shared memory \"%s\".", NQPTP_INTERFACE_NAME);
+  }
+  (void)umask(oldumask);
+
+  if (ftruncate(shm_fd, sizeof(struct shm_structure)) == -1) {
+    die("failed to set size of shared memory \"%s\".", NQPTP_INTERFACE_NAME);
+  }
+
+#ifdef CONFIG_FOR_FREEBSD
+  shared_memory =
+      (struct shm_structure *)mmap(NULL, sizeof(struct shm_structure), PROT_READ | PROT_WRITE,
+                                   MAP_SHARED, shm_fd, 0);
+#endif
+
+#ifdef CONFIG_FOR_LINUX
+  shared_memory =
+      (struct shm_structure *)mmap(NULL, sizeof(struct shm_structure), PROT_READ | PROT_WRITE,
+                                   MAP_LOCKED | MAP_SHARED, shm_fd, 0);
+#endif
+
+  if (shared_memory == (struct shm_structure *)-1) {
+    die("failed to mmap shared memory \"%s\".", NQPTP_INTERFACE_NAME);
+  }
+
+  if (shm_fd == -1) {
+    warn("error closing \"%s\" after mapping.", shm_fd);
+  }
+
+  // zero it
+  memset(shared_memory, 0, sizeof(struct shm_structure));
+  shared_memory->version = NQPTP_SHM_STRUCTURES_VERSION;
+
+  /*create mutex attr */
+  err = pthread_mutexattr_init(&shared);
+  if (err != 0) {
+    die("mutex attribute initialization failed - %s.", strerror(errno));
+  }
+  pthread_mutexattr_setpshared(&shared, 1);
+  /*create a mutex */
+  err = pthread_mutex_init((pthread_mutex_t *)&shared_memory->shm_mutex, &shared);
+  if (err != 0) {
+    die("mutex initialization failed - %s.", strerror(errno));
+  }
+
+  err = pthread_mutexattr_destroy(&shared);
+  if (err != 0) {
+    die("mutex attribute destruction failed - %s.", strerror(errno));
+  }
 
   ssize_t recv_len;
 
@@ -288,27 +361,30 @@ int main(int argc, char **argv) {
                 char sender_string[256];
                 memset(sender_string, 0, sizeof(sender_string));
                 inet_ntop(connection_ip_family, sender_addr, sender_string, sizeof(sender_string));
-                // now, find or create a record for this ip
+                // now, find the record for this ip
                 int the_clock = find_clock_source_record(
                     sender_string, (clock_source_private_data *)&clocks_private);
                 // not sure about requiring a Sync before creating it...
                 // if ((the_clock == -1) && ((buf[0] & 0xF) == Sync)) {
+                /*
                 if (the_clock == -1) {
                   the_clock = create_clock_source_record(
                       sender_string, (clock_source_private_data *)&clocks_private);
                 }
+                */
                 if (the_clock != -1) {
                   clocks_private[the_clock].time_of_last_use =
                       reception_time; // for garbage collection
                   switch (buf[0] & 0xF) {
                   case Announce:
-                    // needed to reject messages coming from self
-                    update_clock_self_identifications((clock_source_private_data *)&clocks_private);
                     handle_announce(buf, recv_len, &clocks_private[the_clock], reception_time);
                     break;
-                  case Follow_Up: {
+                  case Follow_Up:
                     handle_follow_up(buf, recv_len, &clocks_private[the_clock], reception_time);
-                  } break;
+                    break;
+                  case Sync:
+                    handle_sync(buf, recv_len, &clocks_private[the_clock], reception_time);
+                    break;
                   default:
                     debug_print_buffer(2, buf,
                                        recv_len); // unusual messages will have debug level 1.
@@ -320,8 +396,8 @@ int main(int argc, char **argv) {
           }
         }
       }
-      if (retval >= 0)
-        manage_clock_sources(reception_time, (clock_source_private_data *)&clocks_private);
+      //if (retval >= 0)
+      //  manage_clock_sources(reception_time, (clock_source_private_data *)&clocks_private);
       int i;
       for (i = 0; i < TIMED_TASKS; i++) {
         if (timed_tasks[i].trigger_time != 0) {
@@ -338,112 +414,126 @@ int main(int argc, char **argv) {
   return 0;
 }
 
+void send_awakening_announcement_sequence(const uint64_t clock_id, const char *clock_ip,
+                                          const int ip_family, const uint8_t priority1,
+                                          const uint8_t priority2) {
+  struct ptp_announce_message *msg;
+  size_t msg_length = sizeof(struct ptp_announce_message);
+  msg = malloc(msg_length);
+  memset((void *)msg, 0, msg_length);
+
+  uint64_t my_clock_id = get_self_clock_id();
+  msg->header.transportSpecificAndMessageID = 0x10 + Announce;
+  msg->header.reservedAndVersionPTP = 0x02;
+  msg->header.messageLength = htons(sizeof(struct ptp_announce_message));
+  msg->header.flags = htons(0x0408);
+  hcton64(my_clock_id, &msg->header.clockIdentity[0]);
+  msg->header.sourcePortID = htons(32776);
+  msg->header.controlField = 0x05;
+  msg->header.logMessagePeriod = 0xFE;
+  msg->announce.currentUtcOffset = htons(37);
+  hcton64(my_clock_id, &msg->announce.grandmasterIdentity[0]);
+  uint32_t my_clock_quality = 0xf8fe436a;
+  msg->announce.grandmasterClockQuality = htonl(my_clock_quality);
+  if (priority1 > 2) {
+    msg->announce.grandmasterPriority1 =
+        priority1 - 1; // make this announcement seem better than the clock we are about to ping
+    msg->announce.grandmasterPriority2 = priority2;
+  } else {
+    warn("Cannot select a suitable priority for pinging clock %" PRIx64 " at %s.", clock_id,
+         clock_ip);
+    msg->announce.grandmasterPriority1 = 248;
+    msg->announce.grandmasterPriority2 = 248;
+  }
+  msg->announce.timeSource = 160; // Internal Oscillator
+
+  // get the socket for the correct port -- 320 -- and family -- IPv4 or IPv6 -- to send it
+  // from.
+
+  int s = 0;
+  unsigned t;
+  for (t = 0; t < sockets_open_stuff.sockets_open; t++) {
+    if ((sockets_open_stuff.sockets[t].port == 320) &&
+        (sockets_open_stuff.sockets[t].family == ip_family))
+      s = sockets_open_stuff.sockets[t].number;
+  }
+  if (s == 0) {
+    debug(1, "sending socket not found for clock %" PRIx64 " at %s, family %s.", clock_id, clock_ip,
+          ip_family == AF_INET    ? "IPv4"
+          : ip_family == AF_INET6 ? "IPv6"
+                                  : "Unknown");
+  } else {
+    // debug(1, "Send message from socket %d.", s);
+
+    const char *portname = "320";
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_DGRAM;
+    hints.ai_protocol = 0;
+    hints.ai_flags = AI_ADDRCONFIG;
+    struct addrinfo *res = NULL;
+    int err = getaddrinfo(clock_ip, portname, &hints, &res);
+    if (err != 0) {
+      debug(1, "failed to resolve remote socket address (err=%d)", err);
+    } else {
+      // here, we have the destination, so send it
+
+      // debug_print_buffer(1, (char *)msg, msg_length);
+      int ret = sendto(s, msg, msg_length, 0, res->ai_addr, res->ai_addrlen);
+      if (ret == -1)
+        debug(1, "result of sendto is %d.", ret);
+      debug(2, "Send awaken Announce message to clock \"%" PRIx64 "\" at %s on %s.", clock_id,
+            clock_ip, ip_family == AF_INET6 ? "IPv6" : "IPv4");
+
+      if (priority1 < 254) {
+        msg->announce.grandmasterPriority1 =
+            priority1 + 1; // make this announcement seem worse than the clock we about to ping
+      } else {
+        warn("Cannot select a suitable priority for second ping of clock %" PRIx64 " at %s.",
+             clock_id, clock_ip);
+        msg->announce.grandmasterPriority1 = 250;
+      }
+
+      msg->announce.grandmasterPriority2 = priority2;
+      usleep(150000);
+      ret = sendto(s, msg, msg_length, 0, res->ai_addr, res->ai_addrlen);
+      if (ret == -1)
+        debug(1, "result of second sendto is %d.", ret);
+      freeaddrinfo(res);
+    }
+  }
+  free(msg);
+}
+
 uint64_t broadcasting_task(uint64_t call_time, __attribute__((unused)) void *private_data) {
   clock_source_private_data *clocks_private = (clock_source_private_data *)private_data;
   int i;
   for (i = 0; i < MAX_CLOCKS; i++) {
-    if ((clocks_private[i].announcements_without_followups == 3) &&
-        (clocks_private[i].follow_up_number == 0) && // only check at the start
-        ((clocks_private[i].flags & (1 << clock_is_one_of_ours)) == 0)) {
-      debug(1, "Found a silent clock %" PRIx64 " at %s.", clocks_private[i].clock_id,
+
+    int is_a_master = 0;
+    int temp_client_id;
+
+    for (temp_client_id = 0; temp_client_id < MAX_CLIENTS; temp_client_id++)
+      if ((clocks_private->client_flags[temp_client_id] & (1 << clock_is_master)) != 0)
+        is_a_master = 1;
+
+    // only process it if it's a master somewhere...
+    if ((is_a_master != 0) && (clocks_private[i].announcements_without_followups == 3)) {
+      debug(1,
+            "Attempt to awaken a silent clock %" PRIx64
+            ", index %u, at follow_up_number %u at IP %s.",
+            clocks_private[i].clock_id, i, clocks_private[i].follow_up_number,
             clocks_private[i].ip);
+
       // send an Announce message to attempt to waken this silent PTP clock by
       // getting it to negotiate with an apparently better clock
       // that then immediately sends another Announce message indicating that it's inferior
 
       clocks_private[i].announcements_without_followups++; // set to 4 to indicate done/parked
-
-      struct ptp_announce_message *msg;
-      size_t msg_length = sizeof(struct ptp_announce_message);
-      msg = malloc(msg_length);
-      memset((void *)msg, 0, msg_length);
-
-      uint64_t my_clock_id = get_self_clock_id();
-      msg->header.transportSpecificAndMessageID = 0x10 + Announce;
-      msg->header.reservedAndVersionPTP = 0x02;
-      msg->header.messageLength = htons(sizeof(struct ptp_announce_message));
-      msg->header.flags = htons(0x0408);
-      hcton64(my_clock_id, &msg->header.clockIdentity[0]);
-      msg->header.sourcePortID = htons(32776);
-      msg->header.controlOtherMessage = 0x05;
-      msg->header.logMessagePeriod = 0xFE;
-      msg->announce.currentUtcOffset = htons(37);
-      hcton64(my_clock_id, &msg->announce.grandmasterIdentity[0]);
-      uint32_t my_clock_quality = 0xf8fe436a;
-      msg->announce.grandmasterClockQuality = htonl(my_clock_quality);
-      if (clocks_private[i].grandmasterPriority1 > 2) {
-        msg->announce.grandmasterPriority1 =
-            clocks_private[i].grandmasterPriority1 -
-            1; // make this announcement seem better than the clock we are about to ping
-        msg->announce.grandmasterPriority2 = clocks_private[i].grandmasterPriority2;
-      } else {
-        warn("Cannot select a suitable priority for pinging clock %" PRIx64 " at %s.",
-             clocks_private[i].clock_id, clocks_private[i].ip);
-        msg->announce.grandmasterPriority1 = 248;
-        msg->announce.grandmasterPriority2 = 248;
-      }
-      msg->announce.timeSource = 160; // Internal Oscillator
-
-      // get the socket for the correct port -- 320 -- and family -- IPv4 or IPv6 -- to send it
-      // from.
-
-      int s = 0;
-      unsigned t;
-      for (t = 0; t < sockets_open_stuff.sockets_open; t++) {
-        if ((sockets_open_stuff.sockets[t].port == 320) &&
-            (sockets_open_stuff.sockets[t].family == clocks_private[i].family))
-          s = sockets_open_stuff.sockets[t].number;
-      }
-      if (s == 0) {
-        debug(1, "sending socket not found for clock %" PRIx64 " at %s, family %s.",
-              clocks_private[i].clock_id, clocks_private[i].ip,
-              clocks_private[i].family == AF_INET    ? "IPv4"
-              : clocks_private[i].family == AF_INET6 ? "IPv6"
-                                                     : "Unknown");
-      } else {
-        // debug(1, "Send message from socket %d.", s);
-
-        const char *portname = "320";
-        struct addrinfo hints;
-        memset(&hints, 0, sizeof(hints));
-        hints.ai_family = AF_UNSPEC;
-        hints.ai_socktype = SOCK_DGRAM;
-        hints.ai_protocol = 0;
-        hints.ai_flags = AI_ADDRCONFIG;
-        struct addrinfo *res = NULL;
-        int err = getaddrinfo(clocks_private[i].ip, portname, &hints, &res);
-        if (err != 0) {
-          debug(1, "failed to resolve remote socket address (err=%d)", err);
-        } else {
-          // here, we have the destination, so send it
-
-          // if (clocks_private[i].family == AF_INET6) {
-          // debug_print_buffer(1, (char *)msg, msg_length);
-          int ret = sendto(s, msg, msg_length, 0, res->ai_addr, res->ai_addrlen);
-          if (ret == -1)
-            debug(1, "result of sendto is %d.", ret);
-          debug(2, "message clock \"%" PRIx64 "\" at %s on %s.", clocks_private[i].clock_id,
-                clocks_private[i].ip, clocks_private[i].family == AF_INET6 ? "IPv6" : "IPv4");
-
-          if (clocks_private[i].grandmasterPriority1 < 254) {
-            msg->announce.grandmasterPriority1 =
-                clocks_private[i].grandmasterPriority1 +
-                1; // make this announcement seem worse than the clock we about to ping
-          } else {
-            warn("Cannot select a suitable priority for second ping of clock %" PRIx64 " at %s.",
-                 clocks_private[i].clock_id, clocks_private[i].ip);
-            msg->announce.grandmasterPriority1 = 250;
-          }
-
-          msg->announce.grandmasterPriority2 = clocks_private[i].grandmasterPriority2;
-          ret = sendto(s, msg, msg_length, 0, res->ai_addr, res->ai_addrlen);
-          if (ret == -1)
-            debug(1, "result of second sendto is %d.", ret);
-          // }
-          freeaddrinfo(res);
-        }
-      }
-      free(msg);
+      send_awakening_announcement_sequence(
+          clocks_private[i].clock_id, clocks_private[i].ip, clocks_private[i].family,
+          clocks_private[i].grandmasterPriority1, clocks_private[i].grandmasterPriority2);
     }
   }
 

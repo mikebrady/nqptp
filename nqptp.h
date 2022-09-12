@@ -1,6 +1,6 @@
 /*
  * This file is part of the nqptp distribution (https://github.com/mikebrady/nqptp).
- * Copyright (c) 2021 Mike Brady.
+ * Copyright (c) 2021-2022 Mike Brady.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -38,5 +38,9 @@
 // sends through port 9000. Following the name, the client can specify the members -- the "PTP
 // Instances" -- of a "PTP Network" it wishes to monitor. This is a "timing group" in AirPlay 2
 // parlance, it seems.
+
+void send_awakening_announcement_sequence(const uint64_t clock_id, const char *clock_ip,
+                                          const int ip_family, const uint8_t priority1,
+                                          const uint8_t priority2);
 
 #endif

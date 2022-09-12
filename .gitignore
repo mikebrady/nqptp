@@ -1,6 +1,7 @@
 # http://www.gnu.org/software/automake
 
 Makefile.in
+configure~
 /ar-lib
 /mdate-sh
 /py-compile
@@ -9,6 +10,7 @@ Makefile.in
 
 # http://www.gnu.org/software/autoconf
 
+INSTALL
 autom4te.cache
 /autoscan.log
 /autoscan-*.log

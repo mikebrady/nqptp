@@ -1,6 +1,6 @@
 /*
  * This file is part of the nqptp distribution (https://github.com/mikebrady/nqptp).
- * Copyright (c) 2021 Mike Brady.
+ * Copyright (c) 2021-2022 Mike Brady.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -57,6 +57,19 @@ uint16_t nctohs(const uint8_t *p) { // read 2 characters from *p and do ntohs on
   return ntohs(holder);
 }
 
+uint64_t ntoh64(const uint64_t n) {
+  uint64_t fiddle = n;
+  uint32_t fiddle_hi = fiddle & 0xFFFFFFFF;
+  fiddle_hi = ntohl(fiddle_hi);
+  fiddle = fiddle >> 32;
+  uint32_t fiddle_lo = fiddle & 0xFFFFFFFF;
+  fiddle_lo = ntohl(fiddle_lo);
+  fiddle = fiddle_hi;
+  fiddle = fiddle << 32;
+  fiddle = fiddle | fiddle_lo;
+  return fiddle;
+}
+
 uint64_t timespec_to_ns(struct timespec *tn) {
   uint64_t tnfpsec = tn->tv_sec;
   uint64_t tnfpnsec = tn->tv_nsec;
@@ -70,6 +83,6 @@ uint64_t get_time_now() {
   clock_gettime(CLOCK_MONOTONIC_RAW, &tn);
 #else
   clock_gettime(CLOCK_MONOTONIC, &tn);
-#endif  
+#endif
   return timespec_to_ns(&tn);
 }

@@ -1,9 +1,19 @@
+## Version: 1.1-dev-186-g4e54f1b
+**Bug Fixes**
+* Reorder system header files includes to fix a compilation error.
+
 ## Version: 1.1-dev-166-g46a9f1b
 * Update the wording in the INSTALL document to match the wording generated at the `autoreconf -fi` stage, so that `git` doesn't flag an altered document. Thanks to [David Leibovic](https://github.com/dasl-) for bringing this to notice.
 
 ## Version: 1.1-dev-161-g353093a
 **Bug Fix**
 * If a player (e.g. a HomePod mini) that was providing the master clock was removed from the set of devices playing, the new master clock retained out-of-date information about the old master clock. This could cause problems going to the next track or to a previous one, causing them not to be heard. Thanks (again!) to [Kristian Dimitrov](https://github.com/Kristian8606) for a precise description of how to cause the problem.
+
+## Version: 1.1-dev-164-g086a123
+**Enhancements**
+* Improve the accuracy of the clock by including data from the `correctionField` part of a PTP message. Most of the time, this is a fraction of a millisecond, but sometimes it can be larger.
+* If a clock timing sample is more than four seconds slow, treat it as the start of a new timing sequence rather than as an error in the current timing sequence.
+* Try to restart a clock that stops incrementing towards the start of a timing sequence.
 
 ## Version: 1.1-dev-154-g608980e
 **Bug Fix**

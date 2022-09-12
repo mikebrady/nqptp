@@ -1,6 +1,6 @@
 /*
  * This file is part of the nqptp distribution (https://github.com/mikebrady/nqptp).
- * Copyright (c) 2021 Mike Brady.
+ * Copyright (c) 2021-2022 Mike Brady.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,13 +20,11 @@
 #ifndef NQPTP_CLOCK_SOURCES_H
 #define NQPTP_CLOCK_SOURCES_H
 
+#include "nqptp-shm-structures.h"
 #include "nqptp.h"
 
 typedef enum {
   clock_is_in_use,
-  clock_is_one_of_ours,
-  clock_is_a_timing_peer,
-  clock_is_announced,
   clock_is_master
 } clock_flags;
 
@@ -37,7 +35,8 @@ typedef struct {
   int follow_up_number;
   int announcements_without_followups; // add 1 for every announce, reset with a followup
   uint64_t clock_id;
-  uint64_t previous_offset, previous_offset_time, previous_offset_grandmaster;
+  uint64_t previous_offset, previous_offset_time, previous_offset_grandmaster,
+      previous_preciseOriginTimestamp;
   uint64_t mastership_start_time; // set to the time of the first sample used as master
 
   // for garbage collection
@@ -57,6 +56,7 @@ typedef struct {
   uint8_t grandmasterPriority2;
   uint64_t grandmasterIdentity;
   uint16_t stepsRemoved;
+  int identical_previous_preciseOriginTimestamp_count;
 
 } clock_source_private_data;
 
@@ -68,6 +68,9 @@ typedef struct {
   int client_id; // the 1-based index number of clocks' client_flags field associated with this
                  // interface
 } client_record;
+
+extern int shm_fd;
+extern struct shm_structure *shared_memory;
 
 int find_clock_source_record(char *sender_string, clock_source_private_data *clocks_private_info);
 
@@ -84,9 +87,11 @@ int delete_clients();
 
 extern clock_source_private_data clocks_private[MAX_CLOCKS];
 
-void update_master(int client_id);
-
 void update_master_clock_info(int client_id, uint64_t master_clock_id, const char *ip,
+                              uint64_t local_time, uint64_t local_to_master_offset,
+                              uint64_t mastership_start_time);
+
+void new_update_master_clock_info(uint64_t master_clock_id, const char *ip,
                               uint64_t local_time, uint64_t local_to_master_offset,
                               uint64_t mastership_start_time);
 

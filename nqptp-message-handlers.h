@@ -1,6 +1,6 @@
 /*
  * This file is part of the nqptp distribution (https://github.com/mikebrady/nqptp).
- * Copyright (c) 2021 Mike Brady.
+ * Copyright (c) 2021-2022 Mike Brady.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,13 +28,10 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clo
                      uint64_t reception_time);
 
 void handle_sync(char *buf, ssize_t recv_len, clock_source_private_data *clock_private_info,
-                 uint64_t reception_time, SOCKADDR *from_sock_addr, int socket_number);
+                 uint64_t reception_time);
 
 void handle_follow_up(char *buf, ssize_t recv_len, clock_source_private_data *clock_private_info,
                       uint64_t reception_time);
-
-void handle_delay_resp(char *buf, ssize_t recv_len, clock_source_private_data *clock_private_info,
-                       uint64_t reception_time);
 
 void handle_control_port_messages(char *buf, ssize_t recv_len,
                                   clock_source_private_data *clock_private_info);
