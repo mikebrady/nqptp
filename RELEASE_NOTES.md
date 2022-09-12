@@ -1,3 +1,16 @@
+## Version: 1.1-dev-168-g3444047
+***Pesky Changes You Can't Ignore***
+
+* **Important**. The Shared Memory Interface protocol that Shairport Sync and NQPTP use to communicate with one another has been updated to reflect changes in NQPTP's operation. Please update both NQPTP and Shairport Sync so that they both use the same version number -- 8.
+
+**FYI**
+
+* The ability to handle multiple instances of AirPlay-2-capable Shairport Sync on the same system has been removed. It seems that clients can not use this facility.
+
+**Enhancements**
+* Greatly simplify NQPTP by only monitoring PTP information coming from the client, ignoring all other PTP information.
+* In addition to trying to restart a clock that is silent, also send a restart to a clock if the clock's grandmaster appears to have stopped.
+
 ## Version: 1.1-dev-186-g4e54f1b
 **Bug Fixes**
 * Reorder system header files includes to fix a compilation error.
