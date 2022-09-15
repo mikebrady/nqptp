@@ -90,6 +90,7 @@ If Shairport Sync is already running, you should you restart it after starting `
 ```
 # service shairport_sync restart
 ```
+
 ##### Update
 If you are updating an existing installation of `nqptp`, after installing it you should restart it. You should then also restart Shairport Sync:
 ```
@@ -97,13 +98,17 @@ If you are updating an existing installation of `nqptp`, after installing it you
 # service shairport_sync restart
 ```
 
+## Firewall
+If your system runs a firewall, ensure that ports 319 and 320 are open for UDP traffic in both directions. These ports are associated with PTP service and may be referred to as "PTP" in firewall rules. For example, the following would open ports 319 and 320 for Fedora, which uses `firewalld`:
+```
+# firewall-cmd --permanent --add-service=ptp
+```
+
+
 ## Notes
 Please note that `nqptp` must run in `root` mode to be able to access ports 319 and 320.
 
 Since `nqptp` uses ports 319 and 320, it can not coexist with any other user of those ports, such as full PTP service daemons.
-
-## Firewall
-If your system runs a firewall, ensure that ports 319 and 320 are open for UDP traffic in both directions. These ports are associated with PTP service and may be referred to as "PTP" in firewall rules.
 
 ## Programming Notes
 A _timing peer list_ can be sent to `nqptp` over port 9000. The list consists of the letter `T` followed by a space-separated list of the IP numbers of the timing peers. The list replaces any existing timing peer list.

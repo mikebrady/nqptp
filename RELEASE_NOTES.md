@@ -4,9 +4,29 @@ Weird build numbers.
 **Bug Fix**
 * Only try to start a silent clock if no follow_ups have _ever_ been received from it.
 
+## Version: 1.1-dev-168-g3444047
+***Pesky Changes You Can't Ignore***
+
+* **Important**. The Shared Memory Interface protocol that Shairport Sync and NQPTP use to communicate with one another has been updated to reflect changes in NQPTP's operation. Please update both NQPTP and Shairport Sync so that they both use the same version number -- 8.
+
+**FYI**
+
+* The ability to handle multiple instances of AirPlay-2-capable Shairport Sync on the same system has been removed. It seems that clients can not use this facility.
+
+**Enhancements**
+* Greatly simplify NQPTP by only monitoring PTP information coming from the client, ignoring all other PTP information.
+* In addition to trying to restart a clock that is silent, also send a restart to a clock if the clock's grandmaster appears to have stopped.
+
 ## Version: 1.1-dev-186-g4e54f1b
 **Bug Fixes**
 * Reorder system header files includes to fix a compilation error.
+
+## Version: 1.1-dev-166-g46a9f1b
+* Update the wording in the INSTALL document to match the wording generated at the `autoreconf -fi` stage, so that `git` doesn't flag an altered document. Thanks to [David Leibovic](https://github.com/dasl-) for bringing this to notice.
+
+## Version: 1.1-dev-161-g353093a
+**Bug Fix**
+* If a player (e.g. a HomePod mini) that was providing the master clock was removed from the set of devices playing, the new master clock retained out-of-date information about the old master clock. This could cause problems going to the next track or to a previous one, causing them not to be heard. Thanks (again!) to [Kristian Dimitrov](https://github.com/Kristian8606) for a precise description of how to cause the problem.
 
 ## Version: 1.1-dev-164-g086a123
 **Enhancements**
