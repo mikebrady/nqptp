@@ -1,3 +1,9 @@
+## Version: 1.1-dev-175-g264805d
+Weird build numbers.
+
+**Bug Fix**
+* Only try to start a silent clock if no follow_ups have _ever_ been received from it.
+
 ## Version: 1.1-dev-186-g4e54f1b
 **Bug Fixes**
 * Reorder system header files includes to fix a compilation error.
