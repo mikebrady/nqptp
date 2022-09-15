@@ -64,6 +64,7 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
       if ((command == NULL) || ((strcmp(command, "T") == 0) && (ip_list == NULL))) {
         
         // clear all the flags
+        debug(2, "Stop monitoring.");
         int client_id = get_client_id(smi_name); // create the record if it doesn't exist
         if (client_id != -1) {
           /*
@@ -121,6 +122,7 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
                 if (t == -1)
                   t = create_clock_source_record(new_ip, clock_private_info);
                 if (t != -1) { // if the clock table is not full, show it's a timing peer
+                  debug(2, "Monitor clock at %s.", new_ip);
                   clock_private_info[t].client_flags[client_id] |= (1 << clock_is_master);
                 }
                 // otherwise, drop it
@@ -396,15 +398,16 @@ void handle_follow_up(char *buf, ssize_t recv_len, clock_source_private_data *cl
         if ((clock_private_info->previous_offset_time != 0) && (jitter > -10000000)) {
 
           if (jitter < 0) {
-            if (mastership_time < 1000000000) // at the beginning
+            if (mastership_time < 1000000000) // at the beginning, if jitter is negative
               smoothed_offset = clock_private_info->previous_offset + jitter / 16;
             else
-              smoothed_offset = clock_private_info->previous_offset + jitter / 64;
-          } else if (mastership_time < 1000000000) // at the beginning
+              smoothed_offset = clock_private_info->previous_offset + jitter / 64; // later, if jitter is negative
+          } else if (mastership_time < 1000000000) { // at the beginning
             smoothed_offset =
-                clock_private_info->previous_offset + jitter / 1; // accept positive changes quickly
-          else
-            smoothed_offset = clock_private_info->previous_offset + jitter / 64;
+                clock_private_info->previous_offset + jitter / 1; // at the beginning, if jitter is positive -- accept positive changes quickly
+          } else {
+            smoothed_offset = clock_private_info->previous_offset + jitter / 64; // later, if jitter is positive
+          }
         } else {
           // allow samples to disappear for up to a second
           if ((time_since_previous_offset != 0) && (time_since_previous_offset < 1000000000) &&
