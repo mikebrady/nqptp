@@ -520,6 +520,7 @@ uint64_t broadcasting_task(uint64_t call_time, __attribute__((unused)) void *pri
 
     // only process it if it's a master somewhere...
     if ((is_a_master != 0) && (clocks_private[i].announcements_without_followups == 3)) {
+      if (clocks_private[i].follow_up_number == 0) {
       debug(1,
             "Attempt to awaken a silent clock %" PRIx64
             ", index %u, at follow_up_number %u at IP %s.",
@@ -534,6 +535,13 @@ uint64_t broadcasting_task(uint64_t call_time, __attribute__((unused)) void *pri
       send_awakening_announcement_sequence(
           clocks_private[i].clock_id, clocks_private[i].ip, clocks_private[i].family,
           clocks_private[i].grandmasterPriority1, clocks_private[i].grandmasterPriority2);
+      } else {
+        debug(1,
+              "Silent clock %" PRIx64
+              " detected, index %u, at follow_up_number %u at IP %s. No attempt to awaken it.",
+              clocks_private[i].clock_id, i, clocks_private[i].follow_up_number,
+              clocks_private[i].ip);
+      }
     }
   }
 
