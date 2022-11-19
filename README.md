@@ -101,7 +101,8 @@ If you are updating an existing installation of `nqptp`, after installing it you
 ## Firewall
 If your system runs a firewall, ensure that ports 319 and 320 are open for UDP traffic in both directions. These ports are associated with PTP service and may be referred to as "PTP" in firewall rules. For example, the following would open ports 319 and 320 for Fedora, which uses `firewalld`:
 ```
-# firewall-cmd --permanent --add-service=ptp
+# firewall-cmd --add-service=ptp
+# firewall-cmd --permanent --add-service=ptp # make it permanent across reboots
 ```
 
 
