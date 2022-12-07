@@ -57,6 +57,8 @@ typedef struct {
   uint64_t grandmasterIdentity;
   uint16_t stepsRemoved;
   int identical_previous_preciseOriginTimestamp_count;
+  int clamp_count;
+  int wakeup_sent;
 
 } clock_source_private_data;
 

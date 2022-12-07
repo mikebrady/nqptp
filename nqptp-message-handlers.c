@@ -60,9 +60,9 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
       int gc;
       for (gc = 0; gc < MAX_CLOCKS; gc++) {
         memset(&clock_private_info[gc], 0, sizeof(clock_source_private_data));
-      }
+      }        
+      
       if ((command == NULL) || ((strcmp(command, "T") == 0) && (ip_list == NULL))) {
-        
         // clear all the flags
         debug(2, "Stop monitoring.");
         int client_id = get_client_id(smi_name); // create the record if it doesn't exist
@@ -147,7 +147,7 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
               }
             }
 */
-          } else {
+           } else {
             warn("Unrecognised string on the control port.");
           }
         } else {
@@ -207,6 +207,14 @@ void handle_announce(char *buf, ssize_t recv_len, clock_source_private_data *clo
     clock_private_info->grandmasterPriority2 = msg->announce.grandmasterPriority2;
     clock_private_info->stepsRemoved = stepsRemoved;
     clock_private_info->clock_port_number = sourcePortID;
+    
+    if (clock_private_info->wakeup_sent == 0) {
+      send_awakening_announcement_sequence(
+                  clock_private_info->clock_id, clock_private_info->ip, clock_private_info->family,
+                  clock_private_info->grandmasterPriority1,
+                  clock_private_info->grandmasterPriority2);
+      clock_private_info->wakeup_sent = 1;
+    }
   }
 }
 
@@ -264,10 +272,10 @@ void handle_follow_up(char *buf, ssize_t recv_len, clock_source_private_data *cl
         preciseOriginTimestamp = preciseOriginTimestamp + nanoseconds;
 
         // update our sample information
-
-        if (clock_private_info->previous_preciseOriginTimestamp == preciseOriginTimestamp) {
+        int grandmasterClockIsStopped = 0;
+        if ((clock_private_info->previous_preciseOriginTimestamp == preciseOriginTimestamp) && (clock_private_info->clock_id == clock_private_info->grandmasterIdentity)) {
           clock_private_info->identical_previous_preciseOriginTimestamp_count++;
-
+          grandmasterClockIsStopped = 1;
           if (clock_private_info->identical_previous_preciseOriginTimestamp_count == 8 * 60) {
             int64_t duration_of_mastership =
                 reception_time - clock_private_info->mastership_start_time;
@@ -293,11 +301,7 @@ void handle_follow_up(char *buf, ssize_t recv_len, clock_source_private_data *cl
             }
           }
         } else {
-          if (clock_private_info->identical_previous_preciseOriginTimestamp_count >= 8 * 60) {
-            debug(2, "Clock %" PRIx64 "'s grandmaster clock has started again...",
-                  clock_private_info->clock_id);
-            clock_private_info->identical_previous_preciseOriginTimestamp_count = 0;
-          }
+          clock_private_info->identical_previous_preciseOriginTimestamp_count = 0;
         }
 
         clock_private_info->previous_preciseOriginTimestamp = preciseOriginTimestamp;
@@ -391,44 +395,63 @@ void handle_follow_up(char *buf, ssize_t recv_len, clock_source_private_data *cl
         // Delays makes the offsets smaller than they should be, which is quickly
         // allowed for.
         
+        // The clamp_count is incremented if the jitter is so negative as to be less than
+        // the clamp limit and set to zero otherwise. If it exceeds the clamp_count_limit
+        // it is taken as a sign that the clock offset has permanently changed to a smaller
+        // value. This can happen when a device sleeps and its clock stops. In that case, the
+        // offset between the stopped clock the Shairport Sync clock -- which continues to
+        // run -- continues to get smaller.
+        
+        const int clamp_count_limit = 200; // more than this number of clamps continuously is taken so signify a discontinuity
+        const int64_t clamping_limit = -10000000; // nanoseconds
+        
         int64_t mastership_time = reception_time - clock_private_info->mastership_start_time;
         if (clock_private_info->mastership_start_time == 0)
           mastership_time = 0;
-
-        if ((clock_private_info->previous_offset_time != 0) && (jitter > -10000000)) {
-
+          
+        if ((clock_private_info->previous_offset_time != 0) && (clock_private_info->clamp_count <= clamp_count_limit) && (clock_private_info->identical_previous_preciseOriginTimestamp_count <= 1)) {
+          int clamped_now = 0;
           if (jitter < 0) {
+            int64_t clamped_jitter = jitter;
+            if (clamped_jitter < clamping_limit) {
+              debug(2,"clamped from %10.3f milliseconds to %10.3f milliseconds.", 0.000001 * jitter, 0.000001 * clamping_limit);
+              clamped_jitter = 0;
+              clamped_now = 1;
+            }
             if (mastership_time < 1000000000) // at the beginning, if jitter is negative
-              smoothed_offset = clock_private_info->previous_offset + jitter / 16;
+              smoothed_offset = clock_private_info->previous_offset + clamped_jitter / 16;
             else
-              smoothed_offset = clock_private_info->previous_offset + jitter / 64; // later, if jitter is negative
+              smoothed_offset = clock_private_info->previous_offset + clamped_jitter / 64; // later, if jitter is negative
           } else if (mastership_time < 1000000000) { // at the beginning
             smoothed_offset =
                 clock_private_info->previous_offset + jitter / 1; // at the beginning, if jitter is positive -- accept positive changes quickly
           } else {
             smoothed_offset = clock_private_info->previous_offset + jitter / 64; // later, if jitter is positive
           }
+          if (clamped_now != 0)
+            clock_private_info->clamp_count++;
+          else
+            clock_private_info->clamp_count = 0;
         } else {
-          // allow samples to disappear for up to a second
-          if ((time_since_previous_offset != 0) && (time_since_previous_offset < 1000000000) &&
-              (jitter > -4000000000L)) {
-            smoothed_offset = clock_private_info->previous_offset +
-                              1; // if we have recent samples, forget the present sample...
-          } else {
-            if (clock_private_info->previous_offset_time == 0)
-              debug(2, "Clock %" PRIx64 " record (re)starting at %s.", clock_private_info->clock_id,
-                    clock_private_info->ip);
-            else
-              debug(2,
-                    "Timing discontinuity on clock %" PRIx64
-                    " at %s: time_since_previous_offset: %.3f seconds.",
-                    clock_private_info->clock_id, clock_private_info->ip,
-                    0.000000001 * time_since_previous_offset);
-            smoothed_offset = offset;
-            // clock_private_info->follow_up_number = 0;
-            clock_private_info->mastership_start_time =
-                reception_time; // mastership is reset to this time...
-          }
+          if (clock_private_info->previous_offset_time == 0)
+            debug(1, "Clock %" PRIx64 " record (re)starting at %s.", clock_private_info->clock_id,
+                  clock_private_info->ip);
+          else
+            debug(1,
+                  "Timing discontinuity on clock %" PRIx64
+                  " at %s: time_since_previous_offset: %.3f seconds, clamp_value: %f milliseconds, continuous_clamp_count: %d, limit: %d%s.",
+                  clock_private_info->clock_id, clock_private_info->ip,
+                  0.000000001 * time_since_previous_offset,
+                  0.000001 * clamping_limit,
+                  clock_private_info->clamp_count,
+                  clamp_count_limit,
+                  grandmasterClockIsStopped != 0 ? ", grandmaster clock stopped" : ""
+                  );
+          smoothed_offset = offset;
+          // clock_private_info->follow_up_number = 0;
+          clock_private_info->clamp_count = 0;
+          clock_private_info->mastership_start_time =
+              reception_time; // mastership is reset to this time...          
         }
 
         clock_private_info->previous_offset_grandmaster = clock_private_info->grandmasterIdentity;
@@ -444,7 +467,7 @@ void handle_follow_up(char *buf, ssize_t recv_len, clock_source_private_data *cl
               mastership_time = 0;
             if (mastership_time > 200000000) {
               int64_t delta = smoothed_offset - offset;
-              debug(2,
+              debug(3,
                     "Clock %" PRIx64 ", grandmaster %" PRIx64 ". Offset: %" PRIx64
                     ", smoothed offset: %" PRIx64 ". Smoothed Offset - Offset: %10.3f. Raw Precise Origin Timestamp: %" PRIx64
                     ". Time since previous offset: %8.3f milliseconds. ID: %5u, Follow_Up Number: "
@@ -464,13 +487,15 @@ void handle_follow_up(char *buf, ssize_t recv_len, clock_source_private_data *cl
         }
 
         int64_t delta = smoothed_offset - offset;
-        debug(2,
+        debug(1,
               "Clock %" PRIx64 ", grandmaster %" PRIx64 ". Offset: %" PRIx64
               ", smoothed offset: %" PRIx64 ". Smoothed Offset - Offset: %10.3f. Raw Precise Origin Timestamp: %" PRIx64
-              ". Time since previous offset: %8.3f milliseconds. ID: %5u, Follow_Up Number: "
+              "%s Time since previous offset: %8.3f milliseconds. ID: %5u, Follow_Up Number: "
               "%u. Source: %s",
               clock_private_info->clock_id, clock_private_info->grandmasterIdentity, offset,
-              smoothed_offset, 0.000001 * delta, preciseOriginTimestamp, 0.000001 * time_since_previous_offset,
+              smoothed_offset, 0.000001 * delta, preciseOriginTimestamp,
+              grandmasterClockIsStopped == 0 ? ". " : "*.",
+              0.000001 * time_since_previous_offset,
               ntohs(msg->header.sequenceId), clock_private_info->follow_up_number,
               clock_private_info->ip);
 

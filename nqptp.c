@@ -483,7 +483,7 @@ void send_awakening_announcement_sequence(const uint64_t clock_id, const char *c
       int ret = sendto(s, msg, msg_length, 0, res->ai_addr, res->ai_addrlen);
       if (ret == -1)
         debug(1, "result of sendto is %d.", ret);
-      debug(2, "Send awaken Announce message to clock \"%" PRIx64 "\" at %s on %s.", clock_id,
+      debug(1, "Send awaken Announce message to clock \"%" PRIx64 "\" at %s on %s.", clock_id,
             clock_ip, ip_family == AF_INET6 ? "IPv6" : "IPv4");
 
       if (priority1 < 254) {
