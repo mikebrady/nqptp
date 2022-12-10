@@ -161,7 +161,16 @@ int main(int argc, char **argv) {
   }
   
   debug_init(debug_level, 0, 1, 1);
-  debug(1, "Startup. Clock ID: \"%" PRIx64 "\".", get_self_clock_id());
+  
+#ifdef CONFIG_USE_GIT_VERSION_STRING
+  if (git_version_string[0] != '\0')
+    debug(1, "Version: %s, SMI: %u. Clock ID: \"%" PRIx64 "\".", git_version_string,
+            NQPTP_SHM_STRUCTURES_VERSION, get_self_clock_id());
+  else
+#endif
+    debug(1, "Version: %s, SMI: %u. Clock ID: \"%" PRIx64 "\".", VERSION,
+            NQPTP_SHM_STRUCTURES_VERSION, get_self_clock_id());
+  
   // debug(1, "size of a clock entry is %u bytes.", sizeof(clock_source_private_data));
   atexit(goodbye);
 
@@ -330,7 +339,7 @@ int main(int argc, char **argv) {
               // message.
             } else if (receiver_port == NQPTP_CONTROL_PORT) {
               handle_control_port_messages(buf, recv_len,
-                                           (clock_source_private_data *)&clocks_private);
+                                           (clock_source_private_data *)&clocks_private, reception_time);
             } else if (recv_len >= (ssize_t)sizeof(struct ptp_common_message_header)) {
               debug_print_buffer(2, buf, recv_len);
 
@@ -483,7 +492,7 @@ void send_awakening_announcement_sequence(const uint64_t clock_id, const char *c
       int ret = sendto(s, msg, msg_length, 0, res->ai_addr, res->ai_addrlen);
       if (ret == -1)
         debug(1, "result of sendto is %d.", ret);
-      debug(1, "Send awaken Announce message to clock \"%" PRIx64 "\" at %s on %s.", clock_id,
+      debug(2, "Send awaken Announce message to clock \"%" PRIx64 "\" at %s on %s.", clock_id,
             clock_ip, ip_family == AF_INET6 ? "IPv6" : "IPv4");
 
       if (priority1 < 254) {

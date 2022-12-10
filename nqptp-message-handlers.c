@@ -20,6 +20,8 @@
 #include <string.h>    //strsep
 
 #include <stdio.h> // snprintf
+#include <stdlib.h> // drand48
+#include <unistd.h> // usleep
 
 #include "debug.h"
 #include "general-utilities.h"
@@ -28,6 +30,9 @@
 #include "nqptp-utilities.h"
 
 char hexcharbuffer[16384];
+int reset_clock_smoothing = 0;
+uint64_t clock_validity_expiration_time = 0;
+int clock_is_active = 0;
 
 char *hex_string(void *buf, size_t buf_len) {
   char *tbuf = (char *)buf;
@@ -43,7 +48,7 @@ char *hex_string(void *buf, size_t buf_len) {
 }
 
 void handle_control_port_messages(char *buf, ssize_t recv_len,
-                                  clock_source_private_data *clock_private_info) {
+                                  clock_source_private_data *clock_private_info, uint64_t reception_time) {
   if (recv_len != -1) {
     buf[recv_len - 1] = 0; // make sure there's a null in it!
     debug(2, "New control port message: \"%s\".", buf);
@@ -55,16 +60,78 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
       int client_id = 0;
       if (ip_list != NULL)
         command = strsep(&ip_list, " ");
-      debug(2,"Clear timing peer group.");
-      // dirty experimental hack -- delete all the clocks
-      int gc;
-      for (gc = 0; gc < MAX_CLOCKS; gc++) {
-        memset(&clock_private_info[gc], 0, sizeof(clock_source_private_data));
-      }        
+
+      // "B" is for play begin/resume. Assumes a "T <ip>" already
+      // "E" is for play end/stop.
+      // "P" is for pause (currently Buffered Audio only).
+      // 
+      // "T <ip>" is for the IP address of a timer.
+      // "T" means no active timer.
+      // clock_is_active is made true by Play and false by Pause or End.
       
-      if ((command == NULL) || ((strcmp(command, "T") == 0) && (ip_list == NULL))) {
+      if ((strcmp(command, "B") == 0) && (ip_list == NULL)) {
+        debug(2,"Play.");
+        // We want to avoid, as much as possible, resetting the clock smoothing.
+        // If we know the clock is already active or
+        // if it's only been a short time since we know it was last active
+        // then we will not reset the clock.
+        if (clock_is_active) {
+          debug(2,"clock is already active");
+        } else {
+          // Find out if the clock is active i.e. not sleeping.
+          // We know it is active between "B" and "E" commands.
+          // We also know it is active for brief periods after the "T" and "E" commands are received.
+          // If it is not definitely active, we will reset smoothing.
+          int will_ask_for_a_reset = 0;
+          if (clock_validity_expiration_time == 0) {
+            debug(1,"no clock_validity_expiration_time.");
+            will_ask_for_a_reset = 1;
+          } else {
+            int64_t time_to_clock_expiration = clock_validity_expiration_time - reception_time;
+            // timings obtained with an iPhone Xs Max on battery save
+            
+            // around 30 seconds at a buffered audio pause on an iphone.
+            // around 1 second after a buffered audio stop on an iphone
+            // 10 seconds after a "T" from an iPhone that immediately sleeps
+            // more than a minute from "T" from a HomePod mini.
+            
+            if (time_to_clock_expiration < 0) {
+              debug(2,"Clock validity may have expired, so ask for a reset.");
+              will_ask_for_a_reset = 1;
+            }
+          }
+          if (will_ask_for_a_reset != 0) {
+            debug(2,"Reset clock smoothing");
+            reset_clock_smoothing = 1;
+          }
+        }
+        clock_is_active = 1;
+        clock_validity_expiration_time = 0;
+      } else if ((strcmp(command, "E") == 0) && (ip_list == NULL)) {
+        debug(2,"Stop");
+        if (clock_is_active) {
+          debug(2,"reset clock_validity_expiration_time to 2.25 seconds in the future.");
+          clock_validity_expiration_time = reception_time + 2250000000; // expiration time can be very soon after an "E"
+          clock_is_active = 0;
+        } else {
+          debug(2,"clock is already inactive.");
+        }
+      } else if ((strcmp(command, "P") == 0) && (ip_list == NULL)) {
+        debug(2,"Pause");
+        // A pause always seems to turn into a Stop in now more than a few seconds, and the clock keeps going, it seems
+        // so there is nothing to do here.
+      } else if ((command == NULL) || ((strcmp(command, "T") == 0) && (ip_list == NULL))) {
+        debug(2,"Stop Timing");
+        clock_is_active = 0;
+        debug(2,"Clear timing peer group.");
+        // dirty experimental hack -- delete all the clocks
+        int gc;
+        for (gc = 0; gc < MAX_CLOCKS; gc++) {
+          memset(&clock_private_info[gc], 0, sizeof(clock_source_private_data));
+        }        
+
         // clear all the flags
-        debug(2, "Stop monitoring.");
+        debug(2, "Stop monitoring clock.");
         int client_id = get_client_id(smi_name); // create the record if it doesn't exist
         if (client_id != -1) {
           /*
@@ -99,6 +166,13 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
         }
         new_update_master_clock_info(0, NULL, 0, 0, 0); // it may have obsolete stuff in it
       } else {
+        debug(2,"Start Timing");
+        debug(2,"Clear timing peer group.");
+        // dirty experimental hack -- delete all the clocks
+        int gc;
+        for (gc = 0; gc < MAX_CLOCKS; gc++) {
+          memset(&clock_private_info[gc], 0, sizeof(clock_source_private_data));
+        }        
         debug(2, "get or create new record for \"%s\".", smi_name);
         client_id = get_client_id(smi_name); // create the record if it doesn't exist
         if (client_id != -1) {
@@ -147,7 +221,10 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
               }
             }
 */
-           } else {
+            // a new clock timing record will be started now
+            debug(2,"reset clock_validity_expiration_time to 5.0 seconds in the future.");
+            clock_validity_expiration_time = reception_time + 5000000000L; // clock can stop as soon as 6 seconds after a "T"
+          } else {
             warn("Unrecognised string on the control port.");
           }
         } else {
@@ -258,6 +335,16 @@ void handle_follow_up(char *buf, ssize_t recv_len, clock_source_private_data *cl
   if (clock_private_info->clock_id == 0) {
     debug(2, "Follow_Up received before announcement -- discarded.");
   } else {
+    /*
+    // diagnostic -- decide whether to delay the processing of the follow_up to simulate a noisy network
+    if (drand48() < 0.05) {
+      // generate a random delay between 10 and 3500 milliseconds
+      int delay = (int)((3500 - 10) * drand48()) + 10;
+      debug(1,"Delay follow_up processing by %u milliseconds.", delay);
+      usleep(delay * 1000);
+      reception_time = get_time_now();    
+    }
+    */
     clock_private_info->announcements_without_followups = 0;
     if ((recv_len >= 0) && ((size_t)recv_len >= sizeof(struct ptp_follow_up_message))) {
         // debug_print_buffer(1, buf, recv_len);
@@ -289,7 +376,7 @@ void handle_follow_up(char *buf, ssize_t recv_len, clock_source_private_data *cl
             wait_limit = wait_limit * 1000000000;
             // only try to restart a grandmaster clock on the clock itself.
             if ((duration_of_mastership <= wait_limit) && (clock_private_info->clock_id == clock_private_info->grandmasterIdentity)) {
-              debug(1,
+              debug(2,
                     "Attempt to start a stopped clock %" PRIx64
                     ", at follow_up_number %u at IP %s.",
                     clock_private_info->clock_id, clock_private_info->follow_up_number,
@@ -352,11 +439,9 @@ void handle_follow_up(char *buf, ssize_t recv_len, clock_source_private_data *cl
         // longer valid. The hacky bit is to signal this condition by zeroing the
         // previous_offset_time.
         if (clock_private_info->previous_offset_grandmaster !=
-            clock_private_info->grandmasterIdentity)
+            clock_private_info->grandmasterIdentity) {
           clock_private_info->previous_offset_time = 0;
-
-        if (clock_private_info->previous_offset_time != 0) {
-          time_since_previous_offset = reception_time - clock_private_info->previous_offset_time;
+          debug(1,"grandmaster has changed from %" PRIx64 " to %" PRIx64 ".", clock_private_info->previous_offset_grandmaster, clock_private_info->grandmasterIdentity);
         }
 
         // Do acceptance checking and smoothing.
@@ -377,133 +462,133 @@ void handle_follow_up(char *buf, ssize_t recv_len, clock_source_private_data *cl
         // accept it as the start of a new period of mastership.
 
         // This seems to be quite stable
-
-        if (clock_private_info->previous_offset_time != 0)
-          jitter = offset - clock_private_info->previous_offset;
-
-        // We take any positive or a limited negative jitter as a sync event in
-        // a continuous synchronisation sequence.
-        // This works well with PTP sources that sleep, as when they sleep
-        // their clock stops. When they awaken, the offset from
-        // the local clock to them must be smaller than before, triggering the
-        // timing discontinuity below and allowing an immediate readjustment.
-
-        // The full value of a positive offset jitter is accepted for a
-        // number of follow_ups at the start.
-        // After that, the weight of the jitter is reduced.
-        // Follow-ups don't always come in at 125 ms intervals, especially after a discontinuity
-        // Delays makes the offsets smaller than they should be, which is quickly
-        // allowed for.
         
-        // The clamp_count is incremented if the jitter is so negative as to be less than
-        // the clamp limit and set to zero otherwise. If it exceeds the clamp_count_limit
-        // it is taken as a sign that the clock offset has permanently changed to a smaller
-        // value. This can happen when a device sleeps and its clock stops. In that case, the
-        // offset between the stopped clock the Shairport Sync clock -- which continues to
-        // run -- continues to get smaller.
-        
-        const int clamp_count_limit = 200; // more than this number of clamps continuously is taken so signify a discontinuity
-        const int64_t clamping_limit = -10000000; // nanoseconds
-        
-        int64_t mastership_time = reception_time - clock_private_info->mastership_start_time;
-        if (clock_private_info->mastership_start_time == 0)
-          mastership_time = 0;
-          
-        if ((clock_private_info->previous_offset_time != 0) && (clock_private_info->clamp_count <= clamp_count_limit) && (clock_private_info->identical_previous_preciseOriginTimestamp_count <= 1)) {
-          int clamped_now = 0;
-          if (jitter < 0) {
-            int64_t clamped_jitter = jitter;
-            if (clamped_jitter < clamping_limit) {
-              debug(2,"clamped from %10.3f milliseconds to %10.3f milliseconds.", 0.000001 * jitter, 0.000001 * clamping_limit);
-              clamped_jitter = 0;
-              clamped_now = 1;
-            }
-            if (mastership_time < 1000000000) // at the beginning, if jitter is negative
-              smoothed_offset = clock_private_info->previous_offset + clamped_jitter / 16;
-            else
-              smoothed_offset = clock_private_info->previous_offset + clamped_jitter / 64; // later, if jitter is negative
-          } else if (mastership_time < 1000000000) { // at the beginning
-            smoothed_offset =
-                clock_private_info->previous_offset + jitter / 1; // at the beginning, if jitter is positive -- accept positive changes quickly
-          } else {
-            smoothed_offset = clock_private_info->previous_offset + jitter / 64; // later, if jitter is positive
+        //if (grandmasterClockIsStopped == 0) {
+        if (reset_clock_smoothing == 0) {
+
+          if (clock_private_info->previous_offset_time != 0) {
+            time_since_previous_offset = reception_time - clock_private_info->previous_offset_time;
+            jitter = offset - clock_private_info->previous_offset;
           }
-          if (clamped_now != 0)
-            clock_private_info->clamp_count++;
-          else
-            clock_private_info->clamp_count = 0;
+
+          // We take any positive or a limited negative jitter as a sync event in
+          // a continuous synchronisation sequence.
+          // This works well with PTP sources that sleep, as when they sleep
+          // their clock stops. When they awaken, the offset from
+          // the local clock to them must be smaller than before, triggering the
+          // timing discontinuity below and allowing an immediate readjustment.
+
+          // The full value of a positive offset jitter is accepted for a
+          // number of follow_ups at the start.
+          // After that, the weight of the jitter is reduced.
+          // Follow-ups don't always come in at 125 ms intervals, especially after a discontinuity
+          // Delays makes the offsets smaller than they should be, which is quickly
+          // allowed for.
+        
+          const int64_t clamping_limit = -2500000; // nanoseconds
+        
+          int64_t mastership_time = reception_time - clock_private_info->mastership_start_time;
+          if (clock_private_info->mastership_start_time == 0)
+            mastership_time = 0;
+          
+//          if ((clock_private_info->previous_offset_time != 0) && (clock_private_info->identical_previous_preciseOriginTimestamp_count <= 1)) {
+          if (clock_private_info->previous_offset_time != 0) {
+            if (jitter < 0) {
+              int64_t clamped_jitter = jitter;
+              if (clamped_jitter < clamping_limit) {
+                clamped_jitter = clamping_limit; // 0 means ignore a clamped value completely
+              }
+              // if (mastership_time < 1000000000) // at the beginning, if jitter is negative
+              //   smoothed_offset = clock_private_info->previous_offset + clamped_jitter / 16;
+              // else
+              
+              // ignore negative jitter for the first 10 seconds
+              if (mastership_time > 1000000000)
+                smoothed_offset = clock_private_info->previous_offset + clamped_jitter / 64; // later, if jitter is negative
+            } else if (mastership_time < 1000000000) { // at the beginning
+              smoothed_offset =
+                  clock_private_info->previous_offset + jitter / 1; // at the beginning, if jitter is positive -- accept positive changes quickly
+            } else {
+              smoothed_offset = clock_private_info->previous_offset + jitter / 64; // later, if jitter is positive
+            }
+          } else {
+            if (clock_private_info->previous_offset_time == 0)
+              debug(2, "Clock %" PRIx64 " record (re)starting at %s.", clock_private_info->clock_id,
+                    clock_private_info->ip);
+            else
+              debug(2,
+                    "Timing discontinuity on clock %" PRIx64
+                    " at %s: time_since_previous_offset: %.3f seconds%s.",
+                    clock_private_info->clock_id, clock_private_info->ip,
+                    0.000000001 * time_since_previous_offset,
+                    grandmasterClockIsStopped != 0 ? ", grandmaster clock stopped" : ""
+                    );
+            smoothed_offset = offset;
+            // clock_private_info->follow_up_number = 0;
+            clock_private_info->mastership_start_time =
+                reception_time; // mastership is reset to this time...          
+          }
+
+          int temp_client_id;
+          for (temp_client_id = 0; temp_client_id < MAX_CLIENTS; temp_client_id++) {
+            if ((clock_private_info->client_flags[temp_client_id] & (1 << clock_is_master)) != 0) {
+              // recalculate mastership_time because it might have been zeroed.
+              mastership_time = reception_time - clock_private_info->mastership_start_time;
+              if (clock_private_info->mastership_start_time == 0)
+                mastership_time = 0;
+              if (mastership_time > 200000000) {
+                int64_t delta = smoothed_offset - offset;
+                debug(2,
+                      "Clock %" PRIx64 ", grandmaster %" PRIx64 ". Offset: %" PRIx64
+                      ", smoothed offset: %" PRIx64 ". Smoothed Offset - Offset: %10.3f. Raw Precise Origin Timestamp: %" PRIx64
+                      ". Time since previous offset: %8.3f milliseconds. ID: %5u, Follow_Up Number: "
+                      "%u. Source: %s",
+                      clock_private_info->clock_id, clock_private_info->grandmasterIdentity, offset,
+                      smoothed_offset, 0.000001 * delta, preciseOriginTimestamp, 0.000001 * time_since_previous_offset,
+                      ntohs(msg->header.sequenceId), clock_private_info->follow_up_number,
+                      clock_private_info->ip);
+
+                debug(2, "clock_is_master -- updating master clock info for client \"%s\"",
+                      get_client_name(temp_client_id));
+                update_master_clock_info(temp_client_id, clock_private_info->grandmasterIdentity,
+                                         (const char *)&clock_private_info->ip, reception_time,
+                                         smoothed_offset, clock_private_info->mastership_start_time);
+              }
+            }
+          }
+
+          int64_t delta = smoothed_offset - offset;
+          debug(2,
+                "Clock %" PRIx64 ", grandmaster %" PRIx64 ". Offset: %" PRIx64
+                ", smoothed offset: %" PRIx64 ". Smoothed Offset - Offset: %10.3f. Raw Precise Origin Timestamp: %" PRIx64
+                "%s correction_field: %" PRIx64
+                ". Time since previous offset: %8.3f milliseconds. ID: %5u, Follow_Up Number: "
+                "%u. Source: %s",
+                clock_private_info->clock_id, clock_private_info->grandmasterIdentity, offset,
+                smoothed_offset, 0.000001 * delta, preciseOriginTimestamp,
+                grandmasterClockIsStopped == 0 ? ". " : "*.",
+                correction_field,
+                0.000001 * time_since_previous_offset,
+                ntohs(msg->header.sequenceId), clock_private_info->follow_up_number,
+                clock_private_info->ip);
+
+          new_update_master_clock_info(clock_private_info->grandmasterIdentity,
+                           (const char *)&clock_private_info->ip, reception_time,
+                           smoothed_offset, clock_private_info->mastership_start_time);
+        
+          clock_private_info->previous_offset = smoothed_offset;
+          clock_private_info->previous_offset_time = reception_time;
+        
         } else {
-          if (clock_private_info->previous_offset_time == 0)
-            debug(1, "Clock %" PRIx64 " record (re)starting at %s.", clock_private_info->clock_id,
-                  clock_private_info->ip);
-          else
-            debug(1,
-                  "Timing discontinuity on clock %" PRIx64
-                  " at %s: time_since_previous_offset: %.3f seconds, clamp_value: %f milliseconds, continuous_clamp_count: %d, limit: %d%s.",
-                  clock_private_info->clock_id, clock_private_info->ip,
-                  0.000000001 * time_since_previous_offset,
-                  0.000001 * clamping_limit,
-                  clock_private_info->clamp_count,
-                  clamp_count_limit,
-                  grandmasterClockIsStopped != 0 ? ", grandmaster clock stopped" : ""
-                  );
-          smoothed_offset = offset;
-          // clock_private_info->follow_up_number = 0;
-          clock_private_info->clamp_count = 0;
-          clock_private_info->mastership_start_time =
-              reception_time; // mastership is reset to this time...          
+          reset_clock_smoothing = 0;
+          clock_private_info->mastership_start_time = 0;
+          clock_private_info->previous_offset = 0;
+          clock_private_info->previous_offset_time = 0; // so that the first non-stopped sample will be taken as the first one in a sequence
         }
 
         clock_private_info->previous_offset_grandmaster = clock_private_info->grandmasterIdentity;
-        clock_private_info->previous_offset = smoothed_offset;
-        clock_private_info->previous_offset_time = reception_time;
 
-        int temp_client_id;
-        for (temp_client_id = 0; temp_client_id < MAX_CLIENTS; temp_client_id++) {
-          if ((clock_private_info->client_flags[temp_client_id] & (1 << clock_is_master)) != 0) {
-            // recalculate mastership_time because it might have been zeroed.
-            mastership_time = reception_time - clock_private_info->mastership_start_time;
-            if (clock_private_info->mastership_start_time == 0)
-              mastership_time = 0;
-            if (mastership_time > 200000000) {
-              int64_t delta = smoothed_offset - offset;
-              debug(3,
-                    "Clock %" PRIx64 ", grandmaster %" PRIx64 ". Offset: %" PRIx64
-                    ", smoothed offset: %" PRIx64 ". Smoothed Offset - Offset: %10.3f. Raw Precise Origin Timestamp: %" PRIx64
-                    ". Time since previous offset: %8.3f milliseconds. ID: %5u, Follow_Up Number: "
-                    "%u. Source: %s",
-                    clock_private_info->clock_id, clock_private_info->grandmasterIdentity, offset,
-                    smoothed_offset, 0.000001 * delta, preciseOriginTimestamp, 0.000001 * time_since_previous_offset,
-                    ntohs(msg->header.sequenceId), clock_private_info->follow_up_number,
-                    clock_private_info->ip);
-
-              debug(2, "clock_is_master -- updating master clock info for client \"%s\"",
-                    get_client_name(temp_client_id));
-              update_master_clock_info(temp_client_id, clock_private_info->grandmasterIdentity,
-                                       (const char *)&clock_private_info->ip, reception_time,
-                                       smoothed_offset, clock_private_info->mastership_start_time);
-            }
-          }
-        }
-
-        int64_t delta = smoothed_offset - offset;
-        debug(1,
-              "Clock %" PRIx64 ", grandmaster %" PRIx64 ". Offset: %" PRIx64
-              ", smoothed offset: %" PRIx64 ". Smoothed Offset - Offset: %10.3f. Raw Precise Origin Timestamp: %" PRIx64
-              "%s Time since previous offset: %8.3f milliseconds. ID: %5u, Follow_Up Number: "
-              "%u. Source: %s",
-              clock_private_info->clock_id, clock_private_info->grandmasterIdentity, offset,
-              smoothed_offset, 0.000001 * delta, preciseOriginTimestamp,
-              grandmasterClockIsStopped == 0 ? ". " : "*.",
-              0.000001 * time_since_previous_offset,
-              ntohs(msg->header.sequenceId), clock_private_info->follow_up_number,
-              clock_private_info->ip);
-
-        new_update_master_clock_info(clock_private_info->grandmasterIdentity,
-                         (const char *)&clock_private_info->ip, reception_time,
-                         smoothed_offset, clock_private_info->mastership_start_time);
-        
-        // now do some quick calculations on the possible "Universal Time"
+       // now do some quick calculations on the possible "Universal Time"
         // debug_print_buffer(1, "", buf, recv_len);
         uint8_t *tlv = (uint8_t *)&msg->follow_up.tlvs[0];
         uint8_t *lastGmPhaseChange = tlv + 16;
