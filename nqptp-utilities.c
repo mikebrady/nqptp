@@ -29,11 +29,11 @@
 #endif
 
 #ifdef CONFIG_FOR_FREEBSD
-#include <unistd.h>
-#include <sys/types.h>
 #include <net/if_dl.h>
 #include <net/if_types.h>
 #include <sys/socket.h>
+#include <sys/types.h>
+#include <unistd.h>
 #endif
 
 #include <netdb.h>  // getaddrinfo etc.
@@ -167,7 +167,7 @@ int get_device_id(uint8_t *id, int *int_length) {
   struct ifaddrs *ifa = NULL;
   int i = 0;
   uint8_t *t = id;
-  
+
   // clear the buffer if non zero length passed in
   for (i = 0; i < max_length; i++) {
     *t++ = 0;
@@ -177,7 +177,7 @@ int get_device_id(uint8_t *id, int *int_length) {
   if (getifaddrs(&ifaddr) != -1) {
     t = id;
     int found = 0;
-    
+
     for (ifa = ifaddr; ((ifa != NULL) && (found == 0)); ifa = ifa->ifa_next) {
 #ifdef AF_PACKET
       if ((ifa->ifa_addr) && (ifa->ifa_addr->sa_family == AF_PACKET)) {
@@ -211,7 +211,6 @@ int get_device_id(uint8_t *id, int *int_length) {
       }
 #endif
 #endif
-
     }
     if (found != 0)
       response = 0;
@@ -220,13 +219,12 @@ int get_device_id(uint8_t *id, int *int_length) {
   return response;
 }
 
-
 uint64_t get_self_clock_id() {
   // make up a clock ID based on an interface's MAC
   int local_clock_id_size = 8; // don't exceed this
   uint8_t local_clock_id[local_clock_id_size];
-  memset(local_clock_id,0,local_clock_id_size);
-  if (get_device_id(local_clock_id,&local_clock_id_size) == 0) {
+  memset(local_clock_id, 0, local_clock_id_size);
+  if (get_device_id(local_clock_id, &local_clock_id_size) == 0) {
     // if the length of the MAC address is 6 we need to doctor it a little
     // See Section 7.5.2.2.2 IEEE EUI-64 clockIdentity values, NOTE 2
 
