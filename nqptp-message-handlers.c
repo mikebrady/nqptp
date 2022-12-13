@@ -398,21 +398,14 @@ void handle_follow_up(char *buf, ssize_t recv_len, clock_source_private_data *cl
       // Positive changes in the offset are much more likely to be
       // legitimate, since they could only occur due to a shorter
       // propagation time or less of a delay sending or receiving the packet.
-      // (Actually, this is not quite true --
-      // it is possible that the remote clock could be adjusted forward
-      // and this would increase the offset too.)
-      // Anyway, when the clock is new, we give extra preferential weighting to
-      // positive changes in the offset.
+      // When the clock is new, we give preferential weighting to
+      // positive changes in the offset to allow the clock to sync up quickly.
 
       // If the new offset is greater, by any amount, than the old offset,
-      // or if it is less by up to 10 mS, accept it.
-      // Otherwise, drop it if the last sample was fairly recent
-      // If the last sample was long ago, take this as a discontinuity and
-      // accept it as the start of a new period of mastership.
+      // or if it is less by up to the clamping_limit, accept it.
 
       // This seems to be quite stable
 
-      // if (grandmasterClockIsStopped == 0) {
       if (reset_clock_smoothing == 0) {
 
         if (clock_private_info->previous_offset_time != 0) {
@@ -488,7 +481,7 @@ void handle_follow_up(char *buf, ssize_t recv_len, clock_source_private_data *cl
               "%u. Source: %s",
               clock_private_info->clock_id, clock_private_info->grandmasterIdentity, offset,
               smoothed_offset, 0.000001 * delta, preciseOriginTimestamp,
-              grandmasterClockIsStopped == 0 ? ". " : "*.", correction_field,
+              clock_is_active != 0 ? ". " : "*.", correction_field,
               0.000001 * time_since_previous_offset, ntohs(msg->header.sequenceId),
               clock_private_info->follow_up_number, clock_private_info->ip);
         if (clock_is_active) {
