@@ -3,6 +3,11 @@
 
 It is a companion application to [Shairport Sync](https://github.com/mikebrady/shairport-sync) and provides timing information for AirPlay 2 operation.
 
+# Danger
+This branch of the NQPTP repository is very likely to be buggy and can change very rapidly and without warning. The `development` branch is more stable, although it too may contains bugs. The `master` branch is the most stable.
+
+The `danger` branch version of NQPTP may only be compatible with the `danger` branch of Shairport Sync. 
+
 ## Installation
 
 This guide is for recent Linux and FreeBSD systems.
@@ -41,6 +46,7 @@ Note that you will need superuser privileges to install, enable and start the da
 ```
 $ git clone https://github.com/mikebrady/nqptp.git
 $ cd nqptp
+$ git checkout danger
 $ autoreconf -fi
 $ ./configure --with-systemd-startup
 $ make
@@ -50,6 +56,7 @@ $ make
 ```
 $ git clone https://github.com/mikebrady/nqptp.git
 $ cd nqptp
+$ git checkout danger
 $ autoreconf -fi
 $ ./configure --with-freebsd-startup
 $ make
@@ -105,16 +112,15 @@ If your system runs a firewall, ensure that ports 319 and 320 are open for UDP t
 # firewall-cmd --permanent --add-service=ptp # make it permanent across reboots
 ```
 
-
 ## Notes
 Please note that `nqptp` must run in `root` mode to be able to access ports 319 and 320.
 
 Since `nqptp` uses ports 319 and 320, it can not coexist with any other user of those ports, such as full PTP service daemons.
 
 ## Programming Notes
-A _timing peer list_ can be sent to `nqptp` over port 9000. The list consists of the letter `T` followed by a space-separated list of the IP numbers of the timing peers. The list replaces any existing timing peer list.
+Commands and status information are sent to `nqptp` over port 9000. 
 
-Information about the timing peer list's *master clock* is provided via a [POSIX shared memory](https://pubs.opengroup.org/onlinepubs/007908799/xsh/shm_open.html) interface. 
+Information about the PTP clock is provided via a [POSIX shared memory](https://pubs.opengroup.org/onlinepubs/007908799/xsh/shm_open.html) interface. 
 
 
 Here are details of the interface:
