@@ -1,3 +1,12 @@
+## Version: 1.1-dev-195-g93f1e8a
+***Pesky Changes You Can't Ignore***
+
+
+* **Important**. The Shared Memory Interface protocol that Shairport Sync and NQPTP use to communicate with one another has been updated to reflect changes in NQPTP's operation. Please update both NQPTP and Shairport Sync so that they both use the same version number -- 9.
+
+**Enhancement**
+* NQPTP has been simplified and is more resilient to adverse network conditions.
+
 ## Version: 1.1-dev-175-g264805d
 Weird build numbers.
 
