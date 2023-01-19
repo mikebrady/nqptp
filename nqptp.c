@@ -96,11 +96,11 @@ void goodbye(void) {
   // close off new smi
   // mmap cleanup
   if (munmap(shared_memory, sizeof(struct shm_structure)) != 0) {
-    debug(1, "error unmapping shared memory");
+    debug(1, "error unmapping shared memory \"%s\": \"%s\".", NQPTP_INTERFACE_NAME, strerror(errno));
   }
   // shm_open cleanup
   if (shm_unlink(NQPTP_INTERFACE_NAME) == -1) {
-    debug(1, "error unlinking shared memory \"%s\"", NQPTP_INTERFACE_NAME);
+    debug(1, "error unlinking shared memory \"%s\": \"%s\".", NQPTP_INTERFACE_NAME, strerror(errno));
   }
 
   if (shm_fd != -1)
