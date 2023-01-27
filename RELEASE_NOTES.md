@@ -1,6 +1,9 @@
+## Version: 1.1-dev-196-g9fc0501
+**Enhancement**
+* Finally (!) the suggestion made by [the0u](https://github.com/th0u) in [Issue #14]() has been acted upon and the suggested modifications made so that NQPTP will only listen to connections made to port 9000 coming from `localhost`. Thanks to [the0u](https://github.com/th0u) for the suggestion and the code. Thanks to [herrernst](https://github.com/herrernst) for the reminder!
+
 ## Version: 1.1-dev-195-g93f1e8a
 ***Pesky Changes You Can't Ignore***
-
 
 * **Important**. The Shared Memory Interface protocol that Shairport Sync and NQPTP use to communicate with one another has been updated to reflect changes in NQPTP's operation. Please update both NQPTP and Shairport Sync so that they both use the same version number -- 9.
 
