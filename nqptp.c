@@ -253,9 +253,9 @@ int main(int argc, char **argv) {
 
   // open sockets 319 and 320
 
-  open_sockets_at_port(319, &sockets_open_stuff);
-  open_sockets_at_port(320, &sockets_open_stuff);
-  open_sockets_at_port(NQPTP_CONTROL_PORT,
+  open_sockets_at_port(NULL, 319, &sockets_open_stuff);
+  open_sockets_at_port(NULL, 320, &sockets_open_stuff);
+  open_sockets_at_port("localhost", NQPTP_CONTROL_PORT,
                        &sockets_open_stuff); // this for messages from the client
 
   // start the timed tasks

@@ -43,7 +43,7 @@
 
 #include "debug.h"
 
-void open_sockets_at_port(uint16_t port, sockets_open_bundle *sockets_open_stuff) {
+void open_sockets_at_port(const char *node, uint16_t port, sockets_open_bundle *sockets_open_stuff) {
   // open up sockets for UDP ports 319 and 320
 
   struct addrinfo hints, *info, *p;
@@ -57,7 +57,7 @@ void open_sockets_at_port(uint16_t port, sockets_open_bundle *sockets_open_stuff
   char portstr[20];
   snprintf(portstr, 20, "%d", port);
 
-  ret = getaddrinfo(NULL, portstr, &hints, &info);
+  ret = getaddrinfo(node, portstr, &hints, &info);
   if (ret) {
     die("getifaddrs: %s", gai_strerror(ret));
   }
