@@ -4,7 +4,7 @@
 It is a companion application to [Shairport Sync](https://github.com/mikebrady/shairport-sync) and provides timing information for AirPlay 2 operation.
 
 # Development
-This branch -- the `development` branch -- changes relatively rapidly and may contain significant bugs. The `main` branch is the most stable.
+This branch -- the `development` branch -- changes relatively rapidly and may contain significant bugs. The `main` branch is the most stable. Use it with the `development` branch of Shairport Sync.
 
 ## Installation
 
