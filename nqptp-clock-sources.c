@@ -244,9 +244,243 @@ int create_clock_source_record(char *sender_string,
   return response;
 }
 
-void update_master_clock_info(int client_id, uint64_t master_clock_id, const char *ip,
-                              uint64_t local_time, uint64_t local_to_master_offset,
-                              uint64_t mastership_start_time) {
+void manage_clock_sources(uint64_t reception_time, clock_source_private_data *clocks_private_info) {
+  debug(3, "manage_clock_sources");
+  int i;
+
+  // do a garbage collect for clock records no longer in use
+  for (i = 0; i < MAX_CLOCKS; i++) {
+    // only if its in use and not a timing peer... don't need a mutex to check
+    // TODO -- check all clients to see if it's in use
+    if ((clocks_private_info[i].flags & (1 << clock_is_in_use)) != 0) {
+      int clock_is_a_timing_peer_somewhere = 0;
+      int temp_client_id;
+      for (temp_client_id = 0; temp_client_id < MAX_CLIENTS; temp_client_id++) {
+        if ((clocks_private_info[i].client_flags[temp_client_id] & (1 << clock_is_a_timing_peer)) !=
+            0) {
+          clock_is_a_timing_peer_somewhere = 1;
+        }
+      }
+      if (clock_is_a_timing_peer_somewhere == 0) {
+        int64_t time_since_last_use = reception_time - clocks_private_info[i].time_of_last_use;
+        // using a sync timeout to determine when to drop the record...
+        // the following give the sync receipt time in whole seconds
+        // depending on the aPTPinitialLogSyncInterval and the aPTPsyncReceiptTimeout
+        int64_t syncTimeout = (1 << (32 + aPTPinitialLogSyncInterval));
+        syncTimeout = syncTimeout * aPTPsyncReceiptTimeout;
+        syncTimeout = syncTimeout >> 32;
+        // seconds to nanoseconds
+        syncTimeout = syncTimeout * 1000000000;
+        if (time_since_last_use > syncTimeout) {
+          uint32_t old_flags = clocks_private_info[i].flags;
+          debug(2, "delete record for: %s.", &clocks_private_info[i].ip);
+          memset(&clocks_private_info[i], 0, sizeof(clock_source_private_data));
+          if (old_flags != 0) {
+            update_master(0); // TODO -- won't be needed
+          }
+        }
+      }
+    }
+  }
+}
+
+// check all the entries in the clock array and mark all those that
+// belong to ourselves
+
+void update_clock_self_identifications(clock_source_private_data *clocks_private_info) {
+  // first, turn off all the self-id flags
+  int i;
+  for (i = 0; i < MAX_CLOCKS; i++) {
+    clocks_private_info[i].flags &= ~(1 << clock_is_one_of_ours);
+  }
+
+  struct ifaddrs *ifap, *ifa;
+  void *addr = NULL;
+  short family;
+  int response = getifaddrs(&ifap);
+  if (response == 0) {
+    for (ifa = ifap; ifa; ifa = ifa->ifa_next) {
+      struct sockaddr *my_ifa_addr = ifa->ifa_addr;
+      if (my_ifa_addr) {
+        family = my_ifa_addr->sa_family;
+#ifdef AF_INET6
+        if (family == AF_INET6) {
+          struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *)my_ifa_addr;
+          addr = &(sa6->sin6_addr);
+        }
+#endif
+        if (family == AF_INET) {
+          struct sockaddr_in *sa4 = (struct sockaddr_in *)my_ifa_addr;
+          addr = &(sa4->sin_addr);
+        }
+        char ip_string[64];
+        memset(ip_string, 0, sizeof(ip_string));
+        if (addr != NULL)
+          inet_ntop(family, addr, ip_string, sizeof(ip_string));
+        if (strlen(ip_string) != 0) {
+          // now set the clock_is_one_of_ours flag of any clock with this ip
+          for (i = 0; i < MAX_CLOCKS; i++) {
+            if (strcasecmp(ip_string, clocks_private_info[i].ip) == 0) {
+              debug(2, "found an entry for one of our clocks");
+              clocks_private_info[i].flags |= (1 << clock_is_one_of_ours);
+            }
+          }
+        }
+      }
+    }
+    freeifaddrs(ifap);
+  } else {
+    debug(1, "getifaddrs error - %s.", strerror(errno));
+  }
+}
+
+int uint32_cmp(uint32_t a, uint32_t b, const char *cause) {
+  // returns -1 if a is less than b, 0 if a = b, +1 if a is greater than b
+  if (a == b) {
+    return 0;
+  } else {
+    debug(2, "Best Master Clock algorithm deciding factor: %s. Values: %u, %u.", cause, a, b);
+    if (a < b)
+      return -1;
+    else
+      return 1;
+  }
+}
+
+int uint64_cmp(uint64_t a, uint64_t b, const char *cause) {
+  // returns -1 if a is less than b, 0 if a = b, +1 if a is greater than b
+  if (a == b) {
+    return 0;
+  } else {
+    debug(2, "Best Master Clock algorithm deciding factor: %s. Values: %" PRIx64 ", %" PRIx64 ".",
+          cause, a, b);
+    if (a < b)
+      return -1;
+    else
+      return 1;
+  }
+}
+
+void update_master(int client_id) {
+  warn("ATTEMPTING TO UPDATE MASTER TO %d", client_id);
+  // This implements the IEEE 1588-2008 best master clock algorithm.
+
+  // However, since nqptp is not a ptp clock, some of it doesn't apply.
+  // Specifically, the Identity of Receiver stuff doesn't apply, since the
+  // program is merely monitoring Announce message data and isn't a PTP clock itself
+  // and thus does not have any kind or receiver identity itself.
+
+  // Clock information coming from the same clock over IPv4 and IPv6 should have different
+  // port numbers.
+
+  // Figure 28 can be therefore be simplified considerably:
+
+  // Since nqptp can not be a receiver, and since nqptp can not originate a clock
+  // (and anyway nqptp filters out packets coming from self)
+  // we can do a single comparison of stepsRemoved and pick the shorter, if any.
+
+  // Figure 28 reduces to checking steps removed and then, if necessary, checking identities.
+  // If we see two identical sets of information, it is an error,
+  // but we leave things as they are.
+  int old_master = -1;
+  // find the current master clock if there is one and turn off all mastership
+  int i;
+  for (i = 0; i < MAX_CLOCKS; i++) {
+    if ((clocks_private[i].client_flags[client_id] & (1 << clock_is_master)) != 0)
+      if (old_master == -1)
+        old_master = i;                                                   // find old master
+    clocks_private[i].client_flags[client_id] &= ~(1 << clock_is_master); // turn them all off
+  }
+
+  int best_so_far = -1;
+  int timing_peer_count = 0;
+  uint32_t clock_specific_acceptance_mask = (1 << clock_is_announced);
+  uint32_t client_specific_acceptance_mask = (1 << clock_is_a_timing_peer);
+  for (i = 0; i < MAX_CLOCKS; i++) {
+    if (((clocks_private[i].flags & clock_specific_acceptance_mask) ==
+         clock_specific_acceptance_mask) &&
+        ((clocks_private[i].client_flags[client_id] & client_specific_acceptance_mask) ==
+         client_specific_acceptance_mask)) {
+      // found a possible clock candidate
+      timing_peer_count++;
+      int outcome;
+      if (best_so_far == -1) {
+        best_so_far = i;
+      } else {
+        // Do the data set comparison detailed in Figure 27 and Figure 28 on pp89-90
+        if (clocks_private[i].grandmasterIdentity ==
+            clocks_private[best_so_far].grandmasterIdentity) {
+          // Do the relevant part of Figure 28:
+          outcome = uint32_cmp(clocks_private[i].stepsRemoved,
+                               clocks_private[best_so_far].stepsRemoved, "steps removed");
+          // we need to check the portIdentify, which is the clock_id and the clock_port_number
+          if (outcome == 0)
+            outcome = uint64_cmp(clocks_private[i].clock_id, clocks_private[best_so_far].clock_id,
+                                 "clock id");
+          if (outcome == 0)
+            outcome =
+                uint32_cmp(clocks_private[i].clock_port_number,
+                           clocks_private[best_so_far].clock_port_number, "clock port number");
+          if (outcome == 0) {
+            debug(1,
+                  "Best Master Clock algorithm: two separate but identical potential clock "
+                  "masters: %" PRIx64 ".",
+                  clocks_private[best_so_far].clock_id);
+          }
+
+        } else {
+          outcome =
+              uint32_cmp(clocks_private[i].grandmasterPriority1,
+                         clocks_private[best_so_far].grandmasterPriority1, "grandmasterPriority1");
+          if (outcome == 0)
+            outcome = uint32_cmp(clocks_private[i].grandmasterClass,
+                                 clocks_private[best_so_far].grandmasterClass, "grandmasterClass");
+          if (outcome == 0)
+            outcome =
+                uint32_cmp(clocks_private[i].grandmasterAccuracy,
+                           clocks_private[best_so_far].grandmasterAccuracy, "grandmasterAccuracy");
+          if (outcome == 0)
+            outcome =
+                uint32_cmp(clocks_private[i].grandmasterVariance,
+                           clocks_private[best_so_far].grandmasterVariance, "grandmasterVariance");
+          if (outcome == 0)
+            outcome = uint32_cmp(clocks_private[i].grandmasterPriority2,
+                                 clocks_private[best_so_far].grandmasterPriority2,
+                                 "grandmasterPriority2");
+          if (outcome == 0)
+            // this can't fail, as it's a condition of entering this section that they are different
+            outcome =
+                uint64_cmp(clocks_private[i].grandmasterIdentity,
+                           clocks_private[best_so_far].grandmasterIdentity, "grandmasterIdentity");
+        }
+        if (outcome == -1)
+          best_so_far = i;
+      }
+    }
+  }
+//  if ((best_so_far == -1) || (best_so_far != old_master)) {
+  if (best_so_far == -1) {
+    // no master clock
+    // if (old_master != -1) {
+    // but there was a master clock, so remove it
+    debug(2, "Remove master clock information from interface %s.", get_client_name(client_id));
+    update_master_clock_info(client_id, 0, NULL, 0, 0, 0);
+    //}
+  }
+  if (best_so_far == -1) {
+    if (timing_peer_count == 0)
+      debug(2, "empty timing peer group ");
+    else
+      debug(1, "no master clock!");
+  } else {
+    // we mark the master clock we found
+    clocks_private[best_so_far].client_flags[client_id] |= (1 << clock_is_master);
+    warn("%d: UPDATED MASTER TO %d", best_so_far, client_id);
+  }
+}
+
+void update_master_clock_info(int client_id, uint64_t master_clock_id, const char *ip, uint64_t local_time,
+                              uint64_t local_to_master_offset, uint64_t mastership_start_time) {
   if (clients[client_id].shm_interface_name[0] != '\0') {
     // debug(1,"update_master_clock_info clock: % " PRIx64 ", offset: %" PRIx64 ".",
     // master_clock_id, local_to_master_offset);
@@ -271,31 +505,4 @@ void update_master_clock_info(int client_id, uint64_t master_clock_id, const cha
       warn("Can't release mutex after updating master clock!");
     // debug(1,"update_master_clock_info done");
   }
-}
-
-void new_update_master_clock_info(uint64_t master_clock_id, const char *ip,
-                              uint64_t local_time, uint64_t local_to_master_offset,
-                              uint64_t mastership_start_time) {
-  // debug(1,"update_master_clock_info clock: % " PRIx64 ", offset: %" PRIx64 ".",
-  // master_clock_id, local_to_master_offset);
-  int rc = pthread_mutex_lock(&shared_memory->shm_mutex);
-  if (rc != 0)
-    warn("Can't acquire mutex to update master clock!");
-  shared_memory->master_clock_id = master_clock_id;
-  if (ip != NULL) {
-    strncpy((char *)&shared_memory->master_clock_ip, ip,
-            FIELD_SIZEOF(struct shm_structure, master_clock_ip) - 1);
-    shared_memory->master_clock_start_time = mastership_start_time;
-    shared_memory->local_time = local_time;
-    shared_memory->local_to_master_time_offset = local_to_master_offset;
-  } else {
-    shared_memory->master_clock_ip[0] = '\0';
-    shared_memory->master_clock_start_time = 0;
-    shared_memory->local_time = 0;
-    shared_memory->local_to_master_time_offset = 0;
-  }
-  rc = pthread_mutex_unlock(&shared_memory->shm_mutex);
-  if (rc != 0)
-    warn("Can't release mutex after updating master clock!");
-  // debug(1,"update_master_clock_info done");
 }

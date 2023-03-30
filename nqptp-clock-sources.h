@@ -25,6 +25,9 @@
 
 typedef enum {
   clock_is_in_use,
+  clock_is_one_of_ours,
+  clock_is_a_timing_peer,
+  clock_is_announced,
   clock_is_master
 } clock_flags;
 
@@ -87,12 +90,9 @@ int delete_clients();
 
 extern clock_source_private_data clocks_private[MAX_CLOCKS];
 
-void update_master_clock_info(int client_id, uint64_t master_clock_id, const char *ip,
-                              uint64_t local_time, uint64_t local_to_master_offset,
-                              uint64_t mastership_start_time);
+void update_master(int client_id);
 
-void new_update_master_clock_info(uint64_t master_clock_id, const char *ip,
-                              uint64_t local_time, uint64_t local_to_master_offset,
-                              uint64_t mastership_start_time);
+void update_master_clock_info(int client_id, uint64_t master_clock_id, const char *ip, uint64_t local_time,
+                              uint64_t local_to_master_offset, uint64_t mastership_start_time);
 
 #endif

@@ -377,6 +377,7 @@ int main(int argc, char **argv) {
                       reception_time; // for garbage collection
                   switch (buf[0] & 0xF) {
                   case Announce:
+                    update_clock_self_identifications((clock_source_private_data *)&clocks_private);
                     handle_announce(buf, recv_len, &clocks_private[the_clock], reception_time);
                     break;
                   case Follow_Up:
@@ -396,8 +397,8 @@ int main(int argc, char **argv) {
           }
         }
       }
-      //if (retval >= 0)
-      //  manage_clock_sources(reception_time, (clock_source_private_data *)&clocks_private);
+      if (retval >= 0)
+       manage_clock_sources(reception_time, (clock_source_private_data *)&clocks_private);
       int i;
       for (i = 0; i < TIMED_TASKS; i++) {
         if (timed_tasks[i].trigger_time != 0) {
