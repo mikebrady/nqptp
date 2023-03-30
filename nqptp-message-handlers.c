@@ -444,7 +444,7 @@ void handle_follow_up(char *buf, ssize_t recv_len, clock_source_private_data *cl
             // ignore negative jitter at first...
             smoothed_offset = clock_private_info->previous_offset;
             if (mastership_time > 1000000000)
-              smoothed_offset += clamped_jitter / 64; // later, if jitter is negative
+              smoothed_offset += clamped_jitter / 256; // later, if jitter is negative
           } else if (mastership_time < 1000000000) { // at the beginning
             smoothed_offset =
                 clock_private_info->previous_offset +
@@ -452,7 +452,7 @@ void handle_follow_up(char *buf, ssize_t recv_len, clock_source_private_data *cl
                     1; // at the beginning, if jitter is positive -- accept positive changes quickly
           } else {
             smoothed_offset =
-                clock_private_info->previous_offset + jitter / 64; // later, if jitter is positive
+                clock_private_info->previous_offset + jitter / 16; // later, if jitter is positive
           }
         } else {
           if (clock_private_info->previous_offset_time == 0)
