@@ -3,10 +3,8 @@
 
 It is a companion application to [Shairport Sync](https://github.com/mikebrady/shairport-sync) and provides timing information for AirPlay 2 operation.
 
-# Danger
-This branch of the NQPTP repository is very likely to be buggy and can change very rapidly and without warning. The `development` branch is more stable, although it too may contains bugs. The `master` branch is the most stable.
-
-The `danger` branch version of NQPTP may only be compatible with the `danger` branch of Shairport Sync. 
+# Development
+This branch -- the `development` branch -- changes relatively rapidly and may contain significant bugs. The `main` branch is the most stable. Use it with the `development` branch of Shairport Sync.
 
 ## Installation
 
@@ -46,7 +44,7 @@ Note that you will need superuser privileges to install, enable and start the da
 ```
 $ git clone https://github.com/mikebrady/nqptp.git
 $ cd nqptp
-$ git checkout danger
+$ git checkout development
 $ autoreconf -fi
 $ ./configure --with-systemd-startup
 $ make
@@ -56,7 +54,7 @@ $ make
 ```
 $ git clone https://github.com/mikebrady/nqptp.git
 $ cd nqptp
-$ git checkout danger
+$ git checkout development
 $ autoreconf -fi
 $ ./configure --with-freebsd-startup
 $ make
