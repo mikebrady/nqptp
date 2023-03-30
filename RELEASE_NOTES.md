@@ -2,6 +2,7 @@
 **Bug Fixes**
 * Use the previous offset if a negative jitter for the first period.
 * Fix a misleading comment.
+
 **Enhancements**
 * Tune the weights of offset additions and reductions to further reduce the offset errors in the initial adjustment period.
 
