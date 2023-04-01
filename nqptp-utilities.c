@@ -50,7 +50,7 @@ void open_sockets_at_port(const char *node, uint16_t port, sockets_open_bundle *
   int ret;
 
   memset(&hints, 0, sizeof(hints));
-  hints.ai_family = AF_UNSPEC;
+  hints.ai_family = sockets_open_stuff->ai_family;
   hints.ai_socktype = SOCK_DGRAM;
   hints.ai_flags = AI_PASSIVE;
 

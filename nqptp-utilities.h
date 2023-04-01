@@ -36,6 +36,7 @@ typedef struct {
 typedef struct {
   unsigned int sockets_open; // also doubles as where to put next one, as sockets are never closed.
   socket_info sockets[MAX_OPEN_SOCKETS];
+  int ai_family;
 } sockets_open_bundle;
 
 void open_sockets_at_port(const char *node, uint16_t port, sockets_open_bundle *sockets_open_stuff);

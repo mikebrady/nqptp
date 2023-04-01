@@ -30,6 +30,7 @@
 #endif
 
 #include <arpa/inet.h> // inet_ntop
+#include <netdb.h>     // getaddrinfo etc.
 #include <stdio.h>     // fprint
 #include <stdlib.h>    // malloc;
 #include <string.h>    // memset
@@ -126,6 +127,9 @@ int main(int argc, char **argv) {
 
   int debug_level = 0;
   int i;
+
+  sockets_open_stuff.ai_family = AF_UNSPEC;
+
   for (i = 1; i < argc; ++i) {
     if (argv[i][0] == '-') {
       if (strcmp(argv[i] + 1, "V") == 0) {
@@ -145,12 +149,15 @@ int main(int argc, char **argv) {
         debug_level = 2;
       } else if (strcmp(argv[i] + 1, "v") == 0) {
         debug_level = 1;
+      } else if (strcmp(argv[i] + 1, "ipv4-only") == 0) {
+        sockets_open_stuff.ai_family = AF_INET;
       } else if (strcmp(argv[i] + 1, "h") == 0) {
-        fprintf(stdout, "    -V     print version,\n"
-                        "    -v     verbose log,\n"
-                        "    -vv    more verbose log,\n"
-                        "    -vvv   very verbose log,\n"
-                        "    -h     this help text.\n");
+        fprintf(stdout, "    -V           print version,\n"
+                        "    -ipv4-only   IPv4 only\n"
+                        "    -v           verbose log,\n"
+                        "    -vv          more verbose log,\n"
+                        "    -vvv         very verbose log,\n"
+                        "    -h           this help text.\n");
         exit(EXIT_SUCCESS);
       } else {
         fprintf(stdout, "%s -- unknown option. Program terminated.\n", argv[0]);
