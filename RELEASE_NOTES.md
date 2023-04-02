@@ -1,3 +1,7 @@
+## Version: 1.1-dev-207-ge14575b
+**Bug Fix**
+* Due to a bug, the ports used by NQPTP -- ports 319, 320 and 9000 -- had to be available on all IP protocols on the system. For example, if IPv6 and IPv4 were available on the system and a port could be opened on IPv4 but not on IPv6 , Shairport Sync would fail. This has been fixed. As before, ports will be opened on all IP protocols available, but only one needs to be successfully opened. Many thanks to [Ferdynand Naczynski](https://github.com/nipsufn) for their detective work and for developing a fix.
+
 ## Version: 1.1-dev-199-g2b5490c
 **Bug Fixes**
 * Use the previous offset if a negative jitter for the first period.
