@@ -43,11 +43,16 @@
 
 #include "debug.h"
 
-void open_sockets_at_port(const char *node, uint16_t port, sockets_open_bundle *sockets_open_stuff) {
+void open_sockets_at_port(const char *node, uint16_t port,
+                          sockets_open_bundle *sockets_open_stuff) {
   // open up sockets for UDP ports 319 and 320
+
+  // will try IPv6 and IPv4 if IPV6_V6ONLY is not defined
 
   struct addrinfo hints, *info, *p;
   int ret;
+
+  int sockets_opened = 0;
 
   memset(&hints, 0, sizeof(hints));
   hints.ai_family = AF_UNSPEC;
@@ -85,26 +90,31 @@ void open_sockets_at_port(const char *node, uint16_t port, sockets_open_bundle *
       fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 
       // one of the address families will fail on some systems that
-      // report its availability. do not complain.
+      // report its availability. Do not complain.
 
-      if (ret) {
-        die("unable to listen on %s port %d. The error is: \"%s\". Daemon must run as root. Or is "
-            "a "
-            "separate PTP daemon running?",
-            p->ai_family == AF_INET6 ? "IPv6" : "IPv4", port, strerror(errno));
-      } else {
-
+      if (ret == 0) {
         // debug(1, "socket %d is listening on %s port %d.", fd,
         //       p->ai_family == AF_INET6 ? "IPv6" : "IPv4", port);
         sockets_open_stuff->sockets[sockets_open_stuff->sockets_open].number = fd;
         sockets_open_stuff->sockets[sockets_open_stuff->sockets_open].port = port;
         sockets_open_stuff->sockets[sockets_open_stuff->sockets_open].family = p->ai_family;
         sockets_open_stuff->sockets_open++;
+        sockets_opened++;
       }
     }
   }
-
   freeaddrinfo(info);
+  if (sockets_opened == 0) {
+    if (port < 1024)
+      die("unable to listen on port %d. The error is: \"%s\". NQPTP must run as root to access "
+          "this port. Or is another PTP daemon -- possibly another instance on NQPTP -- running "
+          "already?",
+          port, strerror(errno));
+    else
+      die("unable to listen on port %d. The error is: \"%s\". "
+          "Is another instance on NQPTP running already?",
+          port, strerror(errno));
+  }
 }
 
 void debug_print_buffer(int level, char *buf, size_t buf_len) {
