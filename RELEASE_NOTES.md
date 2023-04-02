@@ -1,3 +1,11 @@
+## Version: 1.1-dev-199-g2b5490c
+**Bug Fixes**
+* Use the previous offset if a negative jitter for the first period.
+* Fix a misleading comment.
+
+**Enhancements**
+* Tune the weights of offset additions and reductions to further reduce the offset errors in the initial adjustment period.
+
 ## Version: 1.1-dev-196-g9fc0501
 **Enhancement**
 * Finally (!) the suggestion made by [the0u](https://github.com/th0u) in [Issue #14]() has been acted upon and the suggested modifications made so that NQPTP will only listen to connections made to port 9000 coming from `localhost`. Thanks to [the0u](https://github.com/th0u) for the suggestion and the code. Thanks to [herrernst](https://github.com/herrernst) for the reminder!
