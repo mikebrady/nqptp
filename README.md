@@ -10,7 +10,7 @@ This guide is for recent Linux and FreeBSD systems.
 As usual, you should first ensure everything is up to date.
 
 #### Please use `git`!
-As you probably know, you can download the repository in two ways: (1) using `git` to clone it  -- recommended -- or (2) downloading the repository as a ZIP archive. Please us the `git` method. The reason it that when you use `git`,
+As you probably know, you can download the repository in two ways: (1) using `git` to clone it  -- recommended -- or (2) downloading the repository as a ZIP archive. Please use the `git` method. The reason it that when you use `git`,
 the build process can incorporate the `git` build information in the version string you get when you execute the command `$ nqptp -V`.
 This will be very useful for identifying the exact build if you are making comments or bug reports. Here is an example:
 ```
