@@ -23,10 +23,7 @@
 #include "nqptp-shm-structures.h"
 #include "nqptp.h"
 
-typedef enum {
-  clock_is_in_use,
-  clock_is_master
-} clock_flags;
+typedef enum { clock_is_in_use, clock_is_master } clock_flags;
 
 // information about each clock source
 typedef struct {
@@ -43,7 +40,6 @@ typedef struct {
   uint64_t time_of_last_use; // will be taken out of use if not used for a while and not in the
                              // timing peer group
   uint8_t flags;             // stuff related specifically to the clock itself
-  uint8_t client_flags[MAX_CLIENTS]; // stuff related to membership of the clients' timing lists
 
   // these are for finding the best clock to use
   // See Figure 27 and 27 pp 89 -- 90 for the Data set comparison algorithm
@@ -57,6 +53,7 @@ typedef struct {
   uint64_t grandmasterIdentity;
   uint16_t stepsRemoved;
   int identical_previous_preciseOriginTimestamp_count;
+  int wakeup_sent;
 
 } clock_source_private_data;
 
@@ -87,12 +84,7 @@ int delete_clients();
 
 extern clock_source_private_data clocks_private[MAX_CLOCKS];
 
-void update_master_clock_info(int client_id, uint64_t master_clock_id, const char *ip,
-                              uint64_t local_time, uint64_t local_to_master_offset,
-                              uint64_t mastership_start_time);
-
-void new_update_master_clock_info(uint64_t master_clock_id, const char *ip,
-                              uint64_t local_time, uint64_t local_to_master_offset,
-                              uint64_t mastership_start_time);
+void update_master_clock_info(uint64_t master_clock_id, const char *ip, uint64_t local_time,
+                              uint64_t local_to_master_offset, uint64_t mastership_start_time);
 
 #endif

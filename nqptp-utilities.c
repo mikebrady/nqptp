@@ -29,8 +29,8 @@
 #endif
 
 #ifdef CONFIG_FOR_FREEBSD
-#include <unistd.h>
 #include <sys/types.h>
+#include <unistd.h>
 #include <net/if_dl.h>
 #include <net/if_types.h>
 #include <sys/socket.h>
@@ -43,11 +43,16 @@
 
 #include "debug.h"
 
-void open_sockets_at_port(uint16_t port, sockets_open_bundle *sockets_open_stuff) {
+void open_sockets_at_port(const char *node, uint16_t port,
+                          sockets_open_bundle *sockets_open_stuff) {
   // open up sockets for UDP ports 319 and 320
+
+  // will try IPv6 and IPv4 if IPV6_V6ONLY is not defined
 
   struct addrinfo hints, *info, *p;
   int ret;
+
+  int sockets_opened = 0;
 
   memset(&hints, 0, sizeof(hints));
   hints.ai_family = AF_UNSPEC;
@@ -57,7 +62,7 @@ void open_sockets_at_port(uint16_t port, sockets_open_bundle *sockets_open_stuff
   char portstr[20];
   snprintf(portstr, 20, "%d", port);
 
-  ret = getaddrinfo(NULL, portstr, &hints, &info);
+  ret = getaddrinfo(node, portstr, &hints, &info);
   if (ret) {
     die("getifaddrs: %s", gai_strerror(ret));
   }
@@ -85,26 +90,31 @@ void open_sockets_at_port(uint16_t port, sockets_open_bundle *sockets_open_stuff
       fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 
       // one of the address families will fail on some systems that
-      // report its availability. do not complain.
+      // report its availability. Do not complain.
 
-      if (ret) {
-        die("unable to listen on %s port %d. The error is: \"%s\". Daemon must run as root. Or is "
-            "a "
-            "separate PTP daemon running?",
-            p->ai_family == AF_INET6 ? "IPv6" : "IPv4", port, strerror(errno));
-      } else {
-
+      if (ret == 0) {
         // debug(1, "socket %d is listening on %s port %d.", fd,
         //       p->ai_family == AF_INET6 ? "IPv6" : "IPv4", port);
         sockets_open_stuff->sockets[sockets_open_stuff->sockets_open].number = fd;
         sockets_open_stuff->sockets[sockets_open_stuff->sockets_open].port = port;
         sockets_open_stuff->sockets[sockets_open_stuff->sockets_open].family = p->ai_family;
         sockets_open_stuff->sockets_open++;
+        sockets_opened++;
       }
     }
   }
-
   freeaddrinfo(info);
+  if (sockets_opened == 0) {
+    if (port < 1024)
+      die("unable to listen on port %d. The error is: \"%s\". NQPTP must run as root to access "
+          "this port. Or is another PTP daemon -- possibly another instance on NQPTP -- running "
+          "already?",
+          port, strerror(errno));
+    else
+      die("unable to listen on port %d. The error is: \"%s\". "
+          "Is another instance on NQPTP running already?",
+          port, strerror(errno));
+  }
 }
 
 void debug_print_buffer(int level, char *buf, size_t buf_len) {
@@ -167,7 +177,7 @@ int get_device_id(uint8_t *id, int *int_length) {
   struct ifaddrs *ifa = NULL;
   int i = 0;
   uint8_t *t = id;
-  
+
   // clear the buffer if non zero length passed in
   for (i = 0; i < max_length; i++) {
     *t++ = 0;
@@ -177,7 +187,7 @@ int get_device_id(uint8_t *id, int *int_length) {
   if (getifaddrs(&ifaddr) != -1) {
     t = id;
     int found = 0;
-    
+
     for (ifa = ifaddr; ((ifa != NULL) && (found == 0)); ifa = ifa->ifa_next) {
 #ifdef AF_PACKET
       if ((ifa->ifa_addr) && (ifa->ifa_addr->sa_family == AF_PACKET)) {
@@ -211,7 +221,6 @@ int get_device_id(uint8_t *id, int *int_length) {
       }
 #endif
 #endif
-
     }
     if (found != 0)
       response = 0;
@@ -220,13 +229,12 @@ int get_device_id(uint8_t *id, int *int_length) {
   return response;
 }
 
-
 uint64_t get_self_clock_id() {
   // make up a clock ID based on an interface's MAC
   int local_clock_id_size = 8; // don't exceed this
   uint8_t local_clock_id[local_clock_id_size];
-  memset(local_clock_id,0,local_clock_id_size);
-  if (get_device_id(local_clock_id,&local_clock_id_size) == 0) {
+  memset(local_clock_id, 0, local_clock_id_size);
+  if (get_device_id(local_clock_id, &local_clock_id_size) == 0) {
     // if the length of the MAC address is 6 we need to doctor it a little
     // See Section 7.5.2.2.2 IEEE EUI-64 clockIdentity values, NOTE 2
 

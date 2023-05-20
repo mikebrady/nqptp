@@ -49,6 +49,7 @@ struct shm_structure *shared_memory;
 clock_source_private_data clocks_private[MAX_CLOCKS];
 client_record clients[MAX_CLIENTS];
 
+/*
 const char *get_client_name(int client_id) {
   if ((client_id >= 0) && (client_id < MAX_CLIENTS)) {
     return clients[client_id].shm_interface_name;
@@ -56,6 +57,7 @@ const char *get_client_name(int client_id) {
     return "";
   }
 }
+*/
 
 int get_client_id(char *client_shared_memory_interface_name) {
   int response = -1; // signify not found
@@ -140,10 +142,10 @@ int get_client_id(char *client_shared_memory_interface_name) {
           die("mutex attribute destruction failed - %s.", strerror(errno));
         }
 
-        for (i = 0; i < MAX_CLOCKS; i++) {
-          clocks_private[i].client_flags[response] =
-              0; // turn off all client flags in every clock for this client
-        }
+        // for (i = 0; i < MAX_CLOCKS; i++) {
+        //  clocks_private[i].client_flags[response] =
+        //      0; // turn off all client flags in every clock for this client
+        // }
       } else {
         debug(1, "could not create a client record for client \"%s\".",
               client_shared_memory_interface_name);
@@ -244,38 +246,8 @@ int create_clock_source_record(char *sender_string,
   return response;
 }
 
-void update_master_clock_info(int client_id, uint64_t master_clock_id, const char *ip,
-                              uint64_t local_time, uint64_t local_to_master_offset,
-                              uint64_t mastership_start_time) {
-  if (clients[client_id].shm_interface_name[0] != '\0') {
-    // debug(1,"update_master_clock_info clock: % " PRIx64 ", offset: %" PRIx64 ".",
-    // master_clock_id, local_to_master_offset);
-    int rc = pthread_mutex_lock(&clients[client_id].shared_memory->shm_mutex);
-    if (rc != 0)
-      warn("Can't acquire mutex to update master clock!");
-    clients[client_id].shared_memory->master_clock_id = master_clock_id;
-    if (ip != NULL) {
-      strncpy((char *)&clients[client_id].shared_memory->master_clock_ip, ip,
-              FIELD_SIZEOF(struct shm_structure, master_clock_ip) - 1);
-      clients[client_id].shared_memory->master_clock_start_time = mastership_start_time;
-      clients[client_id].shared_memory->local_time = local_time;
-      clients[client_id].shared_memory->local_to_master_time_offset = local_to_master_offset;
-    } else {
-      clients[client_id].shared_memory->master_clock_ip[0] = '\0';
-      clients[client_id].shared_memory->master_clock_start_time = 0;
-      clients[client_id].shared_memory->local_time = 0;
-      clients[client_id].shared_memory->local_to_master_time_offset = 0;
-    }
-    rc = pthread_mutex_unlock(&clients[client_id].shared_memory->shm_mutex);
-    if (rc != 0)
-      warn("Can't release mutex after updating master clock!");
-    // debug(1,"update_master_clock_info done");
-  }
-}
-
-void new_update_master_clock_info(uint64_t master_clock_id, const char *ip,
-                              uint64_t local_time, uint64_t local_to_master_offset,
-                              uint64_t mastership_start_time) {
+void update_master_clock_info(uint64_t master_clock_id, const char *ip, uint64_t local_time,
+                              uint64_t local_to_master_offset, uint64_t mastership_start_time) {
   // debug(1,"update_master_clock_info clock: % " PRIx64 ", offset: %" PRIx64 ".",
   // master_clock_id, local_to_master_offset);
   int rc = pthread_mutex_lock(&shared_memory->shm_mutex);

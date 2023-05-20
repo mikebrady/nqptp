@@ -89,21 +89,20 @@ void goodbye(void) {
   unsigned int i;
   for (i = 0; i < sockets_open_stuff.sockets_open; i++)
     close(sockets_open_stuff.sockets[i].number);
-    
 
   // close off shared memory interface
   delete_clients();
-  
+
   // close off new smi
   // mmap cleanup
   if (munmap(shared_memory, sizeof(struct shm_structure)) != 0) {
-    debug(1, "error unmapping shared memory");
+    debug(1, "error unmapping shared memory \"%s\": \"%s\".", NQPTP_INTERFACE_NAME, strerror(errno));
   }
   // shm_open cleanup
   if (shm_unlink(NQPTP_INTERFACE_NAME) == -1) {
-    debug(1, "error unlinking shared memory \"%s\"", NQPTP_INTERFACE_NAME);
+    debug(1, "error unlinking shared memory \"%s\": \"%s\".", NQPTP_INTERFACE_NAME, strerror(errno));
   }
-  
+
   if (shm_fd != -1)
     close(shm_fd);
 
@@ -132,12 +131,12 @@ int main(int argc, char **argv) {
       if (strcmp(argv[i] + 1, "V") == 0) {
 #ifdef CONFIG_USE_GIT_VERSION_STRING
         if (git_version_string[0] != '\0')
-          fprintf(stdout, "Version: %s. Shared Memory Interface Version: %u.\n", git_version_string,
+          fprintf(stdout, "Version: %s. Shared Memory Interface Version: smi%u.\n", git_version_string,
                   NQPTP_SHM_STRUCTURES_VERSION);
         else
 #endif
 
-          fprintf(stdout, "Version: %s. Shared Memory Interface Version: %u.\n", VERSION,
+          fprintf(stdout, "Version: %s. Shared Memory Interface Version: smi%u.\n", VERSION,
                   NQPTP_SHM_STRUCTURES_VERSION);
         exit(EXIT_SUCCESS);
       } else if (strcmp(argv[i] + 1, "vvv") == 0) {
@@ -159,9 +158,18 @@ int main(int argc, char **argv) {
       }
     }
   }
-  
+
   debug_init(debug_level, 0, 1, 1);
-  debug(1, "Startup. Clock ID: \"%" PRIx64 "\".", get_self_clock_id());
+
+#ifdef CONFIG_USE_GIT_VERSION_STRING
+  if (git_version_string[0] != '\0')
+    debug(1, "Version: %s, smi%u. Clock ID: \"%" PRIx64 "\".", git_version_string,
+          NQPTP_SHM_STRUCTURES_VERSION, get_self_clock_id());
+  else
+#endif
+    debug(1, "Version: %s, smi%u. Clock ID: \"%" PRIx64 "\".", VERSION,
+          NQPTP_SHM_STRUCTURES_VERSION, get_self_clock_id());
+
   // debug(1, "size of a clock entry is %u bytes.", sizeof(clock_source_private_data));
   atexit(goodbye);
 
@@ -180,7 +188,7 @@ int main(int argc, char **argv) {
   memset(&act2, 0, sizeof(struct sigaction));
   act2.sa_handler = termHandler;
   sigaction(SIGTERM, &act2, NULL);
-  
+
   // open the SMI
 
   pthread_mutexattr_t shared;
@@ -200,9 +208,8 @@ int main(int argc, char **argv) {
   }
 
 #ifdef CONFIG_FOR_FREEBSD
-  shared_memory =
-      (struct shm_structure *)mmap(NULL, sizeof(struct shm_structure), PROT_READ | PROT_WRITE,
-                                   MAP_SHARED, shm_fd, 0);
+  shared_memory = (struct shm_structure *)mmap(NULL, sizeof(struct shm_structure),
+                                               PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
 #endif
 
 #ifdef CONFIG_FOR_LINUX
@@ -246,9 +253,9 @@ int main(int argc, char **argv) {
 
   // open sockets 319 and 320
 
-  open_sockets_at_port(319, &sockets_open_stuff);
-  open_sockets_at_port(320, &sockets_open_stuff);
-  open_sockets_at_port(NQPTP_CONTROL_PORT,
+  open_sockets_at_port(NULL, 319, &sockets_open_stuff);
+  open_sockets_at_port(NULL, 320, &sockets_open_stuff);
+  open_sockets_at_port("localhost", NQPTP_CONTROL_PORT,
                        &sockets_open_stuff); // this for messages from the client
 
   // start the timed tasks
@@ -329,8 +336,8 @@ int main(int argc, char **argv) {
               // check if it's a control port message before checking for the length of the
               // message.
             } else if (receiver_port == NQPTP_CONTROL_PORT) {
-              handle_control_port_messages(buf, recv_len,
-                                           (clock_source_private_data *)&clocks_private);
+              handle_control_port_messages(
+                  buf, recv_len, (clock_source_private_data *)&clocks_private, reception_time);
             } else if (recv_len >= (ssize_t)sizeof(struct ptp_common_message_header)) {
               debug_print_buffer(2, buf, recv_len);
 
@@ -396,7 +403,7 @@ int main(int argc, char **argv) {
           }
         }
       }
-      //if (retval >= 0)
+      // if (retval >= 0)
       //  manage_clock_sources(reception_time, (clock_source_private_data *)&clocks_private);
       int i;
       for (i = 0; i < TIMED_TASKS; i++) {
@@ -511,30 +518,32 @@ uint64_t broadcasting_task(uint64_t call_time, __attribute__((unused)) void *pri
   int i;
   for (i = 0; i < MAX_CLOCKS; i++) {
 
-    int is_a_master = 0;
-    int temp_client_id;
+    /*
+        int is_a_master = 0;
+        int temp_client_id;
 
-    for (temp_client_id = 0; temp_client_id < MAX_CLIENTS; temp_client_id++)
-      if ((clocks_private->client_flags[temp_client_id] & (1 << clock_is_master)) != 0)
-        is_a_master = 1;
-
-    // only process it if it's a master somewhere...
-    if ((is_a_master != 0) && (clocks_private[i].announcements_without_followups == 3)) {
+        for (temp_client_id = 0; temp_client_id < MAX_CLIENTS; temp_client_id++)
+          if ((clocks_private->client_flags[temp_client_id] & (1 << clock_is_master)) != 0)
+            is_a_master = 1;
+        // only process it if it's a master somewhere...
+        if ((is_a_master != 0) && (clocks_private[i].announcements_without_followups == 3)) {
+    */
+    if (clocks_private[i].announcements_without_followups == 3) {
       if (clocks_private[i].follow_up_number == 0) {
-      debug(1,
-            "Attempt to awaken a silent clock %" PRIx64
-            ", index %u, at follow_up_number %u at IP %s.",
-            clocks_private[i].clock_id, i, clocks_private[i].follow_up_number,
-            clocks_private[i].ip);
+        debug(1,
+              "Attempt to awaken a silent clock %" PRIx64
+              ", index %u, at follow_up_number %u at IP %s.",
+              clocks_private[i].clock_id, i, clocks_private[i].follow_up_number,
+              clocks_private[i].ip);
 
-      // send an Announce message to attempt to waken this silent PTP clock by
-      // getting it to negotiate with an apparently better clock
-      // that then immediately sends another Announce message indicating that it's inferior
+        // send an Announce message to attempt to waken this silent PTP clock by
+        // getting it to negotiate with an apparently better clock
+        // that then immediately sends another Announce message indicating that it's inferior
 
-      clocks_private[i].announcements_without_followups++; // set to 4 to indicate done/parked
-      send_awakening_announcement_sequence(
-          clocks_private[i].clock_id, clocks_private[i].ip, clocks_private[i].family,
-          clocks_private[i].grandmasterPriority1, clocks_private[i].grandmasterPriority2);
+        clocks_private[i].announcements_without_followups++; // set to 4 to indicate done/parked
+        send_awakening_announcement_sequence(
+            clocks_private[i].clock_id, clocks_private[i].ip, clocks_private[i].family,
+            clocks_private[i].grandmasterPriority1, clocks_private[i].grandmasterPriority2);
       } else {
         debug(1,
               "Silent clock %" PRIx64

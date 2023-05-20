@@ -145,16 +145,16 @@ struct __attribute__((__packed__)) ptp_common_message_header {
   uint8_t transportSpecificAndMessageID; // 0x11
   uint8_t reservedAndVersionPTP;         // 0x02
   uint16_t messageLength;
-  uint8_t domainNumber;        // 0
-  uint8_t reserved_b;          // 0
-  uint16_t flags;              // 0x0608
-  uint64_t correctionField;    // 0
-  uint32_t reserved_l;         // 0
-  uint8_t clockIdentity[8];    // MAC
-  uint16_t sourcePortID;       // 1
-  uint16_t sequenceId;         // increments
-  uint8_t controlField; // 5
-  uint8_t logMessagePeriod;    // 0
+  uint8_t domainNumber;     // 0
+  uint8_t reserved_b;       // 0
+  uint16_t flags;           // 0x0608
+  uint64_t correctionField; // 0
+  uint32_t reserved_l;      // 0
+  uint8_t clockIdentity[8]; // MAC
+  uint16_t sourcePortID;    // 1
+  uint16_t sequenceId;      // increments
+  uint8_t controlField;     // 5
+  uint8_t logMessagePeriod; // 0
 };
 
 // this is the extra part for an Announce message

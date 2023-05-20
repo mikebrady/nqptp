@@ -1,3 +1,36 @@
+## Version: 1.2
+
+***Pesky Changes You Can't Ignore***
+
+* **Important**. The protocol that Shairport Sync and NQPTP use to communicate with one another has been updated to reflect changes in NQPTP's operation. Please update both NQPTP and Shairport Sync so that they both use the same Shared Memory Interface Version. 
+
+  This version of NQPTP uses Shared Memory Interface Version `smi9`. (You can check `nqptp` using `$ nqptp -V`.)
+
+**Enhancements**
+* Enable NQPTP to respond to information about the state of the player -- whether is is playing, stopped or paused. The "B" command is a message that the client -- which generates the clock -- is about to start playing. The "E" command signifies that the client has stopped playing and that the clock may shortly sleep. The "P" command signifies that play has paused (buffered audio only). The clock seems to stay running in this state.
+This is important because the clock from the source can stop or run slow when the source is not actively playing. This arrangement seems to be much more resilient than having NQPTP try to detect when a clock is stopped or running slow. It also allows the code to be  simplified.
+
+## Version: 1.1-dev-207-ge14575b
+**Bug Fix**
+* Due to a bug, the ports used by NQPTP -- ports 319, 320 and 9000 -- had to be available on all IP protocols on the system. For example, if IPv6 and IPv4 were available on the system and a port could be opened on IPv4 but not on IPv6 , Shairport Sync would fail. This has been fixed. As before, ports will be opened on all IP protocols available, but only one needs to be successfully opened. Many thanks to [Ferdynand Naczynski](https://github.com/nipsufn) for their detective work and for developing a fix.
+
+## Version: 1.1-dev-199-g2b5490c
+**Bug Fixes**
+* Use the previous offset if a negative jitter for the first period.
+* Fix a misleading comment.
+
+**Enhancements**
+* Tune the weights of offset additions and reductions to further reduce the offset errors in the initial adjustment period.
+
+## Version: 1.1-dev-196-g9fc0501
+**Enhancement**
+* Finally (!) the suggestion made by [the0u](https://github.com/th0u) in [Issue #14]() has been acted upon and the suggested modifications made so that NQPTP will only listen to connections made to port 9000 coming from `localhost`. Thanks to [the0u](https://github.com/th0u) for the suggestion and the code. Thanks to [herrernst](https://github.com/herrernst) for the reminder!
+
+## Version: 1.1-dev-195-g93f1e8a
+
+**Enhancement**
+* NQPTP has been simplified and is more resilient to adverse network conditions.
+
 ## Version: 1.1-dev-175-g264805d
 Weird build numbers.
 

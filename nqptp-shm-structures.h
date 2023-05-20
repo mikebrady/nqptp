@@ -22,26 +22,36 @@
 
 #define NQPTP_INTERFACE_NAME "/nqptp"
 
-#define NQPTP_SHM_STRUCTURES_VERSION 8
+#define NQPTP_SHM_STRUCTURES_VERSION 9
 #define NQPTP_CONTROL_PORT 9000
 
-// The control port expects a UDP packet with the first space-delimited string
-// being the name of the shared memory interface (SMI) to be used.
-// This allows client applications to have a dedicated named SMI interface with
-// a timing peer list independent of other clients.
-// The name given must be a valid SMI name and must contain no spaces.
-// If the named SMI interface doesn't exist it will be created by NQPTP.
-// The SMI name should be delimited by a space and followed by a command letter.
-// At present, the only command is "T", which must followed by nothing or by
-// a space and a space-delimited list of IPv4 or IPv6 numbers,
-// the whole not to exceed 4096 characters in total.
+// The control port expects a UDP packet with the first character being a command letter
+// and the rest being any arguments, the whole not to exceed 4096 characters.
+// The "T" command,  must followed by nothing or by
+// a space and a space-delimited list of IPv4 or IPv6 numbers.
 // The IPs, if provided, will become the new list of timing peers, replacing any
-// previous list. If the master clock of the new list is the same as that of the old list,
-// the master clock is retained without resynchronisation; this means that non-master
-// devices can be added and removed without disturbing the SMI's existing master clock.
+// previous list. The first IP number is the clock that NQPTP will listen to.
+// The remaining IP address are the addresses of all the timing peers. The timing peers
+// are not used in this version of NQPTP.
 // If no timing list is provided, the existing timing list is deleted.
-// (In future version of NQPTP the SMI interface may also be deleted at this point.)
-// SMI interfaces are not currently deleted or garbage collected.
+// The "B" command is a message that the client -- which generates the clock --
+// is about to start playing.
+// NQPTP uses it to determine that the clock is active and will not sleep.
+// The "E" command signifies that the client has stopped playing and that
+// the clock may shortly sleep.
+// The "P" command signifies that SPS has paused play (buffered audio only).
+// The clock seems to stay running in this state.
+
+// When the clock is active, it is assumed that any decreases in the offset
+// between the local and remote clocks are due to delays in the network.
+// NQPTP smooths the offset by clamping any decreases to a small value.
+// In this way, it can follow clock drift but ignore network delays.
+
+// When the clock is inactive, it can stop running. This causes the offset to decrease.
+// NQPTP clock smoothing would treat this as a network delay, causing true sync to be lost.
+// To avoid this, when the clock goes from inactive to active,
+// NQPTP resets clock smoothing to the new offset. 
+
 
 #include <inttypes.h>
 #include <pthread.h>
