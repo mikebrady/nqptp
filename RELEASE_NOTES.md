@@ -1,4 +1,4 @@
-## Version: 1.1-dev-209-g5471c6c
+## Version: 1.2
 
 ***Pesky Changes You Can't Ignore***
 
