@@ -131,12 +131,12 @@ int main(int argc, char **argv) {
       if (strcmp(argv[i] + 1, "V") == 0) {
 #ifdef CONFIG_USE_GIT_VERSION_STRING
         if (git_version_string[0] != '\0')
-          fprintf(stdout, "Version: %s. Shared Memory Interface Version: %u.\n", git_version_string,
+          fprintf(stdout, "Version: %s. Shared Memory Interface Version: smi-%u.\n", git_version_string,
                   NQPTP_SHM_STRUCTURES_VERSION);
         else
 #endif
 
-          fprintf(stdout, "Version: %s. Shared Memory Interface Version: %u.\n", VERSION,
+          fprintf(stdout, "Version: %s. Shared Memory Interface Version: smi-%u.\n", VERSION,
                   NQPTP_SHM_STRUCTURES_VERSION);
         exit(EXIT_SUCCESS);
       } else if (strcmp(argv[i] + 1, "vvv") == 0) {
@@ -163,11 +163,11 @@ int main(int argc, char **argv) {
 
 #ifdef CONFIG_USE_GIT_VERSION_STRING
   if (git_version_string[0] != '\0')
-    debug(1, "Version: %s, SMI: %u. Clock ID: \"%" PRIx64 "\".", git_version_string,
+    debug(1, "Version: %s, smi-%u. Clock ID: \"%" PRIx64 "\".", git_version_string,
           NQPTP_SHM_STRUCTURES_VERSION, get_self_clock_id());
   else
 #endif
-    debug(1, "Version: %s, SMI: %u. Clock ID: \"%" PRIx64 "\".", VERSION,
+    debug(1, "Version: %s, smi-%u. Clock ID: \"%" PRIx64 "\".", VERSION,
           NQPTP_SHM_STRUCTURES_VERSION, get_self_clock_id());
 
   // debug(1, "size of a clock entry is %u bytes.", sizeof(clock_source_private_data));
