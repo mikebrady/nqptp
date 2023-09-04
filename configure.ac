@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.68])
-AC_INIT([nqptp], [1.2.3], [4265913+mikebrady@users.noreply.github.com])
+AC_INIT([nqptp], [1.2.4d0], [4265913+mikebrady@users.noreply.github.com])
 AM_INIT_AUTOMAKE
 AC_CANONICAL_HOST
 
