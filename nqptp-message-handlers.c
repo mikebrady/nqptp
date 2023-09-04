@@ -51,133 +51,139 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
                                   clock_source_private_data *clock_private_info,
                                   uint64_t reception_time) {
   if (recv_len != -1) {
-    buf[recv_len - 1] = 0; // make sure there's a null in it!
-    debug(2, "New control port message: \"%s\".", buf);
-    // we need to get the client shared memory interface name from the front
-    char *ip_list = buf;
-    char *smi_name = strsep(&ip_list, " ");
-    char *command = NULL;
-    if (smi_name != NULL) {
-      if (ip_list != NULL)
-        command = strsep(&ip_list, " ");
+    if ((buf != NULL) && (recv_len > 0)) {
+      buf[recv_len - 1] = 0; // we know it's not empty, so make sure there's a null in it.
+      debug(2, "New control port message: \"%s\".", buf);
+      // we need to get the client shared memory interface name from the front
+      char *ip_list = buf;
+      char *smi_name = strsep(&ip_list, " ");
+      char *command = NULL;
+      if (smi_name != NULL) {
+        if (ip_list != NULL)
+          command = strsep(&ip_list, " ");
 
-      // "B" is for play begin/resume. Assumes a "T <ip>" already
-      // "E" is for play end/stop.
-      // "P" is for pause (currently Buffered Audio only).
-      //
-      // "T <ip>" is for the IP address of a timer.
-      // "T" means no active timer.
-      // clock_is_active is made true by Play and false by Pause or End.
+        // "B" is for play begin/resume. Assumes a "T <ip>" already
+        // "E" is for play end/stop.
+        // "P" is for pause (currently Buffered Audio only).
+        //
+        // "T <ip>" is for the IP address of a timer.
+        // "T" means no active timer.
+        // clock_is_active is made true by Play and false by Pause or End.
+        if (command != NULL) {
+          if ((strcmp(command, "B") == 0) && (ip_list == NULL)) {
+            debug(2, "Play.");
+            // We want to avoid, as much as possible, resetting the clock smoothing.
+            // If we know the clock is already active or
+            // if it's only been a short time since we know it was last active
+            // then we will not reset the clock.
+            if (clock_is_active) {
+              debug(2, "clock is already active");
+            } else {
+              // Find out if the clock is active i.e. not sleeping.
+              // We know it is active between "B" and "E" commands.
+              // We also know it is active for brief periods after the "T" and "E" commands are
+              // received. If it is not definitely active, we will reset smoothing.
+              int will_ask_for_a_reset = 0;
+              if (clock_validity_expiration_time == 0) {
+                debug(1, "no clock_validity_expiration_time.");
+                will_ask_for_a_reset = 1;
+              } else {
+                int64_t time_to_clock_expiration = clock_validity_expiration_time - reception_time;
+                // timings obtained with an iPhone Xs Max on battery save
 
-      if ((strcmp(command, "B") == 0) && (ip_list == NULL)) {
-        debug(2, "Play.");
-        // We want to avoid, as much as possible, resetting the clock smoothing.
-        // If we know the clock is already active or
-        // if it's only been a short time since we know it was last active
-        // then we will not reset the clock.
-        if (clock_is_active) {
-          debug(2, "clock is already active");
-        } else {
-          // Find out if the clock is active i.e. not sleeping.
-          // We know it is active between "B" and "E" commands.
-          // We also know it is active for brief periods after the "T" and "E" commands are
-          // received. If it is not definitely active, we will reset smoothing.
-          int will_ask_for_a_reset = 0;
-          if (clock_validity_expiration_time == 0) {
-            debug(1, "no clock_validity_expiration_time.");
-            will_ask_for_a_reset = 1;
-          } else {
-            int64_t time_to_clock_expiration = clock_validity_expiration_time - reception_time;
-            // timings obtained with an iPhone Xs Max on battery save
+                // around 30 seconds at a buffered audio pause on an iphone.
+                // around 1 second after a buffered audio stop on an iphone
+                // 10 seconds after a "T" from an iPhone that immediately sleeps
+                // more than a minute from "T" from a HomePod mini.
 
-            // around 30 seconds at a buffered audio pause on an iphone.
-            // around 1 second after a buffered audio stop on an iphone
-            // 10 seconds after a "T" from an iPhone that immediately sleeps
-            // more than a minute from "T" from a HomePod mini.
-
-            if (time_to_clock_expiration < 0) {
-              debug(2, "Clock validity may have expired, so ask for a reset.");
-              will_ask_for_a_reset = 1;
-            }
-          }
-          if (will_ask_for_a_reset != 0) {
-            debug(2, "Reset clock smoothing");
-            reset_clock_smoothing = 1;
-          }
-        }
-        clock_is_active = 1;
-        clock_validity_expiration_time = 0;
-      } else if ((strcmp(command, "E") == 0) && (ip_list == NULL)) {
-        debug(2, "Stop");
-        if (clock_is_active) {
-          debug(2, "reset clock_validity_expiration_time to 2.25 seconds in the future.");
-          clock_validity_expiration_time =
-              reception_time + 2250000000; // expiration time can be very soon after an "E"
-          clock_is_active = 0;
-        } else {
-          debug(2, "clock is already inactive.");
-        }
-      } else if ((strcmp(command, "P") == 0) && (ip_list == NULL)) {
-        debug(2, "Pause");
-        // A pause always seems to turn into a Stop in now more than a few seconds, and the clock
-        // keeps going, it seems so there is nothing to do here.
-      } else if ((command == NULL) || ((strcmp(command, "T") == 0) && (ip_list == NULL))) {
-        debug(2, "Stop Timing");
-        clock_is_active = 0;
-        debug(2, "Clear timing peer group.");
-        // dirty experimental hack -- delete all the clocks
-        int gc;
-        for (gc = 0; gc < MAX_CLOCKS; gc++) {
-          memset(&clock_private_info[gc], 0, sizeof(clock_source_private_data));
-        }
-        update_master_clock_info(0, NULL, 0, 0, 0); // the SMI may have obsolete stuff in it
-      } else {
-        debug(2, "Start Timing");
-        // dirty experimental hack -- delete all the clocks
-        int gc;
-        for (gc = 0; gc < MAX_CLOCKS; gc++) {
-          memset(&clock_private_info[gc], 0, sizeof(clock_source_private_data));
-        }
-        debug(2, "get or create new record for \"%s\".", smi_name);
-        //        client_id = get_client_id(smi_name); // create the record if it doesn't exist
-        //        if (client_id != -1) {
-        if (strcmp(command, "T") == 0) {
-          int i;
-          for (i = 0; i < MAX_CLOCKS; i++) {
-            clock_private_info[i].announcements_without_followups =
-                0; // to allow a possibly silent clock to be revisited when added to a timing
-                   // peer list
-            clock_private_info[i].follow_up_number = 0;
-          }
-
-          // take the first ip and make it the master, permanently
-
-          if (ip_list != NULL) {
-            char *new_ip = strsep(&ip_list, " ");
-            // look for the IP in the list of clocks, and create an inert entry if not there
-            if ((new_ip != NULL) && (new_ip[0] != 0)) {
-              int t = find_clock_source_record(new_ip, clock_private_info);
-              if (t == -1)
-                t = create_clock_source_record(new_ip, clock_private_info);
-              if (t != -1) { // if the clock table is not full, okay
-                debug(2, "Monitor clock at %s.", new_ip);
+                if (time_to_clock_expiration < 0) {
+                  debug(2, "Clock validity may have expired, so ask for a reset.");
+                  will_ask_for_a_reset = 1;
+                }
               }
-              // otherwise, drop it
+              if (will_ask_for_a_reset != 0) {
+                debug(2, "Reset clock smoothing");
+                reset_clock_smoothing = 1;
+              }
             }
+            clock_is_active = 1;
+            clock_validity_expiration_time = 0;
+          } else if ((strcmp(command, "E") == 0) && (ip_list == NULL)) {
+            debug(2, "Stop");
+            if (clock_is_active) {
+              debug(2, "reset clock_validity_expiration_time to 2.25 seconds in the future.");
+              clock_validity_expiration_time =
+                  reception_time + 2250000000; // expiration time can be very soon after an "E"
+              clock_is_active = 0;
+            } else {
+              debug(2, "clock is already inactive.");
+            }
+          } else if ((strcmp(command, "P") == 0) && (ip_list == NULL)) {
+            debug(2, "Pause");
+            // A pause always seems to turn into a Stop in now more than a few seconds, and the
+            // clock keeps going, it seems so there is nothing to do here.
+          } else if ((command == NULL) || ((strcmp(command, "T") == 0) && (ip_list == NULL))) {
+            debug(2, "Stop Timing");
+            clock_is_active = 0;
+            debug(2, "Clear timing peer group.");
+            // dirty experimental hack -- delete all the clocks
+            int gc;
+            for (gc = 0; gc < MAX_CLOCKS; gc++) {
+              memset(&clock_private_info[gc], 0, sizeof(clock_source_private_data));
+            }
+            update_master_clock_info(0, NULL, 0, 0, 0); // the SMI may have obsolete stuff in it
+          } else {
+            debug(2, "Start Timing");
+            // dirty experimental hack -- delete all the clocks
+            int gc;
+            for (gc = 0; gc < MAX_CLOCKS; gc++) {
+              memset(&clock_private_info[gc], 0, sizeof(clock_source_private_data));
+            }
+            debug(2, "get or create new record for \"%s\".", smi_name);
+            //        client_id = get_client_id(smi_name); // create the record if it doesn't exist
+            //        if (client_id != -1) {
+            if (strcmp(command, "T") == 0) {
+              int i;
+              for (i = 0; i < MAX_CLOCKS; i++) {
+                clock_private_info[i].announcements_without_followups =
+                    0; // to allow a possibly silent clock to be revisited when added to a timing
+                       // peer list
+                clock_private_info[i].follow_up_number = 0;
+              }
+
+              // take the first ip and make it the master, permanently
+
+              if (ip_list != NULL) {
+                char *new_ip = strsep(&ip_list, " ");
+                // look for the IP in the list of clocks, and create an inert entry if not there
+                if ((new_ip != NULL) && (new_ip[0] != 0)) {
+                  int t = find_clock_source_record(new_ip, clock_private_info);
+                  if (t == -1)
+                    t = create_clock_source_record(new_ip, clock_private_info);
+                  if (t != -1) { // if the clock table is not full, okay
+                    debug(2, "Monitor clock at %s.", new_ip);
+                  }
+                  // otherwise, drop it
+                }
+              }
+              // a new clock timing record will be started now
+              debug(2, "reset clock_validity_expiration_time to 5.0 seconds in the future.");
+              clock_validity_expiration_time =
+                  reception_time + 5000000000L; // clock can stop as soon as 6 seconds after a "T"
+            } else {
+              warn("Unrecognised string on the control port.");
+            }
+            //        } else {
+            //          warn("Could not find or create a record for SMI Interface \"%s\".",
+            //          smi_name);
+            //        }
           }
-          // a new clock timing record will be started now
-          debug(2, "reset clock_validity_expiration_time to 5.0 seconds in the future.");
-          clock_validity_expiration_time =
-              reception_time + 5000000000L; // clock can stop as soon as 6 seconds after a "T"
-        } else {
-          warn("Unrecognised string on the control port.");
         }
-        //        } else {
-        //          warn("Could not find or create a record for SMI Interface \"%s\".", smi_name);
-        //        }
+      } else {
+        warn("SMI Interface Name not found on the control port.");
       }
     } else {
-      warn("SMI Interface Name not found on the control port.");
+      warn("Missing or empty packet on the control port.");
     }
   } else {
     warn("Bad packet on the control port.");
@@ -445,7 +451,7 @@ void handle_follow_up(char *buf, ssize_t recv_len, clock_source_private_data *cl
             smoothed_offset = clock_private_info->previous_offset;
             if (mastership_time > 1000000000)
               smoothed_offset += clamped_jitter / 256; // later, if jitter is negative
-          } else if (mastership_time < 1000000000) { // at the beginning
+          } else if (mastership_time < 1000000000) {   // at the beginning
             smoothed_offset =
                 clock_private_info->previous_offset +
                 jitter /
