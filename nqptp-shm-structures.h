@@ -1,6 +1,6 @@
 /*
  * This file is part of the nqptp distribution (https://github.com/mikebrady/nqptp).
- * Copyright (c) 2021--2022 Mike Brady.
+ * Copyright (c) 2021--2023 Mike Brady.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,7 +22,7 @@
 
 #define NQPTP_INTERFACE_NAME "/nqptp"
 
-#define NQPTP_SHM_STRUCTURES_VERSION 9
+#define NQPTP_SHM_STRUCTURES_VERSION 10
 #define NQPTP_CONTROL_PORT 9000
 
 // The control port expects a UDP packet with the first character being a command letter
@@ -50,20 +50,29 @@
 // When the clock is inactive, it can stop running. This causes the offset to decrease.
 // NQPTP clock smoothing would treat this as a network delay, causing true sync to be lost.
 // To avoid this, when the clock goes from inactive to active,
-// NQPTP resets clock smoothing to the new offset. 
-
+// NQPTP resets clock smoothing to the new offset.
 
 #include <inttypes.h>
 #include <pthread.h>
 
-struct shm_structure {
-  pthread_mutex_t shm_mutex;            // for safely accessing the structure
-  uint16_t version;                     // check this is equal to NQPTP_SHM_STRUCTURES_VERSION
+typedef struct {
   uint64_t master_clock_id;             // the current master clock
-  char master_clock_ip[64];             // where it's coming from
   uint64_t local_time;                  // the time when the offset was calculated
   uint64_t local_to_master_time_offset; // add this to the local time to get master clock time
   uint64_t master_clock_start_time;     // this is when the master clock became master
+} shm_structure_set;
+
+// The actual interface comprises a shared memory region of type struct shm_structure.
+// This comprises two records of type shm_structure_set. 
+// The secondary record is written strictly after all writes to the main record are
+// complete. This is ensured using the __sync_synchronize() construct.
+// The reader should ensure that both copies match for a read to be valid.
+// For safety, the secondary record should be read strictly after the first.
+
+struct shm_structure {
+  uint16_t version; // check this is equal to NQPTP_SHM_STRUCTURES_VERSION
+  shm_structure_set main;
+  shm_structure_set secondary;
 };
 
 #endif

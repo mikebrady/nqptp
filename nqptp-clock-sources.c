@@ -80,8 +80,6 @@ int get_client_id(char *client_shared_memory_interface_name) {
           i++;
       }
       if (response != -1) {
-        pthread_mutexattr_t shared;
-        int err;
         strncpy(clients[i].shm_interface_name, client_shared_memory_interface_name,
                 sizeof(clients[i].shm_interface_name));
         // create the named smi interface
@@ -124,23 +122,6 @@ int get_client_id(char *client_shared_memory_interface_name) {
         // zero it
         memset(clients[i].shared_memory, 0, sizeof(struct shm_structure));
         clients[i].shared_memory->version = NQPTP_SHM_STRUCTURES_VERSION;
-
-        /*create mutex attr */
-        err = pthread_mutexattr_init(&shared);
-        if (err != 0) {
-          die("mutex attribute initialization failed - %s.", strerror(errno));
-        }
-        pthread_mutexattr_setpshared(&shared, 1);
-        /*create a mutex */
-        err = pthread_mutex_init((pthread_mutex_t *)&clients[i].shared_memory->shm_mutex, &shared);
-        if (err != 0) {
-          die("mutex initialization failed - %s.", strerror(errno));
-        }
-
-        err = pthread_mutexattr_destroy(&shared);
-        if (err != 0) {
-          die("mutex attribute destruction failed - %s.", strerror(errno));
-        }
 
         // for (i = 0; i < MAX_CLOCKS; i++) {
         //  clocks_private[i].client_flags[response] =
@@ -248,26 +229,21 @@ int create_clock_source_record(char *sender_string,
 
 void update_master_clock_info(uint64_t master_clock_id, const char *ip, uint64_t local_time,
                               uint64_t local_to_master_offset, uint64_t mastership_start_time) {
-  // debug(1,"update_master_clock_info clock: % " PRIx64 ", offset: %" PRIx64 ".",
-  // master_clock_id, local_to_master_offset);
-  int rc = pthread_mutex_lock(&shared_memory->shm_mutex);
-  if (rc != 0)
-    warn("Can't acquire mutex to update master clock!");
-  shared_memory->master_clock_id = master_clock_id;
+  // to ensure that a full update has taken place, the
+  // reader must ensure that the main and secondary
+  // structures are identical
+
+  shared_memory->main.master_clock_id = master_clock_id;
   if (ip != NULL) {
-    strncpy((char *)&shared_memory->master_clock_ip, ip,
-            FIELD_SIZEOF(struct shm_structure, master_clock_ip) - 1);
-    shared_memory->master_clock_start_time = mastership_start_time;
-    shared_memory->local_time = local_time;
-    shared_memory->local_to_master_time_offset = local_to_master_offset;
+    shared_memory->main.master_clock_start_time = mastership_start_time;
+    shared_memory->main.local_time = local_time;
+    shared_memory->main.local_to_master_time_offset = local_to_master_offset;
   } else {
-    shared_memory->master_clock_ip[0] = '\0';
-    shared_memory->master_clock_start_time = 0;
-    shared_memory->local_time = 0;
-    shared_memory->local_to_master_time_offset = 0;
+    shared_memory->main.master_clock_start_time = 0;
+    shared_memory->main.local_time = 0;
+    shared_memory->main.local_to_master_time_offset = 0;
   }
-  rc = pthread_mutex_unlock(&shared_memory->shm_mutex);
-  if (rc != 0)
-    warn("Can't release mutex after updating master clock!");
-  // debug(1,"update_master_clock_info done");
+  __sync_synchronize();
+  shared_memory->secondary = shared_memory->main;
+  __sync_synchronize();
 }

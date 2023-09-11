@@ -96,11 +96,13 @@ void goodbye(void) {
   // close off new smi
   // mmap cleanup
   if (munmap(shared_memory, sizeof(struct shm_structure)) != 0) {
-    debug(1, "error unmapping shared memory \"%s\": \"%s\".", NQPTP_INTERFACE_NAME, strerror(errno));
+    debug(1, "error unmapping shared memory \"%s\": \"%s\".", NQPTP_INTERFACE_NAME,
+          strerror(errno));
   }
   // shm_open cleanup
   if (shm_unlink(NQPTP_INTERFACE_NAME) == -1) {
-    debug(1, "error unlinking shared memory \"%s\": \"%s\".", NQPTP_INTERFACE_NAME, strerror(errno));
+    debug(1, "error unlinking shared memory \"%s\": \"%s\".", NQPTP_INTERFACE_NAME,
+          strerror(errno));
   }
 
   if (shm_fd != -1)
@@ -131,8 +133,8 @@ int main(int argc, char **argv) {
       if (strcmp(argv[i] + 1, "V") == 0) {
 #ifdef CONFIG_USE_GIT_VERSION_STRING
         if (git_version_string[0] != '\0')
-          fprintf(stdout, "Version: %s. Shared Memory Interface Version: smi%u.\n", git_version_string,
-                  NQPTP_SHM_STRUCTURES_VERSION);
+          fprintf(stdout, "Version: %s. Shared Memory Interface Version: smi%u.\n",
+                  git_version_string, NQPTP_SHM_STRUCTURES_VERSION);
         else
 #endif
 
@@ -191,13 +193,10 @@ int main(int argc, char **argv) {
 
   // open the SMI
 
-  pthread_mutexattr_t shared;
-  int err;
-
   shm_fd = -1;
 
   mode_t oldumask = umask(0);
-  shm_fd = shm_open(NQPTP_INTERFACE_NAME, O_RDWR | O_CREAT, 0666);
+  shm_fd = shm_open(NQPTP_INTERFACE_NAME, O_RDWR | O_CREAT, 0644);
   if (shm_fd == -1) {
     die("cannot open shared memory \"%s\".", NQPTP_INTERFACE_NAME);
   }
@@ -229,23 +228,6 @@ int main(int argc, char **argv) {
   // zero it
   memset(shared_memory, 0, sizeof(struct shm_structure));
   shared_memory->version = NQPTP_SHM_STRUCTURES_VERSION;
-
-  /*create mutex attr */
-  err = pthread_mutexattr_init(&shared);
-  if (err != 0) {
-    die("mutex attribute initialization failed - %s.", strerror(errno));
-  }
-  pthread_mutexattr_setpshared(&shared, 1);
-  /*create a mutex */
-  err = pthread_mutex_init((pthread_mutex_t *)&shared_memory->shm_mutex, &shared);
-  if (err != 0) {
-    die("mutex initialization failed - %s.", strerror(errno));
-  }
-
-  err = pthread_mutexattr_destroy(&shared);
-  if (err != 0) {
-    die("mutex attribute destruction failed - %s.", strerror(errno));
-  }
 
   ssize_t recv_len;
 

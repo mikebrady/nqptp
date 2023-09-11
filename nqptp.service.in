@@ -6,8 +6,8 @@ Before=shairport-sync.service
 
 [Service]
 ExecStart=@prefix@/bin/nqptp
-User=root
-Group=root
+User=nqptp
+Group=nqptp
 
 [Install]
 WantedBy=multi-user.target

@@ -19,14 +19,20 @@ endif
 
 install-exec-hook:
 if BUILD_FOR_LINUX
+# NQPTP runs as user/group nqptp/nqptp on Linux and uses setcap to access ports 319 and 320
+	setcap 'cap_net_bind_service=+ep' $(bindir)/nqptp
+# no installer for System V
 if INSTALL_SYSTEMD_STARTUP
+	getent group nqptp &>/dev/null || groupadd -r nqptp &>/dev/null
+	getent passwd nqptp &> /dev/null || useradd -r -M -g nqptp -s /usr/sbin/nologin nqptp &>/dev/null
 	[ -e $(DESTDIR)$(libdir)/systemd/system ] || mkdir -p $(DESTDIR)$(libdir)/systemd/system
 # don't replace a service file if it already exists...
 	[ -e $(DESTDIR)$(libdir)/systemd/system/nqptp.service ] || cp nqptp.service $(DESTDIR)$(libdir)/systemd/system
 endif
 endif
- # no installer for FreeBSD yet
+
 if BUILD_FOR_FREEBSD
+# NQPTP runs as root on FreeBSD to access ports 319 and 320
 if INSTALL_FREEBSD_STARTUP
 	cp nqptp.freebsd /usr/local/etc/rc.d/nqptp
 	chmod 555 /usr/local/etc/rc.d/nqptp

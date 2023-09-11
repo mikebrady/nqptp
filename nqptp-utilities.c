@@ -29,11 +29,11 @@
 #endif
 
 #ifdef CONFIG_FOR_FREEBSD
-#include <sys/types.h>
-#include <unistd.h>
 #include <net/if_dl.h>
 #include <net/if_types.h>
 #include <sys/socket.h>
+#include <sys/types.h>
+#include <unistd.h>
 #endif
 
 #include <netdb.h>  // getaddrinfo etc.
