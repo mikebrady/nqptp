@@ -6,8 +6,6 @@
 ## Version: 1.2
 * **Important**. The protocol that Shairport Sync and NQPTP use to communicate with one another has been updated to reflect changes in NQPTP's operation. Please update both NQPTP and Shairport Sync so that they both use the same Shared Memory Interface Version. 
 
-This version of NQPTP uses Shared Memory Interface Version `smi9`. 
-
 **Enhancements**
 * Enable NQPTP to respond to information about the state of the player -- whether is is playing, stopped or paused. The "B" command is a message that the client -- which generates the clock -- is about to start playing. The "E" command signifies that the client has stopped playing and that the clock may shortly sleep. The "P" command signifies that play has paused (buffered audio only). The clock seems to stay running in this state.
 This is important because the clock from the source can stop or run slow when the source is not actively playing. This arrangement seems to be much more resilient than having NQPTP try to detect when a clock is stopped or running slow. It also allows the code to be  simplified.
