@@ -1,10 +1,12 @@
+## Version: 1.2.4d0-5-g10969ea
+**Important**.
+
+* A recent security audit has identified a number of issues with NQPTP that have been fixed in the latest update to the `development` branch of NQPTP. The SMI version number has been updated to 10. You should update both the `development` branch of NQPTP and the `development` branch of Shairport Sync without delay. (You can check `nqptp` using `$ nqptp -V`.)
+
 ## Version: 1.2
-
-***Pesky Changes You Can't Ignore***
-
 * **Important**. The protocol that Shairport Sync and NQPTP use to communicate with one another has been updated to reflect changes in NQPTP's operation. Please update both NQPTP and Shairport Sync so that they both use the same Shared Memory Interface Version. 
 
-  This version of NQPTP uses Shared Memory Interface Version `smi9`. (You can check `nqptp` using `$ nqptp -V`.)
+This version of NQPTP uses Shared Memory Interface Version `smi9`. 
 
 **Enhancements**
 * Enable NQPTP to respond to information about the state of the player -- whether is is playing, stopped or paused. The "B" command is a message that the client -- which generates the clock -- is about to start playing. The "E" command signifies that the client has stopped playing and that the clock may shortly sleep. The "P" command signifies that play has paused (buffered audio only). The clock seems to stay running in this state.
