@@ -1,7 +1,7 @@
 ## Version: 1.2.4d0-5-g10969ea
 **Important**.
 
-* A recent security audit has identified a number of issues with NQPTP that have been fixed in the latest update to the `development` branch of NQPTP. The SMI version number has been updated to 10. You should update both the `development` branch of NQPTP and the `development` branch of Shairport Sync without delay. (You can check `nqptp` using `$ nqptp -V`.)
+* A recent security audit has identified a number of issues with NQPTP that have been fixed in the latest update to the `development` branch. The SMI version number has been updated to 10. (You can check using `$ nqptp -V`.) You should update to the latest versions both of the `development` branch of NQPTP and the `development` branch of Shairport Sync without delay. 
 
 ## Version: 1.2
 * **Important**. The protocol that Shairport Sync and NQPTP use to communicate with one another has been updated to reflect changes in NQPTP's operation. Please update both NQPTP and Shairport Sync so that they both use the same Shared Memory Interface Version. 
