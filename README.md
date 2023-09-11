@@ -112,9 +112,10 @@ If your system runs a firewall, ensure that ports 319 and 320 are open for UDP t
 ```
 
 ## Notes
-Please note that `nqptp` must run in `root` mode to be able to access ports 319 and 320.
-
-Since `nqptp` uses ports 319 and 320, it can not coexist with any other user of those ports, such as full PTP service daemons.
+The `nqptp` application requires exclusive access to ports 319 and 320.
+This means that it can not coexist with any other user of those ports, such as full PTP service daemons.
+In Linux, `nqptp` runs as a low-priviliged user but is given special access to ports 319 and 320 during installation.
+In FreeBSD, `nqptp` runs as `root` user.
 
 ## Programming Notes
 Commands and status information are sent to `nqptp` over port 9000. 
@@ -124,23 +125,32 @@ Information about the PTP clock is provided via a [POSIX shared memory](https://
 
 Here are details of the interface:
 ```c
-struct shm_structure {
-  pthread_mutex_t shm_mutex;            // for safely accessing the structure
-  uint16_t version;                     // check this is equal to NQPTP_SHM_STRUCTURES_VERSION
+typedef struct {
   uint64_t master_clock_id;             // the current master clock
-  char master_clock_ip[64];             // where it's coming from
   uint64_t local_time;                  // the time when the offset was calculated
   uint64_t local_to_master_time_offset; // add this to the local time to get master clock time
   uint64_t master_clock_start_time;     // this is when the master clock became master
+} shm_structure_set;
+
+// The actual interface comprises a shared memory region of type struct shm_structure.
+// This comprises two records of type shm_structure_set. 
+// The secondary record is written strictly after all writes to the main record are
+// complete. This is ensured using the __sync_synchronize() construct.
+// The reader should ensure that both copies match for a read to be valid.
+// For safety, the secondary record should be read strictly after the first.
+
+struct shm_structure {
+  uint16_t version; // check this is equal to NQPTP_SHM_STRUCTURES_VERSION
+  shm_structure_set main;
+  shm_structure_set secondary;
 };
 ```
 
-If you wish to use the shared mutex to ensure records are not altered while you are accessing them, you should open your side of the shared memory interface with read-write permission. Be aware that while your program has the mutex lock, it is in a "critical region" where it can halt `nqptp`, so keep any activity while you have the lock very short and very simple, e.g. copying the contents of shared memory to local memory. 
 
 Clock records that are not updated for a period are deleted.
 
 ## Known Issues
-* `nqptp` has not been checked or audited for security issues. Note that it must run in `root` mode.
+* `nqptp` has not been checked or audited for security issues. Note that it runs in `root` mode on FreeBSD.
 * It's probably buggy!
 * `nqptp` does not take advantage of hardware timestamping.
 
