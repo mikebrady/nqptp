@@ -25,7 +25,7 @@ Version: 1.1-dev. Shared Memory Interface Version: 5.
 ```
 ### Remove Old Service Files
 #### Linux
-If you are updating from version 1.1-dev-51 or earlier in Linux, remove the service file `nqptp.service` from the directory `/lib/systemd/system` (you'll need superuser privileges):
+If you are updating from version 1.2.4d0 or earlier in Linux, remove the service file `nqptp.service` from the directory `/lib/systemd/system` (you'll need superuser privileges):
 ```
 # rm /lib/systemd/system/nqptp.service
 ```
