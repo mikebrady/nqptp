@@ -1,5 +1,5 @@
 # NQPTP – Not Quite PTP
-`nqptp` is a daemon that monitors timing data from any [PTP](https://en.wikipedia.org/wiki/Precision_Time_Protocol) clocks – up to 64 – it sees on ports 319 and 320. It maintains records for each clock, identified by Clock ID and IP.
+`nqptp` is a daemon that monitors timing data from [PTP](https://en.wikipedia.org/wiki/Precision_Time_Protocol) clocks it sees on ports 319 and 320. It maintains records for one clock, identified by its Clock ID.
 
 It is a companion application to [Shairport Sync](https://github.com/mikebrady/shairport-sync) and provides timing information for AirPlay 2 operation.
 
@@ -114,7 +114,7 @@ If your system runs a firewall, ensure that ports 319 and 320 are open for UDP t
 ## Notes
 The `nqptp` application requires exclusive access to ports 319 and 320.
 This means that it can not coexist with any other user of those ports, such as full PTP service daemons.
-In Linux, `nqptp` runs as a low-priviliged user but is given special access to ports 319 and 320 during installation.
+In Linux, `nqptp` runs as a low-priviliged user but is given special access to ports 319 and 320 during installation using the `setcap` utility.
 In FreeBSD, `nqptp` runs as `root` user.
 
 ## Programming Notes
@@ -146,11 +146,9 @@ struct shm_structure {
 };
 ```
 
-
 Clock records that are not updated for a period are deleted.
-
 ## Known Issues
-* `nqptp` has not been checked or audited for security issues. Note that it runs in `root` mode on FreeBSD.
+* `nqptp` has not been thoroughly checked or audited for security issues. Note that it runs in `root` mode on FreeBSD.
 * It's probably buggy!
 * `nqptp` does not take advantage of hardware timestamping.
 
