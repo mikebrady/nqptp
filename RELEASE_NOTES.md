@@ -1,7 +1,9 @@
 ## Version: 1.2.5-dev-2-gb5321a8
 * Stop using `setcap` on the `nqptp` binary at install time and instead use systemd's AmbientCapabilities to give the `nqptp` daemon the capability to access ports 319 and 320. Many thanks to [Hs_Yeah](https://github.com/Hs-Yeah) for the [PR](https://github.com/mikebrady/nqptp/pull/26).
 * Improve some error messages.
-* Update a few documentation errors. 
+* Update a few documentation errors.
+
+When updating NQPTP on Linux, be sure to remove old service files as directed in the [README](https://github.com/mikebrady/nqptp/blob/main/README.md#remove-old-service-files).
 
 ## Version: 1.2.4
 This is an important security update. The Shared Memory Interface of the updated NQPTP is now 10, i.e. `smi10`:
@@ -9,7 +11,7 @@ This is an important security update. The Shared Memory Interface of the updated
 $ nqptp -V
 Version: 1.2.4. Shared Memory Interface Version: smi10.
 ```
-1. When updating NQPTP on Linux, be sure to remove the old service file as directed in the [README](https://github.com/mikebrady/nqptp/blob/main/README.md#remove-old-service-files).
+1. When updating NQPTP on Linux, be sure to remove old service files as directed in the [README](https://github.com/mikebrady/nqptp/blob/main/README.md#remove-old-service-files).
 2. You must update Shairport Sync to ensure that it's Shared Memory Interface version is also 10 in order to be compatible with this NQPTP update.
 3. Having completed both updates and installations, remember to restart NQPTP first and then restart Shairport Sync.
 
