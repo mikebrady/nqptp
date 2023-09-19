@@ -198,7 +198,7 @@ int main(int argc, char **argv) {
   mode_t oldumask = umask(0);
   shm_fd = shm_open(NQPTP_INTERFACE_NAME, O_RDWR | O_CREAT, 0644);
   if (shm_fd == -1) {
-    die("cannot open shared memory \"%s\".", NQPTP_INTERFACE_NAME);
+    die("nqptp cannot open the shared memory \"%s\" for writing. Is another copy of nqptp (e.g. an nqptp daemon) running already?", NQPTP_INTERFACE_NAME);
   }
   (void)umask(oldumask);
 
