@@ -25,12 +25,13 @@ Version: 1.1-dev. Shared Memory Interface Version: 5.
 ```
 ### Remove Old Service Files
 #### Linux
-If you are updating from version `1.2.4d0` or earlier in Linux, remove the service file `nqptp.service` from the directory `/lib/systemd/system` (you'll need superuser privileges):
+If you are updating from version `1.2.4` or earlier in Linux, remove the service file `nqptp.service` from the directories `/lib/systemd/system` and `/usr/local/lib/systemd/system` (you'll need superuser privileges):
 ```
 # rm /lib/systemd/system/nqptp.service
+# /usr/local/lib/systemd/system/nqptp.service
 # systemctl daemon-reload
 ```
-Don't worry if you get a message stating that the file doesn't exist -- no harm done.
+Don't worry if you get a message stating that the files doesn't exist -- no harm done.
 
 #### FreeBSD
 At present, there is no need to remove the old startup script as (in FreeBSD only) it is always replaced during the `# make install` step.
