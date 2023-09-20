@@ -1,3 +1,5 @@
+## Version: 1.2.5-dev-5-g475d7a1
+* Fixup for FreeBSD compilation error -- change the order of some of the `#include` files.
 ## Version: 1.2.5-dev-2-gb5321a8
 * Stop using `setcap` on the `nqptp` binary at install time and instead use systemd's AmbientCapabilities to give the `nqptp` daemon the capability to access ports 319 and 320. Many thanks to [Hs_Yeah](https://github.com/Hs-Yeah) for the [PR](https://github.com/mikebrady/nqptp/pull/26).
 * Improve some error messages.
