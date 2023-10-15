@@ -19,8 +19,9 @@ endif
 
 install-exec-hook:
 if BUILD_FOR_LINUX
-# NQPTP runs as user/group nqptp/nqptp on Linux and uses setcap to access ports 319 and 320
-	setcap 'cap_net_bind_service=+ep' $(bindir)/nqptp
+# Note: NQPTP runs as user/group nqptp/nqptp on Linux.
+# Access is given via AmbientCapabilities in the service file.
+# If you want to run it from the command line, e.g. for debugging, run it as root user.
 # no installer for System V
 if INSTALL_SYSTEMD_STARTUP
 	getent group nqptp &>/dev/null || groupadd -r nqptp &>/dev/null

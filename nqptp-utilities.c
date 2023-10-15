@@ -29,11 +29,11 @@
 #endif
 
 #ifdef CONFIG_FOR_FREEBSD
+#include <sys/types.h>
+#include <unistd.h>
 #include <net/if_dl.h>
 #include <net/if_types.h>
 #include <sys/socket.h>
-#include <sys/types.h>
-#include <unistd.h>
 #endif
 
 #include <netdb.h>  // getaddrinfo etc.
@@ -105,15 +105,11 @@ void open_sockets_at_port(const char *node, uint16_t port,
   }
   freeaddrinfo(info);
   if (sockets_opened == 0) {
-    if (port < 1024)
-      die("unable to listen on port %d. The error is: \"%s\". NQPTP must run as root to access "
-          "this port. Or is another PTP daemon -- possibly another instance on NQPTP -- running "
-          "already?",
-          port, strerror(errno));
-    else
-      die("unable to listen on port %d. The error is: \"%s\". "
-          "Is another instance on NQPTP running already?",
-          port, strerror(errno));
+    if (errno == EACCES) {
+      die("nqptp does not have permission to access port %u. It must (a) [Linux only] have been given CAP_NET_BIND_SERVICE capabilities using e.g. setcap or systemd's AmbientCapabilities, or (b) run as root.", port);
+    } else {
+      die("nqptp is unable to listen on port %u. The error is: %d, \"%s\".", port, errno, strerror(errno));
+    }
   }
 }
 
