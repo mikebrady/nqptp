@@ -8,6 +8,7 @@ AC_CANONICAL_HOST
 
 build_linux=no
 build_freebsd=no
+build_openbsd=no
 
 # Detect the target system
 case "${host_os}" in
@@ -16,7 +17,10 @@ case "${host_os}" in
         ;;
     freebsd*)
         build_freebsd=yes
-        ;;    
+        ;;
+    openbsd*)
+        build_openbsd=yes
+        ;;
     *)
         AC_MSG_ERROR(["OS $host_os is not supported"])
         ;;
@@ -25,12 +29,16 @@ esac
 # Pass the conditionals to automake
 AM_CONDITIONAL([BUILD_FOR_LINUX], [test "$build_linux" = "yes"])
 AM_CONDITIONAL([BUILD_FOR_FREEBSD], [test "$build_freebsd" = "yes"])
+AM_CONDITIONAL([BUILD_FOR_OPENBSD], [test "$build_openbsd" = "yes"])
 
 if test "x$build_linux" = "xyes" ; then
   AC_DEFINE([CONFIG_FOR_LINUX], 1, [Build for Linux.])
 fi
 if test "x$build_freebsd" = "xyes" ; then
   AC_DEFINE([CONFIG_FOR_FREEBSD], 1, [Build for FreeBSD.])
+fi
+if test "x$build_openbsd" = "xyes" ; then
+  AC_DEFINE([CONFIG_FOR_OPENBSD], 1, [Build for OpenBSD.])
 fi
 
 AC_CHECK_PROGS([GIT], [git])
@@ -44,7 +52,7 @@ AM_CONDITIONAL([USE_GIT_VERSION], [test -n "$GIT" && test -e ".git/index" ])
 AC_ARG_WITH([systemd-startup],[AS_HELP_STRING([--with-systemd-startup],[install a systemd startup script during a make install])])
 AM_CONDITIONAL([INSTALL_SYSTEMD_STARTUP], [test "x$with_systemd_startup" = "xyes"])
 
-# Check to see if we should include the systemd stuff to define it as a service
+# Check to see if we should include the FreeBSD stuff to define it as a service
 AC_ARG_WITH([freebsd-startup],[AS_HELP_STRING([--with-freebsd-startup],[install a FreeBSD startup script during a make install])])
 AM_CONDITIONAL([INSTALL_FREEBSD_STARTUP], [test "x$with_freebsd_startup" = "xyes"])
 
@@ -58,7 +66,10 @@ AC_PROG_INSTALL
 
 # Checks for libraries.
 AC_CHECK_LIB([pthread],[pthread_create], , AC_MSG_ERROR(pthread library needed))
-AC_CHECK_LIB([rt],[clock_gettime], , AC_MSG_ERROR(librt needed for shared memory library))
+if test "x$build_openbsd" = "xno" ; then
+  # part of libc
+  AC_CHECK_LIB([rt],[clock_gettime], , AC_MSG_ERROR(librt needed for shared memory library))
+fi
 
 # Checks for header files.
 AC_CHECK_HEADERS([arpa/inet.h inttypes.h netdb.h stdlib.h string.h sys/socket.h unistd.h])

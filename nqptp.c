@@ -48,7 +48,7 @@
 #include <netdb.h>
 #include <sys/socket.h>
 
-#ifdef CONFIG_FOR_FREEBSD
+#if defined(CONFIG_FOR_FREEBSD) || defined(CONFIG_FOR_OPENBSD)
 #include <netinet/in.h>
 #include <sys/socket.h>
 #endif
@@ -206,7 +206,7 @@ int main(int argc, char **argv) {
     die("failed to set size of shared memory \"%s\".", NQPTP_INTERFACE_NAME);
   }
 
-#ifdef CONFIG_FOR_FREEBSD
+#if defined(CONFIG_FOR_FREEBSD) || defined(CONFIG_FOR_OPENBSD)
   shared_memory = (struct shm_structure *)mmap(NULL, sizeof(struct shm_structure),
                                                PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
 #endif

@@ -39,5 +39,3 @@ if INSTALL_FREEBSD_STARTUP
 	chmod 555 /usr/local/etc/rc.d/nqptp
 endif
 endif
-
- 
