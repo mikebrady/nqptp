@@ -53,6 +53,12 @@
 #include <sys/socket.h>
 #endif
 
+#ifdef CONFIG_FOR_OPENBSD
+#include <sys/types.h>
+#include <unistd.h>
+#include <pwd.h>
+#endif
+
 #ifndef FIELD_SIZEOF
 #define FIELD_SIZEOF(t, f) (sizeof(((t *)0)->f))
 #endif
@@ -177,6 +183,10 @@ int main(int argc, char **argv) {
 
   sockets_open_stuff.sockets_open = 0;
 
+  // open PTP sockets
+  open_sockets_at_port(NULL, 319, &sockets_open_stuff);
+  open_sockets_at_port(NULL, 320, &sockets_open_stuff);
+
   epoll_fd = -1;
 
   // control-c (SIGINT) cleanly
@@ -190,6 +200,22 @@ int main(int argc, char **argv) {
   memset(&act2, 0, sizeof(struct sigaction));
   act2.sa_handler = termHandler;
   sigaction(SIGTERM, &act2, NULL);
+
+#ifdef CONFIG_FOR_OPENBSD
+  // shm_open(3) prohibits sharing between different UIDs, so nqptp must run as
+  // the same user shairport-sync does.
+  struct passwd *pw;
+  const char *shairport_user = "_shairport";
+  pw = getpwnam(shairport_user);
+  if (pw == NULL) {
+    die("unknown user %s", shairport_user);
+  }
+  if (setgroups(1, &pw->pw_gid) == -1 ||
+      setresgid(pw->pw_gid, pw->pw_gid, pw->pw_gid) == -1 ||
+      setresuid(pw->pw_uid, pw->pw_uid, pw->pw_uid) == -1) {
+    die("cannot drop privileges to %s", shairport_user);
+  }
+#endif
 
   // open the SMI
 
@@ -233,10 +259,7 @@ int main(int argc, char **argv) {
 
   char buf[BUFLEN];
 
-  // open sockets 319 and 320
-
-  open_sockets_at_port(NULL, 319, &sockets_open_stuff);
-  open_sockets_at_port(NULL, 320, &sockets_open_stuff);
+  // open control socket
   open_sockets_at_port("localhost", NQPTP_CONTROL_PORT,
                        &sockets_open_stuff); // this for messages from the client
 

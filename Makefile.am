@@ -39,3 +39,8 @@ if INSTALL_FREEBSD_STARTUP
 	chmod 555 /usr/local/etc/rc.d/nqptp
 endif
 endif
+
+if BUILD_FOR_OPENBSD
+# NQPTP starts as root on OpenBSD to access ports 319 and 320
+# and drops privileges to the user shairport is running as.
+endif
