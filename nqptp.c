@@ -131,6 +131,11 @@ void termHandler(__attribute__((unused)) int k) {
 }
 
 int main(int argc, char **argv) {
+#ifdef CONFIG_FOR_OPENBSD
+  if (pledge("stdio rpath tmppath inet dns id", NULL) == -1) {
+    die("pledge: %s", strerror(errno));
+  }
+#endif
 
   int debug_level = 0;
   int i;
@@ -214,6 +219,10 @@ int main(int argc, char **argv) {
       setresgid(pw->pw_gid, pw->pw_gid, pw->pw_gid) == -1 ||
       setresuid(pw->pw_uid, pw->pw_uid, pw->pw_uid) == -1) {
     die("cannot drop privileges to %s", shairport_user);
+  }
+
+  if (pledge("stdio tmppath inet dns", NULL) == -1) {
+    die("pledge: %s", strerror(errno));
   }
 #endif
 
