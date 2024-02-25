@@ -28,7 +28,7 @@
 #include <linux/if_packet.h> // sockaddr_ll
 #endif
 
-#ifdef CONFIG_FOR_FREEBSD
+#if defined(CONFIG_FOR_FREEBSD) || defined(CONFIG_FOR_OPENBSD)
 #include <sys/types.h>
 #include <unistd.h>
 #include <net/if_dl.h>
@@ -106,7 +106,7 @@ void open_sockets_at_port(const char *node, uint16_t port,
   freeaddrinfo(info);
   if (sockets_opened == 0) {
     if (errno == EACCES) {
-      die("nqptp does not have permission to access port %u. It must (a) [Linux only] have been given CAP_NET_BIND_SERVICE capabilities using e.g. setcap or systemd's AmbientCapabilities, or (b) run as root.", port);
+      die("nqptp does not have permission to access port %u. It must (a) [Linux only] have been given CAP_NET_BIND_SERVICE capabilities using e.g. setcap or systemd's AmbientCapabilities, or (b) start as root.", port);
     } else {
       die("nqptp is unable to listen on port %u. The error is: %d, \"%s\".", port, errno, strerror(errno));
     }
