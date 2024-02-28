@@ -110,7 +110,7 @@ If your system runs a firewall, ensure that ports 319 and 320 are open for UDP t
 ## Notes
 The `nqptp` application requires exclusive access to ports 319 and 320.
 This means that it can not coexist with any other user of those ports, such as full PTP service daemons.
-In Linux, `nqptp` runs as a low-priviliged user but is given special access to ports 319 and 320 during installation using the `setcap` utility.
+In Linux, `nqptp` runs as a low-priviliged user but is given special access to ports 319 and 320 using systemd `AmbientCapabilities`.
 In FreeBSD, `nqptp` runs as `root` user.
 
 ## Programming Notes
