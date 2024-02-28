@@ -1,3 +1,6 @@
+## Version: 1.2.5-dev-18-gb8384c4
+* Documentation fix. Thanks to [Rudi Heitbaum](https://github.com/heitbaum) for a documentation fix in [PR 34](https://github.com/mikebrady/nqptp/pull/34).
+
 ## Version: 1.2.5-dev-16-g32bfe78
 * OpenBSD compatibility, thanks to the work of [Klemens Nanni](https://github.com/klemensn) in [PR 31](https://github.com/mikebrady/nqptp/pull/31). This work includes: using OpenBSD's `pledge(2)` facilities to harden the security of NQPTP, dropping priviliges as soon as possible, and running as the same user as the Shairport Sync application. (Note that at present on Linux, NQPTP runs as the user `nqptp` while Shairport Sync runs as the user `shairport-sync`. For consistency, this may change in future.)  
 ## Version: 1.2.5-dev-5-g475d7a1
