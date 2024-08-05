@@ -135,7 +135,7 @@ int get_client_id(char *client_shared_memory_interface_name) {
   } else {
     debug(1, "no client_shared_memory_interface_name");
   }
-  debug(2, "get_client_id \"%s\" response %d", client_shared_memory_interface_name, response);
+  debug(1, "get_client_id \"%s\" response %d", client_shared_memory_interface_name, response);
   return response;
 }
 
@@ -185,6 +185,51 @@ int find_clock_source_record(char *sender_string, clock_source_private_data *clo
   return response;
 }
 
+#include <stdio.h>
+static void create_clock_shared_mem(clock_source_private_data *cpriv)
+{
+  // open the SMI
+
+  int shm_fd = -1;
+  char fname[120];
+
+  mode_t oldumask = umask(0);
+  snprintf(fname, sizeof(fname), NQPTP_INTERFACE_NAME "_%s", cpriv->ip );
+  shm_fd = shm_open(fname, O_RDWR | O_CREAT, 0644);
+  if (shm_fd == -1) {
+    die("nqptp cannot open the shared memory \"%s\" for writing. Is another copy of nqptp (e.g. an nqptp daemon) running already?", NQPTP_INTERFACE_NAME);
+  }
+  (void)umask(oldumask);
+
+  if (ftruncate(shm_fd, sizeof(struct shm_structure)) == -1) {
+    die("failed to set size of shared memory \"%s\".", NQPTP_INTERFACE_NAME);
+  }
+
+#if defined(CONFIG_FOR_FREEBSD) || defined(CONFIG_FOR_OPENBSD)
+  cpriv->shared_mem = (struct shm_structure *)mmap(NULL, sizeof(struct shm_structure),
+                                               PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+#endif
+
+#ifdef CONFIG_FOR_LINUX
+  cpriv->shared_mem =
+      (struct shm_structure *)mmap(NULL, sizeof(struct shm_structure), PROT_READ | PROT_WRITE,
+                                   MAP_LOCKED | MAP_SHARED, shm_fd, 0);
+#endif
+
+  if (cpriv->shared_mem == (struct shm_structure *)-1) {
+    die("failed to mmap shared memory \"%s\".", NQPTP_INTERFACE_NAME);
+  }
+
+  if (shm_fd == -1) {
+    warn("error closing \"%s\" after mapping.", shm_fd);
+  }
+
+  // zero it
+  memset(cpriv->shared_mem, 0, sizeof(struct shm_structure));
+  cpriv->shared_mem->version = NQPTP_SHM_STRUCTURES_VERSION;
+
+}
+
 int create_clock_source_record(char *sender_string,
                                clock_source_private_data *clocks_private_info) {
   // return the index of a clock entry in the clock information arrays or -1 if full
@@ -216,8 +261,10 @@ int create_clock_source_record(char *sender_string,
               FIELD_SIZEOF(clock_source_private_data, ip) - 1);
       clocks_private_info[i].family = family;
       clocks_private_info[i].flags |= (1 << clock_is_in_use);
-      debug(2, "create record for ip: %s, family: %s.", &clocks_private_info[i].ip,
+      debug(1, "create record for ip: %s, family: %s.", &clocks_private_info[i].ip,
             clocks_private_info[i].family == AF_INET6 ? "IPv6" : "IPv4");
+      //shared mem create?
+      create_clock_shared_mem(&clocks_private_info[i]);
     } else {
       debug(1, "cannot getaddrinfo for ip: %s.", &clocks_private_info[i].ip);
     }
@@ -227,23 +274,36 @@ int create_clock_source_record(char *sender_string,
   return response;
 }
 
-void update_master_clock_info(uint64_t master_clock_id, const char *ip, uint64_t local_time,
-                              uint64_t local_to_master_offset, uint64_t mastership_start_time) {
+void update_master_clock_info(clock_source_private_data *cpriv, uint64_t local_time,
+                              uint64_t local_to_master_offset ) {
   // to ensure that a full update has taken place, the
   // reader must ensure that the main and secondary
   // structures are identical
-
-  shared_memory->main.master_clock_id = master_clock_id;
-  if (ip != NULL) {
-    shared_memory->main.master_clock_start_time = mastership_start_time;
-    shared_memory->main.local_time = local_time;
-    shared_memory->main.local_to_master_time_offset = local_to_master_offset;
+  int ii = 0;
+  if (cpriv != NULL) {
+    shared_memory->clock[ii].master_clock_id = cpriv->grandmasterIdentity;
+    shared_memory->clock[ii].master_clock_start_time = cpriv->mastership_start_time;
+    shared_memory->clock[ii].local_time = local_time;
+    shared_memory->clock[ii].local_to_master_time_offset = local_to_master_offset;
   } else {
-    shared_memory->main.master_clock_start_time = 0;
-    shared_memory->main.local_time = 0;
-    shared_memory->main.local_to_master_time_offset = 0;
+    shared_memory->clock[ii].master_clock_id = 0;
+    shared_memory->clock[ii].master_clock_start_time = 0;
+    shared_memory->clock[ii].local_time = 0;
+    shared_memory->clock[ii].local_to_master_time_offset = 0;
   }
   __sync_synchronize();
-  shared_memory->secondary = shared_memory->main;
+  shared_memory->clock[ii+1] = shared_memory->clock[ii];
   __sync_synchronize();
+
+
+  if (cpriv != NULL && cpriv->shared_mem != NULL) {
+    cpriv->shared_mem->clock[ii].master_clock_id = cpriv->clock_id;
+    cpriv->shared_mem->clock[ii].master_clock_start_time = cpriv->mastership_start_time;
+    cpriv->shared_mem->clock[ii].local_time = local_time;
+    cpriv->shared_mem->clock[ii].local_to_master_time_offset = local_to_master_offset;
+    __sync_synchronize();
+    cpriv->shared_mem->clock[ii+1] = cpriv->shared_mem->clock[ii];
+    __sync_synchronize();
+  } else {
+  }
 }

@@ -55,12 +55,14 @@ typedef struct {
   int identical_previous_preciseOriginTimestamp_count;
   int wakeup_sent;
 
+  struct shm_structure *shared_mem;
+
 } clock_source_private_data;
 
 // information on each client
 typedef struct {
   int shm_fd;
-  struct shm_structure *shared_memory; // the client's individual smi interface
+  struct shm_structure *shared_memory; // the client's individual smi interface --?is it used?
   char shm_interface_name[64];         // it's name
   int client_id; // the 1-based index number of clocks' client_flags field associated with this
                  // interface
@@ -84,7 +86,7 @@ int delete_clients();
 
 extern clock_source_private_data clocks_private[MAX_CLOCKS];
 
-void update_master_clock_info(uint64_t master_clock_id, const char *ip, uint64_t local_time,
-                              uint64_t local_to_master_offset, uint64_t mastership_start_time);
+void update_master_clock_info(clock_source_private_data *cpriv, uint64_t local_time,
+                              uint64_t local_to_master_offset );
 
 #endif

@@ -131,7 +131,7 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
             for (gc = 0; gc < MAX_CLOCKS; gc++) {
               memset(&clock_private_info[gc], 0, sizeof(clock_source_private_data));
             }
-            update_master_clock_info(0, NULL, 0, 0, 0); // the SMI may have obsolete stuff in it
+            update_master_clock_info(NULL, 0, 0); // the SMI may have obsolete stuff in it
           } else {
             debug(2, "Start Timing");
             // dirty experimental hack -- delete all the clocks
@@ -491,11 +491,11 @@ void handle_follow_up(char *buf, ssize_t recv_len, clock_source_private_data *cl
               0.000001 * time_since_previous_offset, ntohs(msg->header.sequenceId),
               clock_private_info->follow_up_number, clock_private_info->ip);
         if (clock_is_active) {
-          update_master_clock_info(clock_private_info->grandmasterIdentity,
-                                   (const char *)&clock_private_info->ip, reception_time,
-                                   smoothed_offset, clock_private_info->mastership_start_time);
+          update_master_clock_info(clock_private_info,
+                                   reception_time,
+                                   smoothed_offset);
         } else {
-          update_master_clock_info(0, NULL, 0, 0, 0); // the SMI may have obsolete stuff in it
+          update_master_clock_info(NULL, 0, 0); // the SMI may have obsolete stuff in it
         }
 
         clock_private_info->previous_offset = smoothed_offset;

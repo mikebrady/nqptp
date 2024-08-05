@@ -71,8 +71,8 @@ typedef struct {
 
 struct shm_structure {
   uint16_t version; // check this is equal to NQPTP_SHM_STRUCTURES_VERSION
-  shm_structure_set main;
-  shm_structure_set secondary;
+  //Or maybe do an array of different clocks instead of different files??
+  shm_structure_set clock[10];
 };
 
 #endif
