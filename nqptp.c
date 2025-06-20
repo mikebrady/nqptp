@@ -447,6 +447,7 @@ int main(int argc, char **argv) {
 void send_awakening_announcement_sequence(const uint64_t clock_id, const char *clock_ip,
                                           const int ip_family, const uint8_t priority1,
                                           const uint8_t priority2) {
+                                         
   struct ptp_announce_message *msg;
   size_t msg_length = sizeof(struct ptp_announce_message);
   msg = malloc(msg_length);
@@ -513,16 +514,17 @@ void send_awakening_announcement_sequence(const uint64_t clock_id, const char *c
       int ret = sendto(s, msg, msg_length, 0, res->ai_addr, res->ai_addrlen);
       if (ret == -1)
         debug(1, "result of sendto is %d.", ret);
-      debug(2, "Send awaken Announce message to clock \"%" PRIx64 "\" at %s on %s.", clock_id,
+      debug(1, "Send awaken Announce message to clock \"%" PRIx64 "\" at %s on %s.", clock_id,
             clock_ip, ip_family == AF_INET6 ? "IPv6" : "IPv4");
 
+/*
       if (priority1 < 254) {
         msg->announce.grandmasterPriority1 =
             priority1 + 1; // make this announcement seem worse than the clock we about to ping
       } else {
-        warn("Cannot select a suitable priority for second ping of clock %" PRIx64 " at %s.",
+        warn("Cannot select a lower priority for second ping of clock %" PRIx64 " at %s.",
              clock_id, clock_ip);
-        msg->announce.grandmasterPriority1 = 250;
+        msg->announce.grandmasterPriority1 = 254;
       }
 
       msg->announce.grandmasterPriority2 = priority2;
@@ -530,6 +532,8 @@ void send_awakening_announcement_sequence(const uint64_t clock_id, const char *c
       ret = sendto(s, msg, msg_length, 0, res->ai_addr, res->ai_addrlen);
       if (ret == -1)
         debug(1, "result of second sendto is %d.", ret);
+*/
+
       freeaddrinfo(res);
     }
   }
