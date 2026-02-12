@@ -1,3 +1,6 @@
+## Version 1.2.6 
+* This is Version: 1.2.5-dev-29-ga93ba70.
+
 ## Version: 1.2.5-dev-29-ga93ba70
 * Use a new method to get versioning information from `git describe`. It recognises when a repository gets 'dirty' immediately.
 

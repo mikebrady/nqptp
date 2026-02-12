@@ -43,7 +43,6 @@ Note that you will need superuser privileges to install, enable and start the da
 ```
 $ git clone https://github.com/mikebrady/nqptp.git
 $ cd nqptp
-$ git checkout development
 $ autoreconf -fi # about a minute on a Raspberry Pi.
 $ ./configure --with-systemd-startup
 $ make
@@ -53,7 +52,6 @@ $ make
 ```
 $ git clone https://github.com/mikebrady/nqptp.git
 $ cd nqptp
-$ git checkout development
 $ autoreconf -fi
 $ ./configure --with-freebsd-startup
 $ make
