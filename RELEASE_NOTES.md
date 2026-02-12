@@ -1,15 +1,13 @@
 ## Version 1.2.6 
-* This is Version: 1.2.5-dev-29-ga93ba70.
+* This update should make synchronisation a little better and a little smoother.
+
+  **Note** If you are updating an existing installation, you'll need to delete the existing service file as directed in the [README](https://github.com/mikebrady/nqptp/blob/main/README.md#remove-old-service-files). You must also redo the `./configure --with-systemd-startup` step to generate the updated `systemd` service file.
 
 ## Version: 1.2.5-dev-29-ga93ba70
 * Use a new method to get versioning information from `git describe`. It recognises when a repository gets 'dirty' immediately.
 
 ## Version: 1.2.5-dev-27-gb59628b
 * Use Linux scheduling to give NQPTP slightly increased priority. This should make it more likely that NQPTP will be able to accurately time the arrival of timing packets and thus make synchronisation a little smoother. At startup, NQPTP will request FIFO scheduling and an associated priority. If it's not available, it will just carry on as before. The `systemd` service file has been updated to grant NQPTP limited permission to set scheduling and priority.
-
-  * Note 1. This should be considered an optional update for existing installations. It should make synchronisation a little better and a little smoother. Except on very busy or very low-powered devices, the difference will be quite small.
-
-  * Note 2. If you do wish to update an existing installation, you'll need to delete the existing service file as directed in the [README](https://github.com/mikebrady/nqptp/blob/main/README.md#remove-old-service-files). You must also redo the `./configure --with-systemd-startup` step to generate the updated `systemd` service file.
   
 ## Version: 1.2.5-dev-24-g494ff3f
 * Following a [suggestion](https://github.com/mikebrady/nqptp/issues/33) by [Jörn Nettingsmeier](https://github.com/nettings), use the `DynamicUser` facility provided by `systemd` to define the system user needed to run the NQPTP daemon. Many thanks to them. New installations will use this arrangement.
