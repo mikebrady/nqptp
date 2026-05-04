@@ -21,9 +21,9 @@ if BUILD_FOR_LINUX
 # If you want to run NQPTP from the command line, e.g. for debugging, run it as root user.
 # no installer for System V
 if INSTALL_SYSTEMD_STARTUP
-	[ -e $(DESTDIR)$(libdir)/systemd/system ] || mkdir -p $(DESTDIR)$(libdir)/systemd/system
+	[ -e $(DESTDIR)$(systemdsystemunitdir) ] || mkdir -p $(DESTDIR)$(systemdsystemunitdir)
 # don't replace a service file if it already exists...
-	[ -e $(DESTDIR)$(libdir)/systemd/system/nqptp.service ] || cp nqptp.service $(DESTDIR)$(libdir)/systemd/system
+	[ -e $(DESTDIR)$(systemdsystemunitdir)/nqptp.service ] || cp nqptp.service $(DESTDIR)$(systemdsystemunitdir)
 endif
 endif
 
