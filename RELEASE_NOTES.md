@@ -1,3 +1,11 @@
+## Version 1.2.7
+* With this update, `pkg-config` is used to determine the correct location for `systemdsystemunitdir`.
+* Additionally, `--with-systemdsystemunitdir`  `./configure...` option is added to allow the location to be over-ridden.
+
+**Note** If you are updating an existing installation, you'll need to delete the existing service file as directed in the [README](https://github.com/mikebrady/nqptp/blob/main/README.md#remove-old-service-files). 
+
+Thanks to [Chris Boot](https://github.com/bootc) for the [PR](https://github.com/mikebrady/nqptp/pull/46).
+
 ## Version 1.2.6 
 * This update should make synchronisation a little better and a little smoother.
 
