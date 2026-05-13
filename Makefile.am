@@ -1,5 +1,6 @@
 bin_PROGRAMS = nqptp
 nqptp_SOURCES = nqptp.c nqptp-clock-sources.c nqptp-message-handlers.c nqptp-utilities.c general-utilities.c debug.c
+man_MANS = nqptp.8
 
 AM_CFLAGS = -fno-common -Wall -Wextra -pthread --include=config.h
 

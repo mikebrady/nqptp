@@ -1,0 +1,89 @@
+.TH NQPTP 8 "May 7, 2026" "nqptp" "System Manager's Manual"
+.SH NAME
+nqptp \- Not Quite PTP: PTP-based timing daemon for Apple AirPlay 2
+.SH SYNOPSIS
+.B nqptp
+.RB [ \-V ]
+.RB [ \-v | \-vv | \-vvv ]
+.RB [ \-h ]
+.SH DESCRIPTION
+.B nqptp
+is a daemon that monitors timing data from PTP (Precision Time Protocol)
+clocks. It is designed exclusively as a companion daemon to
+.BR shairport-sync (1),
+which uses it to obtain the accurate timing information required for
+AirPlay 2 audio playback.
+.PP
+.B nqptp
+must be running before
+.B shairport-sync
+is started with AirPlay 2 support enabled. It communicates with
+.B shairport-sync
+via a shared memory interface and does not require any configuration
+file.
+.PP
+Under normal operation,
+.B nqptp
+runs silently in the background. It is typically started at boot time
+via a service manager such as
+.BR systemd (1).
+.SH OPTIONS
+.TP
+.B \-V
+Print the version number and exit.
+.TP
+.B \-v
+Enable verbose logging. Basic informational messages about timing
+sources and state changes are written to the system log.
+.TP
+.B \-vv
+Enable more verbose logging. Additional detail about PTP clock
+selection and timing computations is included.
+.TP
+.B \-vvv
+Enable very verbose logging. Full diagnostic output, including
+low-level PTP message handling. Intended for debugging only.
+.TP
+.B \-h
+Print a brief help summary and exit.
+.SH SIGNALS
+.TP
+.B SIGTERM
+Cleanly shut down the daemon, releasing the shared memory interface
+before exiting.
+.TP
+.B SIGINT
+Cleanly shut down the daemon, equivalent to
+.BR SIGTERM .
+.SH FILES
+.TP
+.I /dev/shm/nqptp
+Shared memory segment used to pass timing data to
+.BR shairport-sync (1).
+.SH NOTES
+.B nqptp
+listens on UDP port 319 and 320, the standard PTP event and general
+message ports. It therefore requires either
+.B CAP_NET_BIND_SERVICE
+or root privileges in order to bind these ports. When running under
+.BR systemd (1),
+the provided unit file grants the necessary capability without
+requiring the daemon to run as root.
+.PP
+Only one instance of
+.B nqptp
+should be run at a time on a given host.
+.SH SEE ALSO
+.BR shairport-sync (1),
+.BR ptp4l (8),
+.BR systemd (1)
+.SH BUGS
+Please report bugs at
+.IR https://github.com/mikebrady/nqptp/issues .
+.SH AUTHORS
+.B nqptp
+was written by Mike Brady.
+.PP
+This man page was originally written for the Debian package of
+.BR nqptp
+by Chris Boot <bootc@debian.org>.
