@@ -1,3 +1,6 @@
+## Version 1.2.8
+* A new `man` file. Thanks again to [Chris Boot](https://github.com/bootc) for the [PR](https://github.com/mikebrady/nqptp/pull/48).
+
 ## Version 1.2.7
 * With this update, `pkg-config` is used to determine the correct location for `systemdsystemunitdir`.
 * Additionally, `--with-systemdsystemunitdir`  `./configure...` option is added to allow the location to be over-ridden.
