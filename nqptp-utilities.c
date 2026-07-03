@@ -19,10 +19,13 @@
 
 #include "nqptp-utilities.h"
 #include "general-utilities.h"
+#include "nqptp-platform.h"
 #include <errno.h>
+#ifndef CONFIG_FOR_MINGW
 #include <fcntl.h>   // fcntl etc.
 #include <ifaddrs.h> // getifaddrs
 #include <netinet/in.h>
+#endif
 
 #ifdef CONFIG_FOR_LINUX
 #include <linux/if_packet.h> // sockaddr_ll
@@ -36,7 +39,9 @@
 #include <sys/socket.h>
 #endif
 
+#ifndef CONFIG_FOR_MINGW
 #include <netdb.h>  // getaddrinfo etc.
+#endif
 #include <stdio.h>  // snprintf
 #include <stdlib.h> // malloc, free
 #include <string.h> // memset strcpy, etc.
@@ -69,25 +74,24 @@ void open_sockets_at_port(const char *node, uint16_t port,
 
   for (p = info; p; p = p->ai_next) {
     ret = 0;
-    int fd = socket(p->ai_family, p->ai_socktype, IPPROTO_UDP);
+    nqptp_socket_t fd = socket(p->ai_family, p->ai_socktype, IPPROTO_UDP);
     int yes = 1;
 
     // Handle socket open failures if protocol unavailable (or IPV6 not handled)
-    if (fd != -1) {
+    if (fd != NQPTP_INVALID_SOCKET) {
 #ifdef IPV6_V6ONLY
       // some systems don't support v4 access on v6 sockets, but some do.
       // since we need to account for two sockets we might as well
       // always.
       if (p->ai_family == AF_INET6) {
-        ret |= setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &yes, sizeof(yes));
+        ret |= setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, (const char *)&yes, sizeof(yes));
       }
 #endif
 
       if (!ret)
         ret = bind(fd, p->ai_addr, p->ai_addrlen);
 
-      int flags = fcntl(fd, F_GETFL);
-      fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+      nqptp_socket_set_nonblocking(fd);
 
       // one of the address families will fail on some systems that
       // report its availability. Do not complain.
@@ -105,10 +109,11 @@ void open_sockets_at_port(const char *node, uint16_t port,
   }
   freeaddrinfo(info);
   if (sockets_opened == 0) {
-    if (errno == EACCES) {
+    int socket_error = nqptp_socket_error();
+    if (socket_error == EACCES) {
       die("nqptp does not have permission to access port %u. It must (a) [Linux only] have been given CAP_NET_BIND_SERVICE capabilities using e.g. setcap or systemd's AmbientCapabilities, or (b) start as root.", port);
     } else {
-      die("nqptp is unable to listen on port %u. The error is: %d, \"%s\".", port, errno, strerror(errno));
+      die("nqptp is unable to listen on port %u. The error is: %d, \"%s\".", port, socket_error, strerror(socket_error));
     }
   }
 }
@@ -169,6 +174,9 @@ void debug_print_buffer(int level, char *buf, size_t buf_len) {
 // the actual size will be returned
 
 int get_device_id(uint8_t *id, int *int_length) {
+#ifdef CONFIG_FOR_MINGW
+  return nqptp_get_device_id(id, int_length);
+#else
   int max_length = *int_length;
   int response = -1;
   struct ifaddrs *ifaddr = NULL;
@@ -225,6 +233,7 @@ int get_device_id(uint8_t *id, int *int_length) {
     freeifaddrs(ifaddr);
   }
   return response;
+#endif
 }
 
 uint64_t get_self_clock_id() {

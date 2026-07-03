@@ -25,7 +25,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef CONFIG_FOR_MINGW
 #include <syslog.h>
+#endif
 
 int debuglev = 0;
 int debugger_show_elapsed_time = 0;

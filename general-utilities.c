@@ -19,7 +19,9 @@
 
 #include "general-utilities.h"
 #include "debug.h"
+#ifndef CONFIG_FOR_MINGW
 #include <arpa/inet.h> // ntohl etc.
+#endif
 #include <string.h>    // memcpy
 
 void hcton64(uint64_t num, uint8_t *p) {

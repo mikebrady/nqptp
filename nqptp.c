@@ -22,6 +22,7 @@
 #include "general-utilities.h"
 #include "nqptp-clock-sources.h"
 #include "nqptp-message-handlers.h"
+#include "nqptp-platform.h"
 #include "nqptp-ptp-definitions.h"
 #include "nqptp-utilities.h"
 
@@ -29,7 +30,9 @@
 #include "gitversion.h"
 #endif
 
+#ifndef CONFIG_FOR_MINGW
 #include <arpa/inet.h> // inet_ntop
+#endif
 #include <stdio.h>     // fprint
 #include <stdlib.h>    // malloc;
 #include <string.h>    // memset
@@ -38,15 +41,21 @@
 #include <unistd.h> // close
 
 #include <fcntl.h>      /* For O_* constants */
+#ifndef CONFIG_FOR_MINGW
 #include <sys/mman.h>   // for shared memory stuff
 #include <sys/select.h> // for fd_set
+#endif
 #include <sys/stat.h>   // umask
 #include <time.h>       // for timeval
 
 #include <signal.h> // SIGTERM and stuff like that
 
+#ifndef CONFIG_FOR_MINGW
 #include <netdb.h>
+#endif
+#ifndef CONFIG_FOR_MINGW
 #include <sys/socket.h>
+#endif
 
 #if defined(CONFIG_FOR_FREEBSD) || defined(CONFIG_FOR_OPENBSD) || defined(CONFIG_FOR_CYGWIN)
 #include <netinet/in.h>
@@ -94,28 +103,24 @@ void goodbye(void) {
   // close any open sockets
   unsigned int i;
   for (i = 0; i < sockets_open_stuff.sockets_open; i++)
-    close(sockets_open_stuff.sockets[i].number);
+    nqptp_socket_close(&sockets_open_stuff.sockets[i].number);
 
   // close off shared memory interface
   delete_clients();
 
   // close off new smi
   // mmap cleanup
-  if (munmap(shared_memory, sizeof(struct shm_structure)) != 0) {
+  if (nqptp_shared_memory_unmap(shared_memory, sizeof(struct shm_structure)) != 0) {
     debug(1, "error unmapping shared memory \"%s\": \"%s\".", NQPTP_INTERFACE_NAME,
           strerror(errno));
   }
   // shm_open cleanup
-  if (shm_unlink(NQPTP_INTERFACE_NAME) == -1) {
+  if (nqptp_shared_memory_unlink(NQPTP_INTERFACE_NAME) == -1) {
     debug(1, "error unlinking shared memory \"%s\": \"%s\".", NQPTP_INTERFACE_NAME,
           strerror(errno));
   }
 
-  if (shm_fd != -1)
-    close(shm_fd);
-
-  if (epoll_fd != -1)
-    close(epoll_fd);
+  nqptp_platform_cleanup();
 
   debug(1, "goodbye");
 }
@@ -174,6 +179,9 @@ int main(int argc, char **argv) {
 
   debug_init(debug_level, 0, 1, 1);
 
+  if (nqptp_platform_init() != 0)
+    die("could not initialise platform networking.");
+
 #ifdef CONFIG_USE_GIT_VERSION_STRING
   if (git_version_string[0] != '\0')
     debug(1, "Version: %s, smi%u. Clock ID: \"%" PRIx64 "\".", git_version_string,
@@ -203,6 +211,10 @@ int main(int argc, char **argv) {
 
   epoll_fd = -1;
 
+#ifdef CONFIG_FOR_MINGW
+  signal(SIGINT, intHandler);
+  signal(SIGTERM, termHandler);
+#else
   // control-c (SIGINT) cleanly
   struct sigaction act;
   memset(&act, 0, sizeof(struct sigaction));
@@ -214,6 +226,7 @@ int main(int argc, char **argv) {
   memset(&act2, 0, sizeof(struct sigaction));
   act2.sa_handler = termHandler;
   sigaction(SIGTERM, &act2, NULL);
+#endif
 
 #ifdef CONFIG_FOR_OPENBSD
   // shm_open(3) prohibits sharing between different UIDs, so nqptp must run as
@@ -237,36 +250,10 @@ int main(int argc, char **argv) {
 
   // open the SMI
 
-  shm_fd = -1;
-
-  mode_t oldumask = umask(0);
-  shm_fd = shm_open(NQPTP_INTERFACE_NAME, O_RDWR | O_CREAT, 0644);
-  if (shm_fd == -1) {
-    die("nqptp cannot open the shared memory \"%s\" for writing. Is another copy of nqptp (e.g. an nqptp daemon) running already?", NQPTP_INTERFACE_NAME);
-  }
-  (void)umask(oldumask);
-
-  if (ftruncate(shm_fd, sizeof(struct shm_structure)) == -1) {
-    die("failed to set size of shared memory \"%s\".", NQPTP_INTERFACE_NAME);
-  }
-
-#if defined(CONFIG_FOR_FREEBSD) || defined(CONFIG_FOR_OPENBSD) || defined(CONFIG_FOR_CYGWIN)
-  shared_memory = (struct shm_structure *)mmap(NULL, sizeof(struct shm_structure),
-                                               PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
-#endif
-
-#ifdef CONFIG_FOR_LINUX
-  shared_memory =
-      (struct shm_structure *)mmap(NULL, sizeof(struct shm_structure), PROT_READ | PROT_WRITE,
-                                   MAP_LOCKED | MAP_SHARED, shm_fd, 0);
-#endif
+  shared_memory = nqptp_shared_memory_create(NQPTP_INTERFACE_NAME, sizeof(struct shm_structure), 1);
 
   if (shared_memory == (struct shm_structure *)-1) {
     die("failed to mmap shared memory \"%s\".", NQPTP_INTERFACE_NAME);
-  }
-
-  if (shm_fd == -1) {
-    warn("error closing \"%s\" after mapping.", shm_fd);
   }
 
   // zero it
@@ -310,12 +297,19 @@ int main(int argc, char **argv) {
       if (retval > 0) {
         unsigned t;
         for (t = 0; t < sockets_open_stuff.sockets_open; t++) {
-          int socket_number = sockets_open_stuff.sockets[t].number;
+          nqptp_socket_t socket_number = sockets_open_stuff.sockets[t].number;
           if (FD_ISSET(socket_number, &readSockSet)) {
 
             SOCKADDR from_sock_addr;
             memset(&from_sock_addr, 0, sizeof(SOCKADDR));
 
+#ifdef CONFIG_FOR_MINGW
+            int from_sock_addr_len = sizeof(from_sock_addr);
+            recv_len = recvfrom(socket_number, buf, BUFLEN, 0, (struct sockaddr *)&from_sock_addr,
+                                &from_sock_addr_len);
+            if (recv_len == SOCKET_ERROR)
+              recv_len = -1;
+#else
             struct {
               struct cmsghdr cm;
               char control[512];
@@ -338,9 +332,11 @@ int main(int argc, char **argv) {
             msg.msg_control = &control;
             msg.msg_controllen = sizeof(control);
 
-            uint16_t receiver_port = 0;
             // int msgsize = recv(udpsocket_fd, &msg_buffer, 4, 0);
             recv_len = recvmsg(socket_number, &msg, MSG_DONTWAIT);
+#endif
+
+            uint16_t receiver_port = 0;
 
             if (recv_len != -1) {
               // get the receiver port
@@ -351,10 +347,11 @@ int main(int argc, char **argv) {
               }
             }
             if (recv_len == -1) {
-              if (errno == EAGAIN) {
+              int socket_error = nqptp_socket_error();
+              if (nqptp_socket_would_block(socket_error)) {
                 usleep(1000); // this can happen, it seems...
               } else {
-                debug(1, "recvmsg() error %d", errno);
+                debug(1, "recv error %d", socket_error);
               }
               // check if it's a control port message before checking for the length of the
               // message.
@@ -480,14 +477,14 @@ void send_awakening_announcement_sequence(const uint64_t clock_id, const char *c
   // get the socket for the correct port -- 320 -- and family -- IPv4 or IPv6 -- to send it
   // from.
 
-  int s = 0;
+  nqptp_socket_t s = NQPTP_INVALID_SOCKET;
   unsigned t;
   for (t = 0; t < sockets_open_stuff.sockets_open; t++) {
     if ((sockets_open_stuff.sockets[t].port == 320) &&
         (sockets_open_stuff.sockets[t].family == ip_family))
       s = sockets_open_stuff.sockets[t].number;
   }
-  if (s == 0) {
+  if (s == NQPTP_INVALID_SOCKET) {
     debug(1, "sending socket not found for clock %" PRIx64 " at %s, family %s.", clock_id, clock_ip,
           ip_family == AF_INET    ? "IPv4"
           : ip_family == AF_INET6 ? "IPv6"
@@ -510,7 +507,7 @@ void send_awakening_announcement_sequence(const uint64_t clock_id, const char *c
       // here, we have the destination, so send it
 
       // debug_print_buffer(1, (char *)msg, msg_length);
-      int ret = sendto(s, msg, msg_length, 0, res->ai_addr, res->ai_addrlen);
+      int ret = sendto(s, (const char *)msg, msg_length, 0, res->ai_addr, res->ai_addrlen);
       if (ret == -1)
         debug(1, "result of sendto is %d.", ret);
       debug(2, "Send awaken Announce message to clock \"%" PRIx64 "\" at %s on %s.", clock_id,
@@ -527,7 +524,7 @@ void send_awakening_announcement_sequence(const uint64_t clock_id, const char *c
 
       msg->announce.grandmasterPriority2 = priority2;
       usleep(150000);
-      ret = sendto(s, msg, msg_length, 0, res->ai_addr, res->ai_addrlen);
+      ret = sendto(s, (const char *)msg, msg_length, 0, res->ai_addr, res->ai_addrlen);
       if (ret == -1)
         debug(1, "result of second sendto is %d.", ret);
       freeaddrinfo(res);

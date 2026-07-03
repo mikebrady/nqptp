@@ -20,19 +20,28 @@
 #include "nqptp-clock-sources.h"
 #include "debug.h"
 #include "general-utilities.h"
+#include "nqptp-platform.h"
 #include "nqptp-ptp-definitions.h"
+#ifndef CONFIG_FOR_MINGW
 #include <arpa/inet.h>
+#endif
 #include <errno.h>
+#ifndef CONFIG_FOR_MINGW
 #include <ifaddrs.h>
 #include <netdb.h>
+#endif
 #include <string.h>
+#ifndef CONFIG_FOR_MINGW
 #include <sys/socket.h>
+#endif
 #include <sys/types.h> // for ftruncate and others
 #include <unistd.h>    // for ftruncate and others
 
 #include <fcntl.h>      /* For O_* constants */
+#ifndef CONFIG_FOR_MINGW
 #include <sys/mman.h>   // for shared memory stuff
 #include <sys/select.h> // for fd_set
+#endif
 #include <sys/stat.h>   // umask
 
 #if defined(CONFIG_FOR_FREEBSD) || defined(CONFIG_FOR_CYGWIN)
@@ -86,37 +95,12 @@ int get_client_id(char *client_shared_memory_interface_name) {
 
         // open a shared memory interface.
         debug(2, "Create a shm interface named \"%s\"", clients[i].shm_interface_name);
-        clients[i].shm_fd = -1;
-
-        mode_t oldumask = umask(0);
-        clients[i].shm_fd = shm_open(client_shared_memory_interface_name, O_RDWR | O_CREAT, 0666);
-        if (clients[i].shm_fd == -1) {
-          die("cannot open shared memory \"%s\".", client_shared_memory_interface_name);
-        }
-        (void)umask(oldumask);
-
-        if (ftruncate(clients[i].shm_fd, sizeof(struct shm_structure)) == -1) {
-          die("failed to set size of shared memory \"%s\".", client_shared_memory_interface_name);
-        }
-
-#if defined(CONFIG_FOR_FREEBSD) || defined(CONFIG_FOR_CYGWIN)
         clients[i].shared_memory =
-            (struct shm_structure *)mmap(NULL, sizeof(struct shm_structure), PROT_READ | PROT_WRITE,
-                                         MAP_SHARED, clients[i].shm_fd, 0);
-#endif
-
-#ifdef CONFIG_FOR_LINUX
-        clients[i].shared_memory =
-            (struct shm_structure *)mmap(NULL, sizeof(struct shm_structure), PROT_READ | PROT_WRITE,
-                                         MAP_LOCKED | MAP_SHARED, clients[i].shm_fd, 0);
-#endif
+            nqptp_shared_memory_create(client_shared_memory_interface_name,
+                                       sizeof(struct shm_structure), 1);
 
         if (clients[i].shared_memory == (struct shm_structure *)-1) {
           die("failed to mmap shared memory \"%s\".", client_shared_memory_interface_name);
-        }
-
-        if ((close(clients[i].shm_fd) == -1)) {
-          warn("error closing \"%s\" after mapping.", client_shared_memory_interface_name);
         }
 
         // zero it
@@ -144,12 +128,13 @@ int delete_client(int client_id) {
   if (clients[client_id].shm_interface_name[0] != '\0') {
     if (clients[client_id].shared_memory != NULL) {
       // mmap cleanup
-      if (munmap(clients[client_id].shared_memory, sizeof(struct shm_structure)) != 0) {
+      if (nqptp_shared_memory_unmap(clients[client_id].shared_memory,
+                                    sizeof(struct shm_structure)) != 0) {
         debug(1, "error unmapping shared memory");
         response = -1;
       }
       // shm_open cleanup
-      if (shm_unlink(clients[client_id].shm_interface_name) == -1) {
+      if (nqptp_shared_memory_unlink(clients[client_id].shm_interface_name) == -1) {
         debug(1, "error unlinking shared memory \"%s\"", clients[client_id].shm_interface_name);
         response = -1;
       }

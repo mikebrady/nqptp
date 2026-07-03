@@ -16,7 +16,11 @@
  *
  * Commercial licensing is also available.
  */
+#ifndef CONFIG_FOR_MINGW
 #include <arpa/inet.h> // ntohl and ntohs
+#else
+#include "nqptp-platform.h"
+#endif
 #include <string.h>    //strsep
 
 #include <stdio.h>  // snprintf
@@ -28,6 +32,23 @@
 #include "nqptp-message-handlers.h"
 #include "nqptp-ptp-definitions.h"
 #include "nqptp-utilities.h"
+
+#ifdef CONFIG_FOR_MINGW
+static char *nqptp_strsep(char **stringp, const char *delim) {
+  char *start = *stringp;
+  if (start == NULL)
+    return NULL;
+  char *p = strpbrk(start, delim);
+  if (p == NULL) {
+    *stringp = NULL;
+  } else {
+    *p = '\0';
+    *stringp = p + 1;
+  }
+  return start;
+}
+#define strsep nqptp_strsep
+#endif
 
 char hexcharbuffer[16384];
 int reset_clock_smoothing = 0;

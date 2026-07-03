@@ -12,6 +12,7 @@ build_linux=no
 build_freebsd=no
 build_openbsd=no
 build_cygwin=no
+build_mingw=no
 
 # Detect the target system
 case "${host_os}" in
@@ -27,6 +28,9 @@ case "${host_os}" in
     cygwin*)
         build_cygwin=yes
         ;;
+    mingw*)
+        build_mingw=yes
+        ;;
     *)
         AC_MSG_ERROR(["OS $host_os is not supported"])
         ;;
@@ -37,6 +41,7 @@ AM_CONDITIONAL([BUILD_FOR_LINUX], [test "$build_linux" = "yes"])
 AM_CONDITIONAL([BUILD_FOR_FREEBSD], [test "$build_freebsd" = "yes"])
 AM_CONDITIONAL([BUILD_FOR_OPENBSD], [test "$build_openbsd" = "yes"])
 AM_CONDITIONAL([BUILD_FOR_CYGWIN], [test "$build_cygwin" = "yes"])
+AM_CONDITIONAL([BUILD_FOR_MINGW], [test "$build_mingw" = "yes"])
 
 if test "x$build_linux" = "xyes" ; then
   AC_DEFINE([CONFIG_FOR_LINUX], 1, [Build for Linux.])
@@ -49,6 +54,10 @@ if test "x$build_openbsd" = "xyes" ; then
 fi
 if test "x$build_cygwin" = "xyes" ; then
   AC_DEFINE([CONFIG_FOR_CYGWIN], 1, [Build for Cygwin.])
+fi
+if test "x$build_mingw" = "xyes" ; then
+  AC_DEFINE([CONFIG_FOR_MINGW], 1, [Build for MinGW.])
+  LIBS="-lws2_32 -liphlpapi ${LIBS}"
 fi
 
 AC_CHECK_PROGS([GIT], [git])

@@ -24,7 +24,10 @@
 // specialised stuff should go in the nqptp-utilities
 
 #include <inttypes.h>
+#include "nqptp-platform.h"
+#ifndef CONFIG_FOR_MINGW
 #include <sys/socket.h>
+#endif
 #include <time.h>
 
 // struct sockaddr_in6 is bigger than struct sockaddr. derp

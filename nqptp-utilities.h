@@ -21,6 +21,7 @@
 #define NQPTP_UTILITIES_H
 
 #include "nqptp.h"
+#include "nqptp-platform.h"
 #include <inttypes.h>
 #include <pthread.h>
 
@@ -28,7 +29,7 @@
 // general stuff should go in the general-utilities
 
 typedef struct {
-  int number;
+  nqptp_socket_t number;
   uint16_t port;
   int family; // AF_INET or AF_INET6
 } socket_info;
