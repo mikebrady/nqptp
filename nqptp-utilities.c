@@ -28,7 +28,7 @@
 #include <linux/if_packet.h> // sockaddr_ll
 #endif
 
-#if defined(CONFIG_FOR_FREEBSD) || defined(CONFIG_FOR_OPENBSD)
+#if defined(CONFIG_FOR_FREEBSD) || defined(CONFIG_FOR_OPENBSD) || defined(CONFIG_FOR_CYGWIN)
 #include <sys/types.h>
 #include <unistd.h>
 #include <net/if_dl.h>

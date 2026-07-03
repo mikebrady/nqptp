@@ -35,7 +35,7 @@
 #include <sys/select.h> // for fd_set
 #include <sys/stat.h>   // umask
 
-#ifdef CONFIG_FOR_FREEBSD
+#if defined(CONFIG_FOR_FREEBSD) || defined(CONFIG_FOR_CYGWIN)
 #include <netinet/in.h>
 #endif
 
@@ -99,7 +99,7 @@ int get_client_id(char *client_shared_memory_interface_name) {
           die("failed to set size of shared memory \"%s\".", client_shared_memory_interface_name);
         }
 
-#ifdef CONFIG_FOR_FREEBSD
+#if defined(CONFIG_FOR_FREEBSD) || defined(CONFIG_FOR_CYGWIN)
         clients[i].shared_memory =
             (struct shm_structure *)mmap(NULL, sizeof(struct shm_structure), PROT_READ | PROT_WRITE,
                                          MAP_SHARED, clients[i].shm_fd, 0);

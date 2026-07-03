@@ -5,7 +5,7 @@ It is a companion application to [Shairport Sync](https://github.com/mikebrady/s
 
 ## Installation
 
-This guide is for recent Linux and FreeBSD systems.
+This guide is for recent Linux and FreeBSD systems. Cygwin support is experimental.
 
 As usual, you should first ensure everything is up to date.
 
@@ -57,6 +57,17 @@ $ ./configure --with-freebsd-startup
 $ make
 # make install
 ```
+#### Cygwin (Experimental)
+```
+$ git clone https://github.com/DOCaCola/nqptp.git
+$ cd nqptp
+$ autoreconf -fi
+$ ./configure
+$ make
+$ make install
+```
+Run `nqptp` from an elevated Cygwin terminal, or install it under a Windows service account that can bind UDP ports 319 and 320. Open UDP ports 319 and 320 in Windows Firewall.
+
 The `make install` installs a startup script as requested. You should enable it and start it in the normal way:
 
 ### First Install or Update?

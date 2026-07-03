@@ -11,6 +11,7 @@ AC_CANONICAL_HOST
 build_linux=no
 build_freebsd=no
 build_openbsd=no
+build_cygwin=no
 
 # Detect the target system
 case "${host_os}" in
@@ -23,6 +24,9 @@ case "${host_os}" in
     openbsd*)
         build_openbsd=yes
         ;;
+    cygwin*)
+        build_cygwin=yes
+        ;;
     *)
         AC_MSG_ERROR(["OS $host_os is not supported"])
         ;;
@@ -32,6 +36,7 @@ esac
 AM_CONDITIONAL([BUILD_FOR_LINUX], [test "$build_linux" = "yes"])
 AM_CONDITIONAL([BUILD_FOR_FREEBSD], [test "$build_freebsd" = "yes"])
 AM_CONDITIONAL([BUILD_FOR_OPENBSD], [test "$build_openbsd" = "yes"])
+AM_CONDITIONAL([BUILD_FOR_CYGWIN], [test "$build_cygwin" = "yes"])
 
 if test "x$build_linux" = "xyes" ; then
   AC_DEFINE([CONFIG_FOR_LINUX], 1, [Build for Linux.])
@@ -41,6 +46,9 @@ if test "x$build_freebsd" = "xyes" ; then
 fi
 if test "x$build_openbsd" = "xyes" ; then
   AC_DEFINE([CONFIG_FOR_OPENBSD], 1, [Build for OpenBSD.])
+fi
+if test "x$build_cygwin" = "xyes" ; then
+  AC_DEFINE([CONFIG_FOR_CYGWIN], 1, [Build for Cygwin.])
 fi
 
 AC_CHECK_PROGS([GIT], [git])
@@ -75,10 +83,7 @@ PKG_PROG_PKG_CONFIG
 
 # Checks for libraries.
 AC_CHECK_LIB([pthread],[pthread_create], , AC_MSG_ERROR(pthread library needed))
-if test "x$build_openbsd" = "xno" ; then
-  # part of libc
-  AC_CHECK_LIB([rt],[clock_gettime], , AC_MSG_ERROR(librt needed for shared memory library))
-fi
+AC_SEARCH_LIBS([clock_gettime], [rt], , AC_MSG_ERROR(clock_gettime needed for timing and shared memory))
 
 # Checks for header files.
 AC_CHECK_HEADERS([arpa/inet.h inttypes.h netdb.h stdlib.h string.h sys/socket.h unistd.h])
