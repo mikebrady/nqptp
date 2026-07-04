@@ -5,7 +5,7 @@ It is a companion application to [Shairport Sync](https://github.com/mikebrady/s
 
 ## Installation
 
-This guide is for recent Linux and FreeBSD systems. Native Windows support is experimental and is built with MSYS2 UCRT64 / MinGW-w64.
+This guide is for recent Linux and FreeBSD systems. Native Windows support is built with MSYS2 UCRT64 / MinGW-w64.
 
 As usual, you should first ensure everything is up to date.
 
@@ -57,9 +57,9 @@ $ ./configure --with-freebsd-startup
 $ make
 # make install
 ```
-#### MSYS2 UCRT64 / MinGW-w64 (Experimental)
+#### MSYS2 UCRT64 / MinGW-w64
 ```
-$ git clone https://github.com/DOCaCola/nqptp.git
+$ git clone https://github.com/mikebrady/nqptp.git
 $ cd nqptp
 $ autoreconf -fi
 $ ./configure
