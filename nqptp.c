@@ -57,7 +57,7 @@
 #include <sys/socket.h>
 #endif
 
-#if defined(CONFIG_FOR_FREEBSD) || defined(CONFIG_FOR_OPENBSD) || defined(CONFIG_FOR_CYGWIN)
+#if defined(CONFIG_FOR_FREEBSD) || defined(CONFIG_FOR_OPENBSD)
 #include <netinet/in.h>
 #include <sys/socket.h>
 #endif
@@ -282,11 +282,17 @@ int main(int argc, char **argv) {
       fd_set readSockSet;
       struct timeval timeout;
       FD_ZERO(&readSockSet);
+#ifdef CONFIG_FOR_MINGW
+      int smax = 0; // Ignored by Winsock select().
+#else
       int smax = -1;
+#endif
       unsigned int s;
       for (s = 0; s < sockets_open_stuff.sockets_open; s++) {
+#ifndef CONFIG_FOR_MINGW
         if (sockets_open_stuff.sockets[s].number > smax)
           smax = sockets_open_stuff.sockets[s].number;
+#endif
         FD_SET(sockets_open_stuff.sockets[s].number, &readSockSet);
       }
 

@@ -11,7 +11,6 @@ AC_CANONICAL_HOST
 build_linux=no
 build_freebsd=no
 build_openbsd=no
-build_cygwin=no
 build_mingw=no
 
 # Detect the target system
@@ -25,9 +24,6 @@ case "${host_os}" in
     openbsd*)
         build_openbsd=yes
         ;;
-    cygwin*)
-        build_cygwin=yes
-        ;;
     mingw*)
         build_mingw=yes
         ;;
@@ -40,7 +36,6 @@ esac
 AM_CONDITIONAL([BUILD_FOR_LINUX], [test "$build_linux" = "yes"])
 AM_CONDITIONAL([BUILD_FOR_FREEBSD], [test "$build_freebsd" = "yes"])
 AM_CONDITIONAL([BUILD_FOR_OPENBSD], [test "$build_openbsd" = "yes"])
-AM_CONDITIONAL([BUILD_FOR_CYGWIN], [test "$build_cygwin" = "yes"])
 AM_CONDITIONAL([BUILD_FOR_MINGW], [test "$build_mingw" = "yes"])
 
 if test "x$build_linux" = "xyes" ; then
@@ -51,9 +46,6 @@ if test "x$build_freebsd" = "xyes" ; then
 fi
 if test "x$build_openbsd" = "xyes" ; then
   AC_DEFINE([CONFIG_FOR_OPENBSD], 1, [Build for OpenBSD.])
-fi
-if test "x$build_cygwin" = "xyes" ; then
-  AC_DEFINE([CONFIG_FOR_CYGWIN], 1, [Build for Cygwin.])
 fi
 if test "x$build_mingw" = "xyes" ; then
   AC_DEFINE([CONFIG_FOR_MINGW], 1, [Build for MinGW.])

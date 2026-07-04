@@ -44,7 +44,7 @@
 #endif
 #include <sys/stat.h>   // umask
 
-#if defined(CONFIG_FOR_FREEBSD) || defined(CONFIG_FOR_CYGWIN)
+#ifdef CONFIG_FOR_FREEBSD
 #include <netinet/in.h>
 #endif
 
