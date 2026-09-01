@@ -30,9 +30,6 @@
 #include "nqptp-utilities.h"
 
 char hexcharbuffer[16384];
-int reset_clock_smoothing = 0;
-uint64_t clock_validity_expiration_time = 0;
-int clock_is_active = 0;
 
 char *hex_string(void *buf, size_t buf_len) {
   char *tbuf = (char *)buf;
@@ -47,9 +44,7 @@ char *hex_string(void *buf, size_t buf_len) {
   return hexcharbuffer;
 }
 
-void handle_control_port_messages(char *buf, ssize_t recv_len,
-                                  clock_source_private_data *clock_private_info,
-                                  uint64_t reception_time) {
+void handle_control_port_messages(char *buf, ssize_t recv_len, uint64_t reception_time) {
   if (recv_len != -1) {
     if ((buf != NULL) && (recv_len > 0)) {
       buf[recv_len - 1] = 0; // we know it's not empty, so make sure there's a null in it.
@@ -59,6 +54,18 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
       char *smi_name = strsep(&ip_list, " ");
       char *command = NULL;
       if (smi_name != NULL) {
+        // Every client prefixes its shared memory interface name to every
+        // control message it sends. Honouring it -- rather than parsing it off
+        // and discarding it -- is what keeps one client's commands from
+        // reaching another client's clocks.
+        int client_id = get_client_id(smi_name); // creates the record if it doesn't exist
+        if (client_id == -1) {
+          warn("Could not find or create a record for SMI Interface \"%s\".", smi_name);
+          return;
+        }
+        client_record *client = &clients[client_id];
+        clock_source_private_data *clock_private_info = client->clocks_private;
+
         if (ip_list != NULL)
           command = strsep(&ip_list, " ");
 
@@ -76,7 +83,7 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
             // If we know the clock is already active or
             // if it's only been a short time since we know it was last active
             // then we will not reset the clock.
-            if (clock_is_active) {
+            if (client->clock_is_active) {
               debug(2, "clock is already active");
             } else {
               // Find out if the clock is active i.e. not sleeping.
@@ -84,11 +91,12 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
               // We also know it is active for brief periods after the "T" and "E" commands are
               // received. If it is not definitely active, we will reset smoothing.
               int will_ask_for_a_reset = 0;
-              if (clock_validity_expiration_time == 0) {
+              if (client->clock_validity_expiration_time == 0) {
                 debug(1, "no clock_validity_expiration_time.");
                 will_ask_for_a_reset = 1;
               } else {
-                int64_t time_to_clock_expiration = clock_validity_expiration_time - reception_time;
+                int64_t time_to_clock_expiration =
+                    client->clock_validity_expiration_time - reception_time;
                 // timings obtained with an iPhone Xs Max on battery save
 
                 // around 30 seconds at a buffered audio pause on an iphone.
@@ -103,18 +111,18 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
               }
               if (will_ask_for_a_reset != 0) {
                 debug(2, "Reset clock smoothing");
-                reset_clock_smoothing = 1;
+                client->reset_clock_smoothing = 1;
               }
             }
-            clock_is_active = 1;
-            clock_validity_expiration_time = 0;
+            client->clock_is_active = 1;
+            client->clock_validity_expiration_time = 0;
           } else if ((strcmp(command, "E") == 0) && (ip_list == NULL)) {
             debug(2, "Stop");
-            if (clock_is_active) {
+            if (client->clock_is_active) {
               debug(2, "reset clock_validity_expiration_time to 2.25 seconds in the future.");
-              clock_validity_expiration_time =
+              client->clock_validity_expiration_time =
                   reception_time + 2250000000; // expiration time can be very soon after an "E"
-              clock_is_active = 0;
+              client->clock_is_active = 0;
             } else {
               debug(2, "clock is already inactive.");
             }
@@ -123,25 +131,24 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
             // A pause always seems to turn into a Stop in now more than a few seconds, and the
             // clock keeps going, it seems so there is nothing to do here.
           } else if ((command == NULL) || ((strcmp(command, "T") == 0) && (ip_list == NULL))) {
-            debug(2, "Stop Timing");
-            clock_is_active = 0;
+            debug(2, "Stop Timing for client \"%s\".", get_client_name(client_id));
+            client->clock_is_active = 0;
             debug(2, "Clear timing peer group.");
-            // dirty experimental hack -- delete all the clocks
+            // Clear only THIS client's clocks. When this cleared a daemon-wide
+            // table, a room leaving an AirPlay 2 group took every other room on
+            // the host down with it.
             int gc;
             for (gc = 0; gc < MAX_CLOCKS; gc++) {
               memset(&clock_private_info[gc], 0, sizeof(clock_source_private_data));
             }
-            update_master_clock_info(0, NULL, 0, 0, 0); // the SMI may have obsolete stuff in it
+            // this client's SMI may have obsolete stuff in it
+            update_master_clock_info(client_id, 0, NULL, 0, 0, 0);
           } else {
-            debug(2, "Start Timing");
-            // dirty experimental hack -- delete all the clocks
+            debug(2, "Start Timing for client \"%s\".", get_client_name(client_id));
             int gc;
             for (gc = 0; gc < MAX_CLOCKS; gc++) {
               memset(&clock_private_info[gc], 0, sizeof(clock_source_private_data));
             }
-            debug(2, "get or create new record for \"%s\".", smi_name);
-            //        client_id = get_client_id(smi_name); // create the record if it doesn't exist
-            //        if (client_id != -1) {
             if (strcmp(command, "T") == 0) {
               int i;
               for (i = 0; i < MAX_CLOCKS; i++) {
@@ -168,15 +175,11 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
               }
               // a new clock timing record will be started now
               debug(2, "reset clock_validity_expiration_time to 5.0 seconds in the future.");
-              clock_validity_expiration_time =
+              client->clock_validity_expiration_time =
                   reception_time + 5000000000L; // clock can stop as soon as 6 seconds after a "T"
             } else {
               warn("Unrecognised string on the control port.");
             }
-            //        } else {
-            //          warn("Could not find or create a record for SMI Interface \"%s\".",
-            //          smi_name);
-            //        }
           }
         }
       } else {
@@ -292,7 +295,11 @@ void handle_sync(char *buf, ssize_t recv_len, clock_source_private_data *clock_p
 }
 
 void handle_follow_up(char *buf, ssize_t recv_len, clock_source_private_data *clock_private_info,
-                      uint64_t reception_time) {
+                      int client_id, uint64_t reception_time) {
+  // The same Follow_Up on the wire is offered to every client that has this
+  // clock in its own timing peer group; each keeps its own smoothing state and
+  // writes its own shared memory interface.
+  client_record *client = &clients[client_id];
   if (clock_private_info->clock_id == 0) {
     debug(2, "Follow_Up received before announcement -- discarded.");
   } else {
@@ -412,7 +419,7 @@ void handle_follow_up(char *buf, ssize_t recv_len, clock_source_private_data *cl
 
       // This seems to be quite stable
 
-      if (reset_clock_smoothing == 0) {
+      if (client->reset_clock_smoothing == 0) {
 
         if (clock_private_info->previous_offset_time != 0) {
           time_since_previous_offset = reception_time - clock_private_info->previous_offset_time;
@@ -487,22 +494,23 @@ void handle_follow_up(char *buf, ssize_t recv_len, clock_source_private_data *cl
               "%u. Source: %s",
               clock_private_info->clock_id, clock_private_info->grandmasterIdentity, offset,
               smoothed_offset, 0.000001 * delta, preciseOriginTimestamp,
-              clock_is_active != 0 ? ". " : "*.", correction_field,
+              client->clock_is_active != 0 ? ". " : "*.", correction_field,
               0.000001 * time_since_previous_offset, ntohs(msg->header.sequenceId),
               clock_private_info->follow_up_number, clock_private_info->ip);
-        if (clock_is_active) {
-          update_master_clock_info(clock_private_info->grandmasterIdentity,
+        if (client->clock_is_active) {
+          update_master_clock_info(client_id, clock_private_info->grandmasterIdentity,
                                    (const char *)&clock_private_info->ip, reception_time,
                                    smoothed_offset, clock_private_info->mastership_start_time);
         } else {
-          update_master_clock_info(0, NULL, 0, 0, 0); // the SMI may have obsolete stuff in it
+          // this client's SMI may have obsolete stuff in it
+          update_master_clock_info(client_id, 0, NULL, 0, 0, 0);
         }
 
         clock_private_info->previous_offset = smoothed_offset;
         clock_private_info->previous_offset_time = reception_time;
 
       } else {
-        reset_clock_smoothing = 0;
+        client->reset_clock_smoothing = 0;
         clock_private_info->mastership_start_time = 0;
         clock_private_info->previous_offset = 0;
         clock_private_info->previous_offset_time =
