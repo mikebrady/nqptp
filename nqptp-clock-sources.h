@@ -62,12 +62,25 @@ typedef struct {
   int shm_fd;
   struct shm_structure *shared_memory; // the client's individual smi interface
   char shm_interface_name[64];         // it's name
-  int client_id; // the 1-based index number of clocks' client_flags field associated with this
-                 // interface
+
+  // Everything below is per-client state that used to be file-scope globals in
+  // nqptp-message-handlers.c, shared by every client on the host.
+  //
+  // That sharing is the bug this restores multi-client support to fix. A bare
+  // "T" (stop timing) from ANY client ran "delete all the clocks" over the one
+  // global table and zeroed the one global master clock, so a room leaving an
+  // AirPlay 2 group silently stopped playback in every other room on the same
+  // machine -- the departing instance deleted the clock its neighbours were
+  // still using. Each client now has its own clock table, its own activity
+  // state and its own shared memory interface, so its control messages can
+  // only ever affect itself.
+  clock_source_private_data clocks_private[MAX_CLOCKS];
+  int clock_is_active;
+  uint64_t clock_validity_expiration_time;
+  int reset_clock_smoothing;
 } client_record;
 
-extern int shm_fd;
-extern struct shm_structure *shared_memory;
+extern client_record clients[MAX_CLIENTS];
 
 int find_clock_source_record(char *sender_string, clock_source_private_data *clocks_private_info);
 
@@ -79,12 +92,13 @@ void manage_clock_sources(uint64_t reception_time, clock_source_private_data *cl
 
 int get_client_id(char *client_shared_memory_interface_name);
 const char *get_client_name(int client_id);
+// non-zero if this client slot currently holds a live named interface
+int client_is_in_use(int client_id);
 int delete_client(int client_id);
 int delete_clients();
 
-extern clock_source_private_data clocks_private[MAX_CLOCKS];
-
-void update_master_clock_info(uint64_t master_clock_id, const char *ip, uint64_t local_time,
-                              uint64_t local_to_master_offset, uint64_t mastership_start_time);
+void update_master_clock_info(int client_id, uint64_t master_clock_id, const char *ip,
+                              uint64_t local_time, uint64_t local_to_master_offset,
+                              uint64_t mastership_start_time);
 
 #endif

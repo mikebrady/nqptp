@@ -43,13 +43,10 @@
 #define FIELD_SIZEOF(t, f) (sizeof(((t *)0)->f))
 #endif
 
-int shm_fd;
-struct shm_structure *shared_memory;
-
-clock_source_private_data clocks_private[MAX_CLOCKS];
+// Each client owns its clock table and its shared memory interface -- there is
+// deliberately no daemon-wide clock table or shared memory region any more.
 client_record clients[MAX_CLIENTS];
 
-/*
 const char *get_client_name(int client_id) {
   if ((client_id >= 0) && (client_id < MAX_CLIENTS)) {
     return clients[client_id].shm_interface_name;
@@ -57,7 +54,12 @@ const char *get_client_name(int client_id) {
     return "";
   }
 }
-*/
+
+int client_is_in_use(int client_id) {
+  if ((client_id >= 0) && (client_id < MAX_CLIENTS))
+    return clients[client_id].shm_interface_name[0] != '\0';
+  return 0;
+}
 
 int get_client_id(char *client_shared_memory_interface_name) {
   int response = -1; // signify not found
@@ -123,10 +125,11 @@ int get_client_id(char *client_shared_memory_interface_name) {
         memset(clients[i].shared_memory, 0, sizeof(struct shm_structure));
         clients[i].shared_memory->version = NQPTP_SHM_STRUCTURES_VERSION;
 
-        // for (i = 0; i < MAX_CLOCKS; i++) {
-        //  clocks_private[i].client_flags[response] =
-        //      0; // turn off all client flags in every clock for this client
-        // }
+        // start this client with an empty timing peer group of its own
+        memset(clients[i].clocks_private, 0, sizeof(clients[i].clocks_private));
+        clients[i].clock_is_active = 0;
+        clients[i].clock_validity_expiration_time = 0;
+        clients[i].reset_clock_smoothing = 0;
       } else {
         debug(1, "could not create a client record for client \"%s\".",
               client_shared_memory_interface_name);
@@ -227,8 +230,20 @@ int create_clock_source_record(char *sender_string,
   return response;
 }
 
-void update_master_clock_info(uint64_t master_clock_id, const char *ip, uint64_t local_time,
-                              uint64_t local_to_master_offset, uint64_t mastership_start_time) {
+void update_master_clock_info(int client_id, uint64_t master_clock_id, const char *ip,
+                              uint64_t local_time, uint64_t local_to_master_offset,
+                              uint64_t mastership_start_time) {
+  // The update lands in the requesting client's own shared memory interface
+  // only. Writing it to a single daemon-wide region is what let one client's
+  // "stop timing" blank the master clock every other client was reading.
+  if (client_is_in_use(client_id) == 0) {
+    debug(1, "update_master_clock_info for unknown client id %d ignored.", client_id);
+    return;
+  }
+  struct shm_structure *shared_memory = clients[client_id].shared_memory;
+  if (shared_memory == NULL)
+    return;
+
   // to ensure that a full update has taken place, the
   // reader must ensure that the main and secondary
   // structures are identical
