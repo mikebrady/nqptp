@@ -48,7 +48,7 @@
 #include <netdb.h>
 #include <sys/socket.h>
 
-#if defined(CONFIG_FOR_FREEBSD) || defined(CONFIG_FOR_OPENBSD)
+#if defined(CONFIG_FOR_FREEBSD) || defined(CONFIG_FOR_OPENBSD) || defined(CONFIG_FOR_DARWIN)
 #include <netinet/in.h>
 #include <sys/socket.h>
 #endif

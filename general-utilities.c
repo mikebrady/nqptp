@@ -21,6 +21,8 @@
 #include "debug.h"
 #include <arpa/inet.h> // ntohl etc.
 #include <string.h>    // memcpy
+#include <sys/stat.h>  // fstat
+#include <unistd.h>    // ftruncate
 
 void hcton64(uint64_t num, uint8_t *p) {
   uint64_t numc = num;
@@ -85,4 +87,11 @@ uint64_t get_time_now() {
   clock_gettime(CLOCK_MONOTONIC, &tn);
 #endif
   return timespec_to_ns(&tn);
+}
+
+int shm_ftruncate(int fd, off_t length) {
+  struct stat st;
+  if ((fstat(fd, &st) == 0) && (st.st_size >= length))
+    return 0;
+  return ftruncate(fd, length);
 }

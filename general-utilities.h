@@ -25,6 +25,7 @@
 
 #include <inttypes.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 #include <time.h>
 
 // struct sockaddr_in6 is bigger than struct sockaddr. derp
@@ -46,5 +47,10 @@ uint64_t timespec_to_ns(struct timespec *tn);
 uint64_t get_time_now();
 
 uint64_t ntoh64(const uint64_t n);
+
+// Like ftruncate(), but tolerates a shared memory segment that is already
+// large enough. macOS only allows a POSIX shared memory object to be sized
+// once, so resizing a segment left over from a previous run fails there.
+int shm_ftruncate(int fd, off_t length);
 
 #endif
