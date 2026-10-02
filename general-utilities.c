@@ -79,6 +79,7 @@ uint64_t timespec_to_ns(struct timespec *tn) {
   return tnfpsec + tnfpnsec;
 }
 
+/*
 uint64_t get_time_now() {
   struct timespec tn;
 #ifdef CLOCK_MONOTONIC_RAW
@@ -87,6 +88,18 @@ uint64_t get_time_now() {
   clock_gettime(CLOCK_MONOTONIC, &tn);
 #endif
   return timespec_to_ns(&tn);
+}
+*/
+uint64_t get_time_now() {
+  struct timespec tn;
+#if defined(CONFIG_FOR_DARWIN)
+  clock_gettime(CLOCK_UPTIME_RAW, &tn);
+#elif defined(CLOCK_MONOTONIC_RAW)
+  clock_gettime(CLOCK_MONOTONIC_RAW, &tn);
+#else
+  clock_gettime(CLOCK_MONOTONIC, &tn);
+#endif
+  return (uint64_t)tn.tv_sec * 1000000000u + (uint64_t)tn.tv_nsec;
 }
 
 int shm_ftruncate(int fd, off_t length) {
