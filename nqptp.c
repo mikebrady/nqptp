@@ -59,6 +59,31 @@
 #include <pwd.h>
 #endif
 
+#if defined(CONFIG_FOR_DARWIN) && defined(SO_TIMESTAMP_MONOTONIC) && defined(SCM_TIMESTAMP_MONOTONIC)
+#include <mach/mach_time.h>
+#define NQPTP_KERNEL_RX_STAMPS 1
+
+// Returns the kernel's arrival stamp in ns on get_time_now()'s clock
+// (CLOCK_UPTIME_RAW == mach_absolute_time), or 0 if there isn't a usable one.
+static uint64_t kernel_rx_time(struct msghdr *m) {
+  static mach_timebase_info_data_t tb;
+  if (tb.denom == 0)
+    mach_timebase_info(&tb);
+  if (m->msg_flags & MSG_CTRUNC)
+    return 0;
+  for (struct cmsghdr *c = CMSG_FIRSTHDR(m); c; c = CMSG_NXTHDR(m, c)) {
+    if (c->cmsg_level == SOL_SOCKET && c->cmsg_type == SCM_TIMESTAMP_MONOTONIC &&
+        c->cmsg_len >= CMSG_LEN(sizeof(uint64_t))) {
+      uint64_t ticks;
+      memcpy(&ticks, CMSG_DATA(c), sizeof ticks);
+      uint64_t t = ticks * tb.numer / tb.denom;
+      return (t <= get_time_now()) ? t : 0; // a stamp can't be in the future
+    }
+  }
+  return 0;
+}
+#endif
+
 #ifndef FIELD_SIZEOF
 #define FIELD_SIZEOF(t, f) (sizeof(((t *)0)->f))
 #endif
@@ -300,6 +325,7 @@ int main(int argc, char **argv) {
 
             uint16_t receiver_port = 0;
             // int msgsize = recv(udpsocket_fd, &msg_buffer, 4, 0);
+            uint64_t packet_time = reception_time; // if we can't do better...
             recv_len = recvmsg(socket_number, &msg, MSG_DONTWAIT);
 
             if (recv_len != -1) {
@@ -309,6 +335,23 @@ int main(int argc, char **argv) {
                 if (socket_number == sockets_open_stuff.sockets[jp].number)
                   receiver_port = sockets_open_stuff.sockets[jp].port;
               }
+// This is for Darwin/macOS, which supplies the kernel reception time of a packet, and we use it instead of the lass-precise "reception time", which is really the time after the call thread has resumed having received the packet.
+#ifdef NQPTP_KERNEL_RX_STAMPS
+              if (receiver_port == 319 || receiver_port == 320) {
+                uint64_t k = kernel_rx_time(&msg);
+                if (k != 0) {
+                  packet_time = k;
+                  if ((int64_t)(reception_time - packet_time) > 150000)
+                    debug(3, "actual packet reception time difference from so-called reception time: %g ms.", (int64_t)(reception_time - packet_time) * 1E-6);
+                } else {
+                  static int warned = 0;
+                  if (!warned) {
+                    warned = 1;
+                    debug(1, "no kernel receive timestamp; using select() time.");
+                  }
+                }
+              }
+#endif
             }
             if (recv_len == -1) {
               if (errno == EAGAIN) {
@@ -319,7 +362,7 @@ int main(int argc, char **argv) {
               // check if it's a control port message before checking for the length of the
               // message.
             } else if (receiver_port == NQPTP_CONTROL_PORT) {
-              handle_control_port_messages(buf, recv_len, reception_time);
+              handle_control_port_messages(buf, recv_len, packet_time);
             } else if (recv_len >= (ssize_t)sizeof(struct ptp_common_message_header)) {
 
               // check its credentials
@@ -363,18 +406,18 @@ int main(int argc, char **argv) {
                   int the_clock = find_clock_source_record(sender_string, clocks_private);
                   if (the_clock != -1) {
                     clocks_private[the_clock].time_of_last_use =
-                        reception_time; // for garbage collection
+                        packet_time; // for garbage collection
                     // debug_print_buffer(1, sender_string, buf, recv_len); 
                     switch (buf[0] & 0xF) {
                     case Announce:
-                      handle_announce(buf, recv_len, &clocks_private[the_clock], reception_time);
+                      handle_announce(buf, recv_len, &clocks_private[the_clock], packet_time);
                       break;
                     case Follow_Up:
                       handle_follow_up(buf, recv_len, &clocks_private[the_clock], client_id,
-                                       reception_time);
+                                       packet_time);
                       break;
                     case Sync:
-                      handle_sync(buf, recv_len, &clocks_private[the_clock], reception_time);
+                      handle_sync(buf, recv_len, &clocks_private[the_clock], packet_time);
                       break;
                     default:
                       debug_print_buffer(2, sender_string, buf,

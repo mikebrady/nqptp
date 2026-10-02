@@ -83,6 +83,15 @@ void open_sockets_at_port(const char *node, uint16_t port,
       }
 #endif
 
+#if defined(CONFIG_FOR_DARWIN) && defined(SO_TIMESTAMP_MONOTONIC) && defined(SCM_TIMESTAMP_MONOTONIC)
+  // debug(1, "Setting SO_TIMESTAMP_MONOTONIC on port %u:", port);
+  if (port == 319 || port == 320) {
+    int on = 1;
+    if (setsockopt(fd, SOL_SOCKET, SO_TIMESTAMP_MONOTONIC, &on, sizeof on) < 0)
+      debug(1, "SO_TIMESTAMP_MONOTONIC failed on port %u: %s", port, strerror(errno));
+  }
+#endif
+
       if (!ret)
         ret = bind(fd, p->ai_addr, p->ai_addrlen);
 
