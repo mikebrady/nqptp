@@ -1,4 +1,20 @@
-##  Version: 1.2.9-dev-7-g49c419c, smi11
+## Version: 1.2.9-dev-12-gdbfd3ba, smi11
+
+**Support macOS (Darwin)**
+* Define `CONFIG_FOR_DARWIN`, and don't require `librt`.
+* Use the BSD code paths on Darwin: `AF_LINK` for the device MAC address and plain `MAP_SHARED` `mmap` for the shared memory.
+* `shm_ftruncate()`: macOS allows a POSIX shared memory object to be sized only once, so `ftruncate()` on a segment left over from a previous run fails with `EINVAL`. Skip the resize if the segment is already big enough.
+* `check-gitversion`: use `printf` rather than the non-portable `echo -n`, which macOS's `/bin/sh` writes out literally, breaking `gitversion.h`.
+* Use `CLOCK_UPTIME_RAW` as the basis for timing. This is effectively the same clock as is used by Shairport Sync on macOS.
+* Use the arrival time of a `UDP` packet provided by the kernel instead of the less precise time at which the thread resumes after receiving the packet. This should improve timing accuracy and stability.
+     
+Ports 319 and 320 can be bound without `root` on macOS, so NQPTP can run as an ordinary user.
+
+Note that Macs running on Apple Silicon have AirPlay playback built in and don't need Shairport Sync or NQPTP. And a Mac can not be both an AirPlay source (e.g. from Apple Music) and an AirPlay receiver (e.g. Shairport Sync) at the same time.
+
+Sincere thanks to [Filipe](https://github.com/filipef101) for the [PR](https://github.com/mikebrady/nqptp/pull/51).
+
+## Version: 1.2.9-dev-7-g49c419c, smi11
 
 This update in the `development` branch includes a number of updates to make clock handoff smoother. Clock handoff can occur when you add another player, such as a HomePod or Apple TV, to the output devices. The clocks in such devices may "take over" clocking at that point.
 
