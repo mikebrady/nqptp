@@ -1,3 +1,7 @@
+## Version: 1.2.9-dev-14-g0c6e601
+**BugFix**
+* On macOS (Darwin), stop setting the priority of the main thread in Linux fashion. It actually demotes the thread's priority to a very low level on macOS (Darwin). ATM, we don't set the thread priority on macOS.
+
 ## Version: 1.2.9-dev-12-gdbfd3ba, smi11
 
 **Support macOS (Darwin)**
