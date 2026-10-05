@@ -200,12 +200,15 @@ int main(int argc, char **argv) {
   
   
   // try to set a real time scheduling policy with a priority of -6
+  // but not on macOS
+#ifndef CONFIG_FOR_DARWIN
   int policy = SCHED_FIFO;
   struct sched_param param;
   param.sched_priority = 5;
   int s = pthread_setschedparam(pthread_self(), policy, &param);
   if (s != 0)
     debug(1, "pthread_setschedparam failed:  %d -- \"%s\".", s, strerror(s));
+#endif
  
   sockets_open_stuff.sockets_open = 0;
 
