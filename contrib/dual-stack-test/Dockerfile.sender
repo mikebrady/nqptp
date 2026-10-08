@@ -1,0 +1,4 @@
+FROM python:3.12-alpine
+WORKDIR /test
+COPY send_control.py send_ptp.py /test/
+ENTRYPOINT ["sleep", "3600"]

@@ -1,0 +1,8 @@
+# Builds nqptp from the repository this file lives in. Run `docker build`
+# with the repo root as context, not this directory -- see README.md here.
+FROM alpine:3.24.1
+RUN apk add --no-cache build-base autoconf automake libtool pkgconf linux-headers
+WORKDIR /root/nqptp
+COPY . /root/nqptp
+RUN autoreconf -fi && ./configure && make -j4
+ENTRYPOINT ["/root/nqptp/nqptp"]
