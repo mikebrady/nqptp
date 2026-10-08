@@ -394,6 +394,59 @@ int main(int argc, char **argv) {
                 // now, find the record for this ip
                 int the_clock = find_clock_source_record(
                     sender_string, (clock_source_private_data *)&clocks_private);
+
+                // Fallback for dual-stack senders whose RTSP/control connection
+                // used a different address family than their system PTP client,
+                // so the address nqptp was told to expect (via "T <ip>") never
+                // actually appears on the wire.
+                //
+                // Every PTP message, regardless of type, carries the sending
+                // clock's identity in the common header -- a stable value
+                // independent of which address or family it happened to arrive
+                // over. Prefer matching on that identity once it's known.
+                if (the_clock == -1) {
+                  struct ptp_common_message_header *common_header =
+                      (struct ptp_common_message_header *)buf;
+                  uint64_t packet_clock_id = nctoh64(&common_header->clockIdentity[0]);
+
+                  int gc;
+                  int pending_slot = -1;
+                  for (gc = 0; gc < MAX_CLOCKS; gc++) {
+                    if ((clocks_private[gc].flags & (1 << clock_is_in_use)) == 0)
+                      continue;
+                    if ((clocks_private[gc].clock_id != 0) &&
+                        (clocks_private[gc].clock_id == packet_clock_id)) {
+                      // Known clock, now seen from a new address -- follow it.
+                      debug(1,
+                            "Known clock %" PRIx64 " seen at new address %s (was %s). Updating.",
+                            packet_clock_id, sender_string, clocks_private[gc].ip);
+                      strncpy((char *)&clocks_private[gc].ip, sender_string,
+                              sizeof(clocks_private[gc].ip) - 1);
+                      clocks_private[gc].family = connection_ip_family;
+                      the_clock = gc;
+                      break;
+                    }
+                    if ((clocks_private[gc].clock_id == 0) && (pending_slot == -1)) {
+                      // A registration ("T <ip>") that hasn't yet been matched to
+                      // any traffic or learned an identity. Remember it in case no
+                      // identity match is found below.
+                      pending_slot = gc;
+                    }
+                  }
+
+                  if ((the_clock == -1) && (pending_slot != -1)) {
+                    // No known identity matched. Bind this still-unidentified
+                    // registration to the address real traffic is actually
+                    // coming from; its identity will be learned normally once
+                    // an Announce is processed below.
+                    debug(1, "Rebinding pending clock record from %s to observed source %s.",
+                          clocks_private[pending_slot].ip, sender_string);
+                    strncpy((char *)&clocks_private[pending_slot].ip, sender_string,
+                            sizeof(clocks_private[pending_slot].ip) - 1);
+                    clocks_private[pending_slot].family = connection_ip_family;
+                    the_clock = pending_slot;
+                  }
+                }
                 // not sure about requiring a Sync before creating it...
                 // if ((the_clock == -1) && ((buf[0] & 0xF) == Sync)) {
                 /*
@@ -536,10 +589,31 @@ void send_awakening_announcement_sequence(const uint64_t clock_id, const char *c
   free(msg);
 }
 
+// How long an in-use clock record may go without being touched -- either by
+// a registration ("T <ip>") that never saw any matching traffic, or by
+// traffic that simply stopped arriving -- before its slot is reclaimed.
+// clock_source_private_data.time_of_last_use is updated both on
+// registration and on every successfully matched packet (see nqptp.c's
+// dispatch loop and handle_control_port_messages), so this single check
+// covers both "never matched" and "went quiet" records.
+#define CLOCK_RECORD_EXPIRY_NS 60000000000ULL // 60 seconds
+
 uint64_t broadcasting_task(uint64_t call_time, __attribute__((unused)) void *private_data) {
   clock_source_private_data *clocks_private = (clock_source_private_data *)private_data;
   int i;
   for (i = 0; i < MAX_CLOCKS; i++) {
+
+    if (((clocks_private[i].flags & (1 << clock_is_in_use)) != 0) &&
+        ((clocks_private[i].flags & (1 << clock_is_master)) == 0) &&
+        (clocks_private[i].time_of_last_use != 0) &&
+        (call_time > clocks_private[i].time_of_last_use) &&
+        (call_time - clocks_private[i].time_of_last_use > CLOCK_RECORD_EXPIRY_NS)) {
+      debug(1, "Expiring stale clock record %" PRIx64 " at %s, index %u, unused for over %u seconds.",
+            clocks_private[i].clock_id, clocks_private[i].ip, i,
+            (unsigned int)(CLOCK_RECORD_EXPIRY_NS / 1000000000ULL));
+      memset(&clocks_private[i], 0, sizeof(clock_source_private_data));
+      continue; // nothing else to do for a slot we just cleared
+    }
 
     /*
         int is_a_master = 0;

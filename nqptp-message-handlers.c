@@ -161,6 +161,13 @@ void handle_control_port_messages(char *buf, ssize_t recv_len,
                   if (t == -1)
                     t = create_clock_source_record(new_ip, clock_private_info);
                   if (t != -1) { // if the clock table is not full, okay
+                    // Stamp a registration time so this record is eligible for
+                    // garbage collection even if it never receives a matching
+                    // packet (e.g. the session aborts before any PTP traffic
+                    // arrives). clock_id staying 0 is still what distinguishes
+                    // "pending identification" from "positively identified" for
+                    // the rebind-on-first-packet logic in nqptp.c.
+                    clock_private_info[t].time_of_last_use = reception_time;
                     debug(2, "Monitor clock at %s.", new_ip);
                   }
                   // otherwise, drop it
