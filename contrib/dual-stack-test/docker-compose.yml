@@ -1,0 +1,38 @@
+# Run from the repository root: docker compose -f contrib/dual-stack-test/docker-compose.yml ...
+# See README.md in this directory for the full walkthrough.
+services:
+  nqptp:
+    build:
+      context: ../..
+      dockerfile: contrib/dual-stack-test/Dockerfile.nqptp
+    command: ["-vvv"]
+    networks:
+      testnet:
+        ipv4_address: 172.31.99.2
+        ipv6_address: fd00:99::2
+
+  # Simulates the dual-stack AirPlay client's real PTP traffic.
+  sender:
+    build:
+      context: .
+      dockerfile: Dockerfile.sender
+    networks:
+      testnet:
+        ipv4_address: 172.31.99.3
+        ipv6_address: fd00:99::3
+
+  # Shares nqptp's network namespace to reach its control port, which only
+  # accepts traffic from localhost -- exactly as shairport-sync does.
+  control:
+    build:
+      context: .
+      dockerfile: Dockerfile.sender
+    network_mode: "service:nqptp"
+
+networks:
+  testnet:
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: 172.31.99.0/24
+        - subnet: fd00:99::/64
