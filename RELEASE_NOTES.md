@@ -18,6 +18,10 @@ Note that Macs running on Apple Silicon have AirPlay playback built in and don't
 
 Sincere thanks to [Filipe](https://github.com/filipef101) for the [PR](https://github.com/mikebrady/nqptp/pull/51).
 
+## Version: 1.2.9-dev-??-g1c4c127, smi11
+**Support Multiple Instances of Shairport Sync**
+* Restore per-client handling so separate instances of Shairport Sync can operate independently. Thanks to [Jay Love](https://github.com/jslove) for the [PR](https://github.com/mikebrady/nqptp/pull/50).
+
 ## Version: 1.2.9-dev-7-g49c419c, smi11
 
 This update in the `development` branch includes a number of updates to make clock handoff smoother. Clock handoff can occur when you add another player, such as a HomePod or Apple TV, to the output devices. The clocks in such devices may "take over" clocking at that point.
