@@ -24,7 +24,7 @@ Sincere thanks to [Filipe](https://github.com/filipef101) for the [PR](https://g
 
 ## Version: 1.2.9-dev-7-g49c419c, smi11
 
-This update in the `development` branch includes a number of updates to make clock handoff smoother. Clock handoff can occur when you add another player, such as a HomePod or Apple TV, to the output devices. The clocks in such devices may "take over" clocking at that point.
+Make grandmaster clock handoff smoother. Clock handoff can occur when you add another player, such as a HomePod or Apple TV, to the output devices. The clocks in such devices may "take over" clocking at that point.
 
 * When a clock grandmaster changes (and its offset from local time changes), the difference between the old and new offsets is passed to Shairport Sync.
 * The PTP `correction_field` is used in calculating precise timing.
