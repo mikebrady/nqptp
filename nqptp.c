@@ -401,12 +401,41 @@ int main(int argc, char **argv) {
                 // and let each keep its own smoothing state. A client that has
                 // never heard of this IP is left completely untouched -- that
                 // isolation is the point of the whole exercise.
+
+                // A sender can spread one clock's PTP traffic over several of its addresses (an
+                // iPhone uses IPv4, link-local and global IPv6), and a clock's Sync and Follow_Up
+                // messages are discarded until an Announce arrives from the monitored address. So
+                // accept an Announce from another address if it carries the clock identity
+                // already seen in packets from the monitored address.
+                uint64_t packet_clock_id = 0;
+                if ((size_t)recv_len >= sizeof(struct ptp_common_message_header)) {
+                  struct ptp_common_message_header *header =
+                      (struct ptp_common_message_header *)buf;
+                  packet_clock_id = nctohl(&header->clockIdentity[0]);
+                  packet_clock_id = (packet_clock_id << 32) + nctohl(&header->clockIdentity[4]);
+                }
                 int client_id;
                 for (client_id = 0; client_id < MAX_CLIENTS; client_id++) {
                   if (client_is_in_use(client_id) == 0)
                     continue;
                   clock_source_private_data *clocks_private = clients[client_id].clocks_private;
                   int the_clock = find_clock_source_record(sender_string, clocks_private);
+                  if ((the_clock != -1) && (clocks_private[the_clock].clock_id == 0))
+                    clocks_private[the_clock].unannounced_clock_id = packet_clock_id;
+                  if ((the_clock == -1) && ((buf[0] & 0xF) == Announce) &&
+                      (packet_clock_id != 0)) {
+                    int c;
+                    for (c = 0; c < MAX_CLOCKS; c++) {
+                      if (((clocks_private[c].flags & (1 << clock_is_in_use)) != 0) &&
+                          (clocks_private[c].clock_id == 0) &&
+                          (clocks_private[c].unannounced_clock_id == packet_clock_id)) {
+                        debug(2, "Announce for clock %" PRIx64 " at %s accepted from %s.",
+                              packet_clock_id, clocks_private[c].ip, sender_string);
+                        the_clock = c;
+                        break;
+                      }
+                    }
+                  }
                   if (the_clock != -1) {
                     clocks_private[the_clock].time_of_last_use =
                         packet_time; // for garbage collection
